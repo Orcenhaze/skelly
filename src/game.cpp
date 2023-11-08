@@ -1,7 +1,48 @@
 
+// @Cleanup: 
+// @Cleanup: Move to appropriate files!!
+// @Cleanup:
+
 #include "mesh.h"
 
-#include "mesh.cpp"
+struct Entity
+{
+    String8 name;
+    
+    V3           position;
+    Quaternion   orientation;
+    M4x4_Inverse object_to_world_matrix;
+    
+    Triangle_Mesh *mesh;
+};
+
+FUNCTION void update_entity_transform(Entity *entity)
+{
+    V3 pos         = entity->position;
+    Quaternion ori = entity->orientation;
+    
+    M4x4 m_non = m4x4_identity();
+    m_non._14 = pos.x;
+    m_non._24 = pos.y;
+    m_non._34 = pos.z;
+    //m_non._11 = scale.x;
+    //m_non._22 = scale.y;
+    //m_non._33 = scale.z;
+    
+    M4x4 m_inv = m4x4_identity();
+    m_inv._14 = -pos.x;
+    m_inv._24 = -pos.y;
+    m_inv._34 = -pos.z;
+    //m_inv._11 = 1.0f/scale.x;
+    //m_inv._22 = 1.0f/scale.y;
+    //m_inv._33 = 1.0f/scale.z;
+    
+    M4x4 r = m4x4_from_quaternion(ori);
+    
+    entity->object_to_world_matrix.forward = m_non * r;
+    entity->object_to_world_matrix.inverse = transpose(r) * m_inv;
+}
+
 
 GLOBAL V3 V3F = {0,  0, -1};
 GLOBAL V3 V3U = {0,  1,  0};
@@ -15,12 +56,28 @@ struct Camera
 };
 GLOBAL Camera camera;
 
+#include "mesh.cpp"
+#include "draw.cpp"
+
+GLOBAL Triangle_Mesh guy_mesh;
+GLOBAL Entity guy;
+
 FUNCTION void game_init()
 {
     camera.position = v3(0, 0, 1);
     camera.forward  = v3(0, 0, -1);
     
     set_view_to_proj();
+    
+    // Mesh init.
+    guy_mesh.name = S8LIT("guy");
+    load_triangle_mesh(os->permanent_arena, &guy_mesh);
+    
+    // Entity init.
+    guy.name        = S8LIT("guy");
+    guy.position    = {};
+    guy.orientation = quaternion_identity();
+    guy.mesh        = &guy_mesh;
 }
 
 FUNCTION void control_camera(Camera *cam, V3 delta_mouse)
@@ -73,8 +130,5 @@ FUNCTION void game_update()
 
 FUNCTION void game_render()
 {
-    immediate_begin();
-    set_texture(0);
-    immediate_rect(v2(0), v2(1), v4(1));
-    immediate_end();
+    draw_entity(&guy);
 }

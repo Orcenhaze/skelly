@@ -1,8 +1,8 @@
-mesh_name        = "test"
+mesh_name        = ""
 smooth_shaded    = 0
 make_convex_hull = 0
 
-directory = "C:\\work\\"
+directory = "C:\\work\\skelly\\data\\"
 extension = ".mesh"
 
 # File format version. Increment when modifying file.
@@ -283,8 +283,8 @@ def main():
     f.write(struct.pack("<i", version))
     array.array('i', triangle_mesh_header)  .tofile(f)
     array.array('f', vertices)              .tofile(f)
-    array.array('f', uvs)                   .tofile(f)
     array.array('f', tbns)                  .tofile(f)
+    array.array('f', uvs)                   .tofile(f)
     array.array('f', colors)                .tofile(f)
     array.array('I', indices)               .tofile(f)
     array.array('i', triangle_list_info)    .tofile(f)

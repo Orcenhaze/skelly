@@ -1,3 +1,4 @@
+R"(
 struct VS_Input
 {
 	float3 position  : POSITION;
@@ -10,7 +11,7 @@ struct VS_Input
 
 struct PS_Input
 {
-	float3   position   : SV_POSITION;
+	float4   position   : SV_POSITION;
 	float3x3 tbn        : TBN;
 	float3   normal     : NORMAL;
 	float3   pos_to_cam : POS_TO_CAM;
@@ -31,14 +32,14 @@ cbuffer PS_Constants : register(b1)
 	
 	// Material info.
 	float3 base_color;
+	int    use_normal_map;
 	float  metallic;
 	float  roughness;
 	float  ambient_occlusion;
 }
 
 // @Todo: Sample from textures if possible. Normal mapping requires use of TBN and such.
-sampler           albedo_sampler : register(s0);
-sampler           normal_sampler : register(s1);
+sampler           sampler0       : register(s0);
 Texture2D<float4> albedo_map     : register(t0);
 Texture2D<float4> normal_map     : register(t1);
 Texture2D<float4> metallic_map   : register(t2);
@@ -47,12 +48,12 @@ Texture2D<float4> ao_map         : register(t4);
 
 PS_Input vs(VS_Input input)
 {
-	float3 pos_world = mul(object_to_world_matrix, float4(input.position, 1.0f));
+	float3 pos_world = mul(object_to_world_matrix, float4(input.position, 1.0f)).xyz;
 
 	// Convert to world space.
-	float3 t = normalize(mul(object_to_world_matrix, float4(tangent,   0.0f)).xyz);
-	float3 b = normalize(mul(object_to_world_matrix, float4(bitangent, 0.0f)).xyz);
-	float3 n = normalize(mul(object_to_world_matrix, float4(normal,    0.0f)).xyz);
+	float3 t = normalize(mul(object_to_world_matrix, float4(input.tangent,   0.0f)).xyz);
+	float3 b = normalize(mul(object_to_world_matrix, float4(input.bitangent, 0.0f)).xyz);
+	float3 n = normalize(mul(object_to_world_matrix, float4(input.normal,    0.0f)).xyz);
 
 	PS_Input output;
 	output.position   = mul(object_to_proj_matrix, float4(input.position, 1.0f));
@@ -64,53 +65,11 @@ PS_Input vs(VS_Input input)
 	return output;
 }
 
-float4 ps(PS_Input input) : SV_TARGET
-{
-	// @Note: A good reference for this is "Real Shading in Unreal Engine 4 by Brian Karis, Epic Games".
-
-	//
-	// @Todo: Must determine whether we want our lighting to be calculated in world space or not.
-	//
-
-	// Lighting calculations.
-    float3 N = normalize(input.normal);
-    float3 V = normalize(input.pos_to_cam);
-    float3 L = normalize(light_direction);
-    float3 H = normalize(V + L); // Half vector (microfacet normal).
-
-    //
-    // @Incomplete: Sample from textures if possible.
-    //
-
-    // Fresnel-Schlick approximation for specular reflection.
-    float3 F0 = fresnel_schlick_r0(albedo);
-    float3 F  = F0 + (1.0 - F0) * pow(1.0 - dot(V, H), 5.0);
-
-	// Cook-Torrance microfacet BRDF.
-    float NdotL = max(0.0, dot(N, L));
-    float NdotV = max(0.0, dot(N, V));
-    float D     = distribution_ggx(N, H, roughness);
-    float G     = geometry_schlick_ggx(NdotV, roughness);
-    float3 kS   = F;
-    float3 kD   = 1.0 - kS;
-    kD         *= 1.0 - metallicValue;
-
-    float denominator = 4.0 * max(NdotL * NdotV, 0.0) + 0.001;
-    float3 specular   = (D * G * F) / denominator;
-
-    // Final color calculation.
-    // @Todo @Incomplete: This assumes we are not using textures.
-    //
-    float3 diffuse = (kD * albedo) / PI;
-    float3 ambient = diffuse * ambient_occlusion;
-    float3 color   = (diffuse + specular) * NdotL;
-
-    return float4(color + ambient, 1.0);
-}
-
 //
 // Helper functions (GGX BRDF)
 //
+static const float PI = 3.14159265f;
+
 float distribution_ggx(float3 N, float3 H, float roughness)
 {
     float a      = roughness * roughness;
@@ -139,3 +98,47 @@ float3 fresnel_schlick_r0(float3 albedo)
 {
     return (albedo * 0.04 + 0.96);
 }
+
+float4 ps(PS_Input input) : SV_TARGET
+{
+	// @Note: A good reference for this is "Real Shading in Unreal Engine 4 by Brian Karis, Epic Games".
+
+	float3 albedo_    = base_color.x      < 0.0f? albedo_map   .Sample(sampler0, input.uv).rgb : base_color;
+    float3 normal_    = use_normal_map    ==   1? normal_map   .Sample(sampler0, input.uv).rgb : normalize(input.normal);
+	float  metallic_  = metallic          < 0.0f? metallic_map .Sample(sampler0, input.uv).r   : metallic;
+	float  roughness_ = roughness         < 0.0f? roughness_map.Sample(sampler0, input.uv).r   : roughness;
+	float  ao_        = ambient_occlusion < 0.0f? ao_map       .Sample(sampler0, input.uv).r   : ambient_occlusion;
+
+	// Lighting calculations.
+    float3 N = normalize(normal_);
+    float3 V = normalize(input.pos_to_cam);
+    float3 L = normalize(light_direction);
+    float3 H = normalize(V + L); // Half vector (microfacet normal).
+
+    // Fresnel-Schlick approximation for specular reflection.
+    float3 F0 = fresnel_schlick_r0(albedo_);
+    float3 F  = F0 + (1.0 - F0) * pow(1.0 - dot(V, H), 5.0);
+
+	// Cook-Torrance microfacet BRDF.
+    float NdotL = max(0.0, dot(N, L));
+    float NdotV = max(0.0, dot(N, V));
+    float D     = distribution_ggx(N, H, roughness_);
+    float G     = geometry_schlick_ggx(NdotV, roughness_);
+    float3 kS   = F;
+    float3 kD   = 1.0 - kS;
+    kD         *= 1.0 - metallic_;
+
+    float denominator = 4.0 * max(NdotL * NdotV, 0.0) + 0.001;
+    float3 specular   = (D * G * F) / denominator;
+
+    // Final color calculation.
+    // @Todo @Incomplete: This assumes we are not using textures.
+    //
+    float3 diffuse = (kD * albedo_) / PI;
+    float3 ambient = diffuse * ao_;
+    float3 color   = (diffuse + specular) * NdotL;
+
+    return float4(color + ambient, 1.0);
+}
+
+)"

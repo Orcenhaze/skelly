@@ -1,6 +1,9 @@
-/* orh_d3d11.cpp - v0.01 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.02 - C++ D3D11 immediate mode renderer.
 
 #include "orh.h" before this file.
+
+REVISION HISTORY:
+0.02 - Renamed some d3d11 objects.
 
 CONVENTIONS:
 * CCW winding order for front faces.
@@ -62,10 +65,12 @@ GLOBAL HANDLE                    frame_latency_waitable_object;
 GLOBAL ID3D11RasterizerState    *rasterizer_state;
 GLOBAL ID3D11RasterizerState    *rasterizer_state_solid;
 GLOBAL ID3D11RasterizerState    *rasterizer_state_wireframe;
-GLOBAL ID3D11BlendState         *blend_state;
+GLOBAL ID3D11BlendState         *default_blend_state;
 GLOBAL ID3D11BlendState         *blend_state_one;
-GLOBAL ID3D11DepthStencilState  *depth_state;
-GLOBAL ID3D11SamplerState       *sampler0;
+GLOBAL ID3D11DepthStencilState  *default_depth_state;
+GLOBAL ID3D11DepthStencilState  *depth_state_off;
+GLOBAL ID3D11DepthStencilState  *depth_state_reverseZ;
+GLOBAL ID3D11SamplerState       *default_sampler;
 GLOBAL ID3D11ShaderResourceView *texture0;
 
 //
@@ -127,6 +132,40 @@ GLOBAL Vertex_XCNU   immediate_vertices[MAX_IMMEDIATE_VERTICES];
 
 // @Note: If true: vertices we push to buffer are pixel positions relative to drawing rect and Y grows down.
 GLOBAL b32 is_using_pixel_coords;
+
+
+// PBR renderer info
+struct Vertex_XTBNUC
+{
+    V3 position;
+    V3 tangent;
+    V3 bitangent;
+    V3 normal;
+    V2 uv;
+    V4 color;
+};
+struct PBR_VS_Constants
+{
+    M4x4 object_to_proj_matrix;
+    M4x4 object_to_world_matrix;
+	V3   camera_position; // In world space.
+};
+struct PBR_PS_Constants
+{
+    V3 light_direction; // Directional light.
+	
+	// Material info.
+	V3  base_color;
+    b32 use_normal_map;
+    f32 metallic;
+	f32 roughness;
+    f32 ambient_occlusion;
+};
+GLOBAL ID3D11InputLayout  *pbr_input_layout;
+GLOBAL ID3D11Buffer       *pbr_vs_cbuffer;
+GLOBAL ID3D11Buffer       *pbr_ps_cbuffer;
+GLOBAL ID3D11VertexShader *pbr_vs;
+GLOBAL ID3D11PixelShader  *pbr_ps;
 
 ////////////////////////////////
 //~ Textures
@@ -414,48 +453,86 @@ FUNCTION void create_immediate_shader()
     }
     
     String8 hlsl = S8LIT(R"(
-							struct VS_Input
-							{
-								float3 pos    : POSITION;
-								float4 color  : COLOR;
-								float3 normal : NORMAL;
-								float2 uv     : TEXCOORD;
-							};
-
-							struct PS_Input
-							{
-								float4 pos    : SV_POSITION;
-								float4 color  : COLOR;
-								float3 normal : NORMAL;
-								float2 uv     : TEXCOORD;
-							};
-
-							cbuffer VS_Constants : register(b0)
-							{
-								float4x4 object_to_proj_matrix;
-							}
-
-							sampler sampler0 : register(s0);
-
-							Texture2D<float4> texture0 : register(t0); 
-
-							PS_Input vs(VS_Input input)
-							{
-								PS_Input output;
-								output.pos    = mul(object_to_proj_matrix, float4(input.pos, 1.0f));
-								output.color  = input.color;
-								output.normal = input.normal;
-								output.uv     = input.uv;
-								return output;
-							}
-
-							float4 ps(PS_Input input) : SV_TARGET
-							{
-								float4 tex_color = texture0.Sample(sampler0, input.uv);
-								return input.color * tex_color;
-							}
-				   )");
+                                                                                                                                                                                                                                                                                                                                                                            struct VS_Input
+                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                float3 pos    : POSITION;
+                                                                                                                                                                                                                                                                                                                                                                                float4 color  : COLOR;
+                                                                                                                                                                                                                                                                                                                                                                                float3 normal : NORMAL;
+                                                                                                                                                                                                                                                                                                                                                                                float2 uv     : TEXCOORD;
+                                                                                                                                                                                                                                                                                                                                                                            };
+                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                                            struct PS_Input
+                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                float4 pos    : SV_POSITION;
+                                                                                                                                                                                                                                                                                                                                                                                float4 color  : COLOR;
+                                                                                                                                                                                                                                                                                                                                                                                float3 normal : NORMAL;
+                                                                                                                                                                                                                                                                                                                                                                                float2 uv     : TEXCOORD;
+                                                                                                                                                                                                                                                                                                                                                                            };
+                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                                            cbuffer VS_Constants : register(b0)
+                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                float4x4 object_to_proj_matrix;
+                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                                            sampler sampler0 : register(s0);
+                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                                            Texture2D<float4> texture0 : register(t0); 
+                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                                            PS_Input vs(VS_Input input)
+                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                PS_Input output;
+                                                                                                                                                                                                                                                                                                                                                                                output.pos    = mul(object_to_proj_matrix, float4(input.pos, 1.0f));
+                                                                                                                                                                                                                                                                                                                                                                                output.color  = input.color;
+                                                                                                                                                                                                                                                                                                                                                                                output.normal = input.normal;
+                                                                                                                                                                                                                                                                                                                                                                                output.uv     = input.uv;
+                                                                                                                                                                                                                                                                                                                                                                                return output;
+                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                                            float4 ps(PS_Input input) : SV_TARGET
+                                                                                                                                                                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                                                                                                                                                float4 tex_color = texture0.Sample(sampler0, input.uv);
+                                                                                                                                                                                                                                                                                                                                                                                return input.color * tex_color;
+                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                   )");
     d3d11_compile_shader(hlsl, layout_desc, ARRAYSIZE(layout_desc), &immediate_input_layout, &immediate_vs, &immediate_ps);
+}
+
+FUNCTION void create_pbr_shader()
+{
+    // Input layout.
+    D3D11_INPUT_ELEMENT_DESC layout_desc[] = 
+    {
+        {"POSITION",  0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUC, position),  D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TANGENT",   0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUC, tangent),   D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"BITANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUC, bitangent), D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"NORMAL",    0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUC, normal),    D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD",  0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(Vertex_XTBNUC, uv),        D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"COLOR",     0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(Vertex_XTBNUC, color),     D3D11_INPUT_PER_VERTEX_DATA, 0},
+    };
+    
+    //
+    // Constant buffers.
+    {
+        D3D11_BUFFER_DESC desc = {};
+        desc.ByteWidth      = ALIGN_UP(sizeof(PBR_VS_Constants), 16);
+        desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
+        desc.Usage          = D3D11_USAGE_DYNAMIC;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        
+        device->CreateBuffer(&desc, 0, &pbr_vs_cbuffer);
+        
+        D3D11_BUFFER_DESC desc2 = desc;
+        desc2.ByteWidth = ALIGN_UP(sizeof(PBR_PS_Constants), 16);
+        
+        device->CreateBuffer(&desc, 0, &pbr_ps_cbuffer);
+    }
+    
+    char *pbr_shader = 
+#include "pbr.hlsl"
+    ;
+    
+    String8 hlsl = string(pbr_shader);
+    d3d11_compile_shader(hlsl, layout_desc, ARRAY_COUNT(layout_desc), &pbr_input_layout, &pbr_vs, &pbr_ps);
 }
 
 ////////////////////////////////
@@ -574,7 +651,7 @@ FUNCTION void d3d11_init(HWND window)
         desc.RenderTarget[0].BlendOpAlpha          = D3D11_BLEND_OP_ADD;
         desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
         
-        device->CreateBlendState(&desc, &blend_state);
+        device->CreateBlendState(&desc, &default_blend_state);
         
         D3D11_BLEND_DESC desc2 = desc;
         desc2.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
@@ -582,7 +659,7 @@ FUNCTION void d3d11_init(HWND window)
     }
     
     //
-    // Create depth state.
+    // Create depth states.
     {
         D3D11_DEPTH_STENCIL_DESC desc = {};
         desc.DepthEnable      = TRUE;
@@ -593,7 +670,15 @@ FUNCTION void d3d11_init(HWND window)
         desc.StencilWriteMask = D3D11_DEFAULT_STENCIL_WRITE_MASK;
         // desc.FrontFace = ... 
         // desc.BackFace = ...
-        device->CreateDepthStencilState(&desc, &depth_state);
+        device->CreateDepthStencilState(&desc, &default_depth_state);
+        
+        D3D11_DEPTH_STENCIL_DESC desc_off = desc;
+        desc_off.DepthEnable = FALSE;
+        device->CreateDepthStencilState(&desc_off, &depth_state_off);
+        
+        D3D11_DEPTH_STENCIL_DESC desc_Z = desc;
+        desc_Z.DepthFunc = D3D11_COMPARISON_GREATER;
+        device->CreateDepthStencilState(&desc_Z, &depth_state_reverseZ);
     }
     
     //
@@ -605,7 +690,7 @@ FUNCTION void d3d11_init(HWND window)
         desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
         desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
         
-        device->CreateSamplerState(&desc, &sampler0);
+        device->CreateSamplerState(&desc, &default_sampler);
     }
     
     //
@@ -626,6 +711,7 @@ FUNCTION void d3d11_init(HWND window)
     // Default shader.
     {    
         create_immediate_shader();
+        create_pbr_shader();
     }
 }
 
@@ -880,13 +966,13 @@ FUNCTION void immediate_end()
     device_context->RSSetState(rasterizer_state);
     
     // Pixel Shader.
-    device_context->PSSetSamplers(0, 1, &sampler0);
+    device_context->PSSetSamplers(0, 1, &default_sampler);
     device_context->PSSetShaderResources(0, 1, &texture0);
     device_context->PSSetShader(immediate_ps, 0, 0);
     
     // Output Merger.
-    device_context->OMSetBlendState(blend_state, 0, 0XFFFFFFFFU);
-    device_context->OMSetDepthStencilState(depth_state, 0);
+    device_context->OMSetBlendState(default_blend_state, 0, 0XFFFFFFFFU);
+    device_context->OMSetDepthStencilState(default_depth_state, 0);
     device_context->OMSetRenderTargets(1, &render_target_view, depth_stencil_view);
     
     // Draw.

@@ -1,10 +1,23 @@
 #ifndef MESH_H
 #define MESH_H
 
+GLOBAL s32 const MESH_FILE_VERSION = 1;
+
+enum Material_Texture_Map_Type
+{
+	MaterialTextureMapType_ALBEDO,
+	MaterialTextureMapType_NORMAL,
+	MaterialTextureMapType_METALLIC,
+	MaterialTextureMapType_ROUGHNESS,
+	MaterialTextureMapType_AO,
+	
+	MaterialTextureMapType_COUNT
+};
+
 struct Triangle_Mesh_Header {
     s32 num_vertices;            // Mul by sizeof(Vector3) to get bytes
-    s32 num_uvs;                 // Mul by sizeof(Vector2) to get bytes
     s32 num_tbns;                // Mul by sizeof(TBN)     to get bytes
+    s32 num_uvs;                 // Mul by sizeof(Vector2) to get bytes
     s32 num_colors;              // Mul by sizeof(Vector4) to get bytes
     s32 num_indices;             // Mul by sizeof(u32)     to get bytes
     
@@ -17,20 +30,10 @@ struct Triangle_List_Info {
     s32 num_indices;
     s32 first_index;
     
-    // @Todo: Multiple textures per triangle.
-	Texture *diffuse_map;
-	Texture *normal_map;
-};
-
-enum Material_Texture_Map_Type
-{
-	MaterialTextureMapType_ALBEDO,
-	MaterialTextureMapType_NORMAL,
-	MaterialTextureMapType_METALLIC,
-	MaterialTextureMapType_ROUGHNESS,
-	MaterialTextureMapType_AO,
-	
-	MaterialTextureMapType_COUNT
+    // @Temporary: Have them here for now.
+    // Must be pointers so we don't have duplicate textures!
+    Texture texture_maps[MaterialTextureMapType_COUNT];
+    //Texture *texture_maps[MaterialTextureMapType_COUNT];
 };
 
 struct Material_Info {
@@ -58,8 +61,8 @@ struct Triangle_Mesh
     String8 full_path;
     
     Array<V3>  vertices;
-    Array<V2>  uvs;
     Array<TBN> tbns;
+    Array<V2>  uvs;
     Array<V4>  colors;
     
     Array<u32> indices;
@@ -72,8 +75,8 @@ struct Triangle_Mesh
 	Array<Material_Info>      material_info;
     
     // Vertex and index buffers.
-    //GLuint vbo_id;
-    //GLuint ibo_id;
+    ID3D11Buffer *vbo;
+    ID3D11Buffer *ibo;
 };
 
 #endif //MESH_H
