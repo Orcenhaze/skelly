@@ -64,7 +64,7 @@ GLOBAL Entity guy;
 
 FUNCTION void game_init()
 {
-    camera.position = v3(0, 0, 1);
+    camera.position = v3(0, 0, 3);
     camera.forward  = v3(0, 0, -1);
     
     set_view_to_proj();
@@ -78,6 +78,7 @@ FUNCTION void game_init()
     guy.position    = {};
     guy.orientation = quaternion_identity();
     guy.mesh        = &guy_mesh;
+    update_entity_transform(&guy);
 }
 
 FUNCTION void control_camera(Camera *cam, V3 delta_mouse)
@@ -88,7 +89,10 @@ FUNCTION void control_camera(Camera *cam, V3 delta_mouse)
     V3 cam_f = cam->forward;
     V3 cam_r = normalize0(cross(cam_f, V3U));
     
-    f32 speed = 1.5f;
+    f32 speed = 2.5f;
+    if (key_held(Key_SHIFT))
+        speed *= 2.0f;
+    
     if (key_held(Key_W)) 
         cam_p +=  cam_f * speed * dt;
     if (key_held(Key_S))

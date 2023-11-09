@@ -1,10 +1,6 @@
 
 FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
 {
-    // @Debug:
-    // @Debug: Seems like we have bad vertices!!
-    // @Debug:
-    
     s32 version = 0;
     get(&file, &version);
     ASSERT(version == MESH_FILE_VERSION);
@@ -50,7 +46,7 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
         get(&file, &mesh->material_info[i].roughness);
         
         // @Note: Blender doesn't seem to have ambient occlusion attribute in Principled BSDF, so we'll set its default value manually.
-        mesh->material_info[i].ambient_occlusion = 0.0f;
+        mesh->material_info[i].ambient_occlusion = 1.0f;
         
         for (s32 map_index = 0; map_index < MaterialTextureMapType_COUNT; map_index++) {
             s32 map_name_len = 0;
@@ -79,12 +75,19 @@ FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)
         for (s32 map_index = 0; map_index < MaterialTextureMapType_COUNT; map_index++) {
             String8 map_name = m->texture_map_names[map_index];
             
+            // @Todo: @Cleanup: Is this the way we should do this...? Probably not!
+            // If we load all textures into a catalog, how would we decide whether to set sRGB or not?
+            //
+            b32 use_srgb = FALSE;
+            if (map_index == (s32)MaterialTextureMapType_ALBEDO)
+                use_srgb = TRUE;
+            
             if (string_empty(map_name)) {
                 list->texture_maps[map_index] = white_texture;
             } else {
                 Arena_Temp scratch       = get_scratch(0, 0);
                 String8 texture_map_path = sprint(scratch.arena, "%S%S", os->data_folder, map_name);
-                d3d11_load_texture(&list->texture_maps[map_index], texture_map_path);
+                d3d11_load_texture(&list->texture_maps[map_index], texture_map_path, use_srgb);
                 free_scratch(scratch);
             }
             
@@ -103,7 +106,7 @@ FUNCTION void generate_buffers_for_mesh(Triangle_Mesh *mesh)
     Vertex_XTBNUC *vertex_buffer = PUSH_ARRAY_ZERO(scratch.arena, Vertex_XTBNUC, num_vertices);
     Vertex_XTBNUC *vertex = vertex_buffer;
     
-    for (s32 vindex = 0; vindex < num_vertices; vindex++) {
+    for (s32 vindex = 0; vindex < num_vertices; vindex++, vertex++) {
         if (mesh->vertices.count) vertex->position = mesh->vertices[vindex];
         else                      vertex->position = {};
         

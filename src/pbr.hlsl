@@ -13,32 +13,31 @@ struct PS_Input
 {
 	float4   position   : SV_POSITION;
 	float3x3 tbn        : TBN;
-	float3   normal     : NORMAL;
-	float3   pos_to_cam : POS_TO_CAM;
 	float2   uv         : TEXCOORD;
 	float4   color      : COLOR;
+	float3   pos_world  : POS_WORLD;
 };
 
 cbuffer VS_Constants : register(b0)
 {
 	float4x4 object_to_proj_matrix;
 	float4x4 object_to_world_matrix;
-	float3   camera_position; // In world space.
 }
 
 cbuffer PS_Constants : register(b1)
 {
-	float3 light_direction; // Directional light.
-	
-	// Material info.
 	float3 base_color;
 	int    use_normal_map;
+
+	float3 camera_position; // In world space.
 	float  metallic;
+	
+	float3 light_position;  // In world space.
 	float  roughness;
+	
 	float  ambient_occlusion;
 }
 
-// @Todo: Sample from textures if possible. Normal mapping requires use of TBN and such.
 sampler           sampler0       : register(s0);
 Texture2D<float4> albedo_map     : register(t0);
 Texture2D<float4> normal_map     : register(t1);
@@ -58,10 +57,9 @@ PS_Input vs(VS_Input input)
 	PS_Input output;
 	output.position   = mul(object_to_proj_matrix, float4(input.position, 1.0f));
 	output.tbn        = float3x3(t, b, n);
-	output.normal     = n;
-	output.pos_to_cam = normalize(camera_position - pos_world);
 	output.uv         = input.uv;
 	output.color      = input.color;
+	output.pos_world  = pos_world;
 	return output;
 }
 
@@ -94,34 +92,35 @@ float geometry_schlick_ggx(float NdotV, float roughness)
     return num / denom;
 }
 
-float3 fresnel_schlick_r0(float3 albedo)
-{
-    return (albedo * 0.04 + 0.96);
-}
-
 float4 ps(PS_Input input) : SV_TARGET
 {
 	// @Note: A good reference for this is "Real Shading in Unreal Engine 4 by Brian Karis, Epic Games".
 
 	float3 albedo_    = base_color.x      < 0.0f? albedo_map   .Sample(sampler0, input.uv).rgb : base_color;
-    float3 normal_    = use_normal_map    ==   1? normal_map   .Sample(sampler0, input.uv).rgb : normalize(input.normal);
+    float3 normal_    = use_normal_map    ==   1? normal_map   .Sample(sampler0, input.uv).rgb : normalize(input.tbn[2]);
 	float  metallic_  = metallic          < 0.0f? metallic_map .Sample(sampler0, input.uv).r   : metallic;
 	float  roughness_ = roughness         < 0.0f? roughness_map.Sample(sampler0, input.uv).r   : roughness;
 	float  ao_        = ambient_occlusion < 0.0f? ao_map       .Sample(sampler0, input.uv).r   : ambient_occlusion;
 
+	if (use_normal_map == 1) {
+		normal_ = normal_ * 2.0 - 1.0;
+		normal_ = mul(input.tbn, normal_);
+	}
+
 	// Lighting calculations.
     float3 N = normalize(normal_);
-    float3 V = normalize(input.pos_to_cam);
-    float3 L = normalize(light_direction);
+    float3 V = normalize(camera_position - input.pos_world);
+    float3 L = normalize(light_position - input.pos_world);
     float3 H = normalize(V + L); // Half vector (microfacet normal).
 
     // Fresnel-Schlick approximation for specular reflection.
-    float3 F0 = fresnel_schlick_r0(albedo_);
-    float3 F  = F0 + (1.0 - F0) * pow(1.0 - dot(V, H), 5.0);
+	float3 F0 = 0.04; 
+	F0        = lerp(F0, albedo_, metallic_);
+    float3 F  = F0 + (1.0 - F0) * pow(saturate(1.0 - dot(V, H)), 5.0);
 
 	// Cook-Torrance microfacet BRDF.
-    float NdotL = max(0.0, dot(N, L));
-    float NdotV = max(0.0, dot(N, V));
+    float NdotL = saturate(dot(N, L));
+    float NdotV = saturate(dot(N, V));
     float D     = distribution_ggx(N, H, roughness_);
     float G     = geometry_schlick_ggx(NdotV, roughness_);
     float3 kS   = F;
@@ -131,14 +130,13 @@ float4 ps(PS_Input input) : SV_TARGET
     float denominator = 4.0 * max(NdotL * NdotV, 0.0) + 0.001;
     float3 specular   = (D * G * F) / denominator;
 
-    // Final color calculation.
-    // @Todo @Incomplete: This assumes we are not using textures.
-    //
     float3 diffuse = (kD * albedo_) / PI;
-    float3 ambient = diffuse * ao_;
     float3 color   = (diffuse + specular) * NdotL;
+    
+    float3 ambient = 0.3 * albedo_ * ao_;
+    color          = color + ambient;
 
-    return float4(color + ambient, 1.0);
+    return float4(color, 1.0);
 }
 
 )"

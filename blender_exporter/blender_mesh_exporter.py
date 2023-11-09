@@ -94,15 +94,16 @@ def append_attribute_and_set_map_name(input, texture_map_names, map_type):
         append_attribute_default_value_to_material_info(input)
     
     if len(input.links):
-        if input.links[0].from_node.type == 'TEX_IMAGE':
-            assert input.links[0].from_node.image != None
-            texture_map_names[map_type] = input.links[0].from_node.image.name
+        linked_node = input.links[0].from_node
+        if linked_node.type == 'TEX_IMAGE':
+            assert linked_node.image != None
+            texture_map_names[map_type] = linked_node.image.name
             
-        elif input.links[0].from_node.type == 'MapType_NORMAL':
-            color_link = input.links[0].from_node.inputs['Color'].links[0]
-            assert color_link.type == 'TEX_IMAGE'
-            assert color_link.from_node.image != None
-            texture_map_names[map_type] = color_link.from_node.image.name
+        elif linked_node.type == 'NORMAL_MAP':
+            image_node = linked_node.inputs['Color'].links[0].from_node
+            assert image_node.type  == 'TEX_IMAGE'
+            assert image_node.image != None
+            texture_map_names[map_type] = image_node.image.name
 
 def set_materials(materials):
     for mat in  materials:    
