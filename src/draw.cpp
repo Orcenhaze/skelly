@@ -64,7 +64,7 @@ FUNCTION void draw_entity(Entity *e)
         // Upload ps constants.
         PBR_PS_Constants ps_constants = {};
         ps_constants.camera_position   = camera.position;
-        ps_constants.light_position    = {0.0f, 4.0f, 3.0f};
+        ps_constants.light_position    = {1.5f, 0.3f, 2.5f};
         ps_constants.use_normal_map    = use_normal_map;
         ps_constants.base_color        = base_color.rgb;
         ps_constants.metallic          = metallic;

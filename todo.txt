@@ -1,4 +1,1 @@
-- HDR.
-- Light radiance and attenuation.
-
 - Cleanup textures in triangle list info; should use pointers instead!

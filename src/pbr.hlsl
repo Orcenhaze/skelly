@@ -130,11 +130,19 @@ float4 ps(PS_Input input) : SV_TARGET
     float denominator = 4.0 * max(NdotL * NdotV, 0.0) + 0.001;
     float3 specular   = (D * G * F) / denominator;
 
+    // Calculate light radiance.
+    float  dist_to_light = length(light_position - input.pos_world);
+    float  attenuation   = 1.0 / (dist_to_light * dist_to_light);
+    float3 radiance      = attenuation; // Should multiply with light color, but for now assume it's white.
+
     float3 diffuse = (kD * albedo_) / PI;
-    float3 color   = (diffuse + specular) * NdotL;
+    float3 color   = (diffuse + specular) * NdotL * radiance;
     
     float3 ambient = 0.3 * albedo_ * ao_;
     color          = color + ambient;
+
+    // Apply Reinhard tone mapping.
+    color = color / (color + 1.0);
 
     return float4(color, 1.0);
 }
