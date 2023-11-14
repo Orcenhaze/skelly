@@ -4,7 +4,7 @@ FUNCTION void draw_entity(Entity *e)
     Triangle_Mesh *mesh = e->mesh;
     
     if (!mesh) {
-        print("Entity %S has no mesh!\n", e->name);
+        debug_print("Entity %S has no mesh!\n", e->name);
         return;
     }
     

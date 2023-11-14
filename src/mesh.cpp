@@ -52,10 +52,10 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
             s32 map_name_len = 0;
             get(&file, &map_name_len);
             
-            String8 map_name = string(file.data, map_name_len);
+            String8 map_name = str8(file.data, map_name_len);
             advance(&file, map_name_len);
             
-            mesh->material_info[i].texture_map_names[map_index] = string_copy(arena, map_name);
+            mesh->material_info[i].texture_map_names[map_index] = str8_copy(arena, map_name);
         }
     }
     
@@ -82,7 +82,7 @@ FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)
             if (map_index == (s32)MaterialTextureMapType_ALBEDO)
                 use_srgb = TRUE;
             
-            if (string_empty(map_name)) {
+            if (str8_empty(map_name)) {
                 list->texture_maps[map_index] = white_texture;
             } else {
                 Arena_Temp scratch       = get_scratch(0, 0);
@@ -92,7 +92,7 @@ FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)
             }
             
             if (!list->texture_maps[map_index].width || !list->texture_maps[map_index].height) {
-                print("MESH LOAD ERROR: Couldn't find texture %S\n", map_name);
+                debug_print("MESH LOAD ERROR: Couldn't find texture %S\n", map_name);
             }
         }
     }
@@ -150,11 +150,11 @@ FUNCTION void load_triangle_mesh(Arena *arena, Triangle_Mesh *mesh)
     String8 path       = sprint(scratch.arena, "%S%S.mesh", os->data_folder, mesh->name);
     String8 file       = os->read_entire_file(path);
     if (!file.data) {
-        print("MESH LOAD ERROR: Couldn't load mesh at %S\n", path);
+        debug_print("MESH LOAD ERROR: Couldn't load mesh at %S\n", path);
         return;
     }
     
-    mesh->full_path = string_copy(arena, path);
+    mesh->full_path = str8_copy(arena, path);
     free_scratch(scratch);
     
     String8 orig_file = file;

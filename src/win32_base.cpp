@@ -1,7 +1,8 @@
-/* win32_base.cpp - v0.01 - base functionality for win32_main.cpp
+/* win32_base.cpp - v0.02 - base functionality for win32_main.cpp
 
 REVISION HISTORY:
-0.01 - Added mouse capture for middle mouse button.
+0.02 - renamed print() to debug_print() and added ability to load File_Info and File_Group and string stuff.
+0.01 - added mouse capture for middle mouse button.
 
 */
 
@@ -103,7 +104,7 @@ FUNCTION void win32_toggle_fullscreen(HWND window)
     }
 }
 
-FUNCTION void win32_print_to_console(String8 text)
+FUNCTION void win32_print_to_debug_output(String8 text)
 {
     OutputDebugStringA((LPCSTR)text.data);
 }
@@ -157,13 +158,13 @@ FUNCTION String8 win32_read_entire_file(String8 full_path)
     HANDLE file_handle = CreateFile((char*)full_path.data, GENERIC_READ, FILE_SHARE_READ, 0, 
                                     OPEN_EXISTING, 0, 0);
     if (file_handle == INVALID_HANDLE_VALUE) {
-        print("OS Error: read_entire_file() INVALID_HANDLE_VALUE!\n");
+        debug_print("OS Error: read_entire_file() INVALID_HANDLE_VALUE!\n");
         return result;
     }
     
     LARGE_INTEGER file_size64;
     if (GetFileSizeEx(file_handle, &file_size64) == 0) {
-        print("OS Error: read_entire_file() GetFileSizeEx() failed!\n");
+        debug_print("OS Error: read_entire_file() GetFileSizeEx() failed!\n");
     }
     
     u32 file_size32 = (u32)file_size64.QuadPart;
@@ -171,14 +172,14 @@ FUNCTION String8 win32_read_entire_file(String8 full_path)
                                       PAGE_READWRITE);
     
     if (!result.data) {
-        print("OS Error: read_entire_file() VirtualAlloc() returned 0!\n");
+        debug_print("OS Error: read_entire_file() VirtualAlloc() returned 0!\n");
     }
     
     DWORD bytes_read;
     if (ReadFile(file_handle, result.data, file_size32, &bytes_read, 0) && (file_size32 == bytes_read)) {
         result.count = file_size32;
     } else {
-        print("OS Error: read_entire_file() ReadFile() failed!\n");
+        debug_print("OS Error: read_entire_file() ReadFile() failed!\n");
         
         win32_free_file_memory(result.data);
         result.data = 0;
@@ -195,17 +196,49 @@ FUNCTION b32 win32_write_entire_file(String8 full_path, String8 data)
     
     HANDLE file_handle = CreateFile((char*)full_path.data, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
     if (file_handle == INVALID_HANDLE_VALUE) {
-        print("OS Error: write_entire_file() INVALID_HANDLE_VALUE!\n");
+        debug_print("OS Error: write_entire_file() INVALID_HANDLE_VALUE!\n");
     }
     
     DWORD bytes_written;
     if (WriteFile(file_handle, data.data, (DWORD)data.count, &bytes_written, 0) && (bytes_written == data.count)) {
         result = TRUE;
     } else {
-        print("OS Error: write_entire_file() WriteFile() failed!\n");
+        debug_print("OS Error: write_entire_file() WriteFile() failed!\n");
     }
     
     CloseHandle(file_handle);
+    
+    return result;
+}
+
+FUNCTION File_Group win32_get_all_files_in_path(Arena *arena, String8 path_wildcard)
+{
+    File_Group result = {};
+    u64 file_count = 0;
+    
+    WIN32_FIND_DATA find_data;
+    HANDLE find_handle = FindFirstFile((char*)path_wildcard.data, &find_data); 
+    while(find_handle != INVALID_HANDLE_VALUE)
+    {
+        File_Info *info = PUSH_STRUCT_ZERO(arena, File_Info);
+        
+        info->next      = result.first_file_info;
+        info->file_date = (((u64)find_data.ftLastWriteTime.dwHighDateTime << (u64)32) | (u64)find_data.ftLastWriteTime.dwLowDateTime);
+        info->file_size = (((u64)find_data.nFileSizeHigh << (u64)32) | (u64)find_data.nFileSizeLow);
+        
+        String8 file_name = str8_cstring(find_data.cFileName); // Includes extension.
+        String8 directory = extract_parent_folder(path_wildcard);
+        
+        info->full_path = str8_cat(arena, directory, file_name);
+        info->base_name = str8_copy(arena, extract_base_name(file_name));
+        
+        result.first_file_info = info;
+        result.file_count++;
+        
+        if(!FindNextFile(find_handle, &find_data)) break;
+    }
+    
+    result.file_count = file_count;
     
     return result;
 }
@@ -534,7 +567,7 @@ FUNCTION Sound win32_sound_load(String8 full_path, u32 sample_rate)
     
     String8 file = win32_read_entire_file(full_path);
     if (!file.data) {
-        print("Couldn't load sound file %S\n", full_path);
+        debug_print("Couldn't load sound file %S\n", full_path);
         
         Sound dummy = {};
         return dummy;
@@ -545,7 +578,7 @@ FUNCTION Sound win32_sound_load(String8 full_path, u32 sample_rate)
     s32 count = stb_vorbis_decode_memory(file.data, (s32)file.count, &chan, &samplerate, &out);
     
     if (count == -1) {
-        print("STB Error: Couldn't load sound file %S\n", full_path);
+        debug_print("STB Error: Couldn't load sound file %S\n", full_path);
         
         Sound dummy = {};
         return dummy;
@@ -588,9 +621,9 @@ void win32_os_state_init()
     os = &global_os;
     
     // Meta-data.
-    global_os.exe_full_path     = string(global_exe_full_path);
-    global_os.exe_parent_folder = string(global_exe_parent_folder);
-    global_os.data_folder       = string(global_data_folder);
+    global_os.exe_full_path     = str8_cstring(global_exe_full_path);
+    global_os.exe_parent_folder = str8_cstring(global_exe_parent_folder);
+    global_os.data_folder       = str8_cstring(global_data_folder);
     
     // Options.
 #if DEVELOPER
@@ -615,16 +648,17 @@ void win32_os_state_init()
     global_os.time              = 0.0f;
     
     // Functions.
-    global_os.reserve           = win32_reserve;
-    global_os.release           = win32_release;
-    global_os.commit            = win32_commit;
-    global_os.decommit          = win32_decommit;
-    global_os.print_to_console  = win32_print_to_console;
-    global_os.read_entire_file  = win32_read_entire_file;
-    global_os.write_entire_file = win32_write_entire_file;
-    global_os.free_file_memory  = win32_free_file_memory;
+    global_os.reserve               = win32_reserve;
+    global_os.release               = win32_release;
+    global_os.commit                = win32_commit;
+    global_os.decommit              = win32_decommit;
+    global_os.print_to_debug_output = win32_print_to_debug_output;
+    global_os.read_entire_file      = win32_read_entire_file;
+    global_os.write_entire_file     = win32_write_entire_file;
+    global_os.get_all_files_in_path = win32_get_all_files_in_path;
+    global_os.free_file_memory      = win32_free_file_memory;
 #ifdef INCLUDE_WASAPI
-    global_os.sound_load        = win32_sound_load;
+    global_os.sound_load            = win32_sound_load;
 #endif
     
     // Arenas.

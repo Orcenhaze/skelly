@@ -1,4 +1,4 @@
-/* orh.h - v0.70 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.71 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.71 - renamed print() and added ability to load File_Info and File_Group and some string functions.
 0.70 - changed array_init() and did some cleanup.
 0.69 - added array_resize() for if we want to allocate memory upfront and fill data using indexing.
 0.68 - added TRUE and FALSE macros.
@@ -1091,8 +1092,8 @@ FUNCDEF Arena_Temp get_scratch(Arena **conflict_array, s32 count);
 //~
 // String8
 //
-#define S8LIT(literal) string((u8 *) literal, ARRAY_COUNT(literal) - 1)
-#define S8ZERO         string(0, 0)
+#define S8LIT(literal) str8((u8 *) literal, ARRAY_COUNT(literal) - 1)
+#define S8ZERO         str8(0, 0)
 
 // @Note: Allocation size is count+1 to account for null terminator.
 struct String8
@@ -1107,17 +1108,17 @@ struct String8
     }
 };
 
-FUNCDEF String8    string(u8 *data, u64 count);
-FUNCDEF String8    string(const char *c_string);
-FUNCDEF u64        string_length(const char *c_string);
-FUNCDEF String8    string_copy(Arena *arena, String8 s);
-FUNCDEF String8    string_cat(Arena *arena, String8 a, String8 b);
-FUNCDEF inline b32 string_empty(String8 s);
-FUNCDEF b32        string_match(String8 a, String8 b);
+FUNCDEF String8    str8(u8 *data, u64 count);
+FUNCDEF String8    str8_cstring(const char *c_string);
+FUNCDEF u64        str8_length(const char *c_string);
+FUNCDEF String8    str8_copy(Arena *arena, String8 s);
+FUNCDEF String8    str8_cat(Arena *arena, String8 a, String8 b);
+FUNCDEF inline b32 str8_empty(String8 s);
+FUNCDEF b32        str8_match(String8 a, String8 b);
 
 inline b32 operator==(String8 lhs, String8 rhs)
 {
-    return string_match(lhs, rhs);
+    return str8_match(lhs, rhs);
 }
 inline b32 operator!=(String8 lhs, String8 rhs)
 {
@@ -1128,16 +1129,31 @@ inline b32 operator!=(String8 lhs, String8 rhs)
 //~
 // String Helper Functions
 //
-FUNCDEF inline void advance(String8 *s, u64 count);
-FUNCDEF        void get(String8 *s, void *data, u64 size);
-FUNCDEF        u32  get_hash(String8 s);
+
+//~ String ctor helpers
+// @Note: Assumes passed strings are immutable! We won't allocate memory for the result string!
+FUNCDEF String8 str8_skip(String8 str, u64 amount);
+
+//~ String character helpers
 FUNCDEF inline b32  is_spacing(char c);
 FUNCDEF inline b32  is_end_of_line(char c);
 FUNCDEF inline b32  is_whitespace(char c);
 FUNCDEF inline b32  is_alpha(char c);
 FUNCDEF inline b32  is_numeric(char c);
 FUNCDEF inline b32  is_alphanumeric(char c);
-FUNCDEF inline b32  is_file_separator(char c);
+FUNCDEF inline b32  is_file_slash(char c);
+
+//~ String path helpers
+// @Note: Assumes passed strings are immutable! We won't allocate memory for the result string!
+FUNCDEF String8 chop_extension(String8 path);
+FUNCDEF String8 extract_file_name(String8 path); // Includes extension.
+FUNCDEF String8 extract_base_name(String8 path); // Doesn't include extension.
+FUNCDEF String8 extract_parent_folder(String8 path);
+
+//~ String misc helpers
+FUNCDEF inline void advance(String8 *s, u64 count);
+FUNCDEF        void get(String8 *s, void *data, u64 size);
+FUNCDEF        u32  get_hash(String8 s);
 
 template<typename T>
 void get(String8 *s, T *value)
@@ -1161,7 +1177,7 @@ FUNCDEF void    f64_to_ascii(String8 *dest, f64 value, u32 precision);
 FUNCDEF u64     ascii_to_u64(char **at);
 FUNCDEF u64     string_format_list(char *dest_start, u64 dest_count, const char *format, va_list arg_list);
 FUNCDEF u64     string_format(char *dest_start, u64 dest_count, const char *format, ...);
-FUNCDEF void    print(const char *format, ...);
+FUNCDEF void    debug_print(const char *format, ...);
 FUNCDEF String8 sprint(Arena *arena, const char *format, ...);
 
 /////////////////////////////////////////
@@ -1713,6 +1729,24 @@ struct Gamepad
     b32 released[GamepadButton_COUNT];
 };
 
+struct File_Info
+{
+    File_Info *next;
+    
+    // @Note: This is a 64-bit number that _means_ the date to the platform, but doesn't have to be understood by the app as any particular date.
+    u64 file_date;
+    u64 file_size;
+    
+    String8 full_path;
+    String8 base_name; // Doesn't include a path or an extension.
+};
+
+struct File_Group
+{
+    u64        file_count;
+    File_Info *first_file_info;
+};
+
 struct OS_State
 {
     // Meta-data.
@@ -1759,15 +1793,16 @@ struct OS_State
     f64 time;                // Incremented by dt at the end of each update.
     
     // Functions.
-    void*   (*reserve) (u64 size);
-    void    (*release) (void *memory);
-    b32     (*commit)  (void *memory, u64 size);
-    void    (*decommit)(void *memory, u64 size);
-    void    (*print_to_console)(String8 text);
-    void    (*free_file_memory)(void *memory);  // @Redundant: Does same thing as release().
-    String8 (*read_entire_file)(String8 full_path);
-    b32     (*write_entire_file)(String8 full_path, String8 data);
-    Sound   (*sound_load)(String8 full_path, u32 sample_rate);
+    void*      (*reserve) (u64 size);
+    void       (*release) (void *memory);
+    b32        (*commit)  (void *memory, u64 size);
+    void       (*decommit)(void *memory, u64 size);
+    void       (*print_to_debug_output)(String8 text);
+    void       (*free_file_memory)(void *memory);  // @Redundant: Does same thing as release().
+    String8    (*read_entire_file)(String8 full_path);
+    b32        (*write_entire_file)(String8 full_path, String8 data);
+    File_Group (*get_all_files_in_path)(Arena *arena, String8 path_wildcard);
+    Sound      (*sound_load)(String8 full_path, u32 sample_rate);
 };
 extern OS_State *os;
 
@@ -3274,25 +3309,25 @@ Arena_Temp get_scratch(Arena **conflict_array, s32 count)
 //~
 // String8 Implementation
 //
-String8 string(u8 *data, u64 count)
+String8 str8(u8 *data, u64 count)
 { 
     String8 result = {data, count};
     return result;
 }
-String8 string(const char *c_string)
+String8 str8_cstring(const char *c_string)
 {
     String8 result;
     result.data  = (u8 *) c_string;
-    result.count = string_length(c_string);
+    result.count = str8_length(c_string);
     return result;
 }
-u64 string_length(const char *c_string)
+u64 str8_length(const char *c_string)
 {
     u64 result = 0;
     while (*c_string++) result++;
     return result;
 }
-String8 string_copy(Arena *arena, String8 s)
+String8 str8_copy(Arena *arena, String8 s)
 {
     String8 result;
     result.count = s.count;
@@ -3301,7 +3336,7 @@ String8 string_copy(Arena *arena, String8 s)
     result.data[result.count] = 0;
     return result;
 }
-String8 string_cat(Arena *arena, String8 a, String8 b)
+String8 str8_cat(Arena *arena, String8 a, String8 b)
 {
     String8 result;
     result.count = a.count + b.count;
@@ -3311,12 +3346,12 @@ String8 string_cat(Arena *arena, String8 a, String8 b)
     result.data[result.count] = 0;
     return result;
 }
-b32 string_empty(String8 s)
+b32 str8_empty(String8 s)
 {
     b32 result = (!s.data || !s.count);
     return result;
 }
-b32 string_match(String8 a, String8 b)
+b32 str8_match(String8 a, String8 b)
 {
     if (a.count != b.count) return FALSE;
     for(u64 i = 0; i < a.count; i++)
@@ -3330,33 +3365,18 @@ b32 string_match(String8 a, String8 b)
 //~
 // String Helper Functions Implementation
 //
-void advance(String8 *s, u64 count)
+
+//~ String ctor helpers
+// @Note: Assumes passed strings are immutable! We won't allocate memory for the result string!
+String8 str8_skip(String8 str, u64 amount)
 {
-    count     = CLAMP_UPPER(s->count, count);
-    s->data  += count;
-    s->count -= count;
+    amount         = CLAMP_UPPER(str.count, amount);
+    u64 remaining  = str.count - amount;
+    String8 result = {str.data + amount, remaining};
+    return result;
 }
-void get(String8 *s, void *data, u64 size)
-{
-    ASSERT(size <= s->count);
-    
-    MEMORY_COPY(data, s->data, size);
-    advance(s, size);
-}
-u32 get_hash(String8 s)
-{
-    // djb2 hash from http://www.cse.yorku.ca/~oz/hash.html
-    
-    u32 hash = 5381;
-    
-    for(s32 i = 0; i < s.count; i++)
-    {
-        /* hash * 33 + s[i] */
-        hash = ((hash << 5) + hash) + *(s.data + i);
-    }
-    
-    return hash;
-}
+
+//~ String character helpers
 b32 is_spacing(char c)
 {
     b32 result = ((c == ' ')  ||
@@ -3392,10 +3412,103 @@ b32 is_alphanumeric(char c)
     b32 result = (is_alpha(c) || is_numeric(c));
     return result;
 }
-b32 is_file_separator(char c)
+b32 is_slash(char c)
 {
     b32 result = ((c == '\\') || (c == '/'));
     return result;
+}
+
+//~ String path helpers
+// @Note: Assumes passed strings are immutable! We won't allocate memory for the result string!
+String8 chop_extension(String8 path)
+{
+    String8 result = path;
+    if (path.count <= 0)
+        return result;
+    
+    u64 last_period_pos = path.count;
+    for (u64 i = path.count - 1; i >= 0 ; i--) {
+        if (path[i] == '.') {
+            last_period_pos = i;
+            break;
+        }
+    }
+    
+    result.count = last_period_pos;
+    return result;
+}
+String8 extract_file_name(String8 path)
+{
+    // Result includes extension.
+    String8 result = path;
+    if (path.count <= 0)
+        return result;
+    
+    u64 last_slash_index = path.count;
+    for (u64 i = path.count - 1; i >= 0; i--) {
+        if (is_slash(path[i])) {
+            last_slash_index = i;
+            break;
+        }
+    }
+    
+    result = str8_skip(path, last_slash_index + 1);
+    return result;
+}
+String8 extract_base_name(String8 path)
+{
+    // Result doesn't include extension.
+    String8 result = extract_file_name(path);
+    result         = chop_extension(result);
+    return result;
+}
+String8 extract_parent_folder(String8 path)
+{
+    // Result includes extension.
+    String8 result = path;
+    if (path.count <= 0)
+        return result;
+    
+    u64 last_slash_pos = path.count;
+    for (u64 i = path.count - 1; i >= 0; i--) {
+        if (is_slash(path[i])) {
+            last_slash_pos = i;
+            break;
+        }
+    }
+    
+    // (+ 1) to include the slash.
+    result.count = last_slash_pos + 1;
+    return result;
+}
+
+//~ String misc helpers
+void advance(String8 *s, u64 count)
+{
+    count     = CLAMP_UPPER(s->count, count);
+    s->data  += count;
+    s->count -= count;
+}
+void get(String8 *s, void *data, u64 size)
+{
+    ASSERT(size <= s->count);
+    
+    MEMORY_COPY(data, s->data, size);
+    advance(s, size);
+}
+u32 get_hash(String8 s)
+{
+    // djb2 hash from http://www.cse.yorku.ca/~oz/hash.html
+    
+    u32 hash = 5381;
+    
+    for(s32 i = 0; i < s.count; i++)
+    {
+        /* hash * 33 + s[i] */
+        hash = ((hash << 5) + hash) + *(s.data + i);
+    }
+    
+    return hash;
 }
 
 /////////////////////////////////////////
@@ -3475,7 +3588,7 @@ u64 string_format_list(char *dest_start, u64 dest_count, const char *format, va_
 {
     if (!dest_count) return 0;
     
-    String8 dest_buffer = string((u8*)dest_start, dest_count);
+    String8 dest_buffer = str8((u8*)dest_start, dest_count);
     
     char *at = (char *) format;
     while (*at) {
@@ -3641,10 +3754,10 @@ String8 sprint(Arena *arena, const char *format, ...)
     s.count = string_format_list(temp, sizeof(temp), format, arg_list);
     va_end(arg_list);
     
-    String8 result = string_copy(arena, s);
+    String8 result = str8_copy(arena, s);
     return result;
 }
-void print(const char *format, ...)
+void debug_print(const char *format, ...)
 {
     char temp[4096];
     String8 s = {};
@@ -3655,7 +3768,7 @@ void print(const char *format, ...)
     s.count = string_format_list(temp, sizeof(temp), format, arg_list);
     va_end(arg_list);
     
-    os->print_to_console(s);
+    os->print_to_debug_output(s);
 }
 
 /////////////////////////////////////////
@@ -3718,7 +3831,7 @@ String8 sb_to_string(String_Builder *builder, Arena *arena)
         builder->length--;
     }
     
-    String8 result = string_copy(arena, string(builder->start, builder->length));
+    String8 result = str8_copy(arena, str8(builder->start, builder->length));
     return result;
 }
 

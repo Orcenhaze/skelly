@@ -1,9 +1,10 @@
-/* orh_d3d11.cpp - v0.02 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.03 - C++ D3D11 immediate mode renderer.
 
 #include "orh.h" before this file.
 
 REVISION HISTORY:
-0.02 - Renamed some d3d11 objects.
+0.03 - renamed print() to debug_print() and some string names.
+0.02 - renamed some d3d11 objects.
 
 CONVENTIONS:
 * CCW winding order for front faces.
@@ -256,7 +257,7 @@ FUNCTION void d3d11_load_texture(Texture *texture, String8 full_path, b32 use_sr
         device->CreateShaderResourceView(texture2d, 0, &texture->view);
         texture2d->Release();
     } else {
-        print("STBI ERROR: failed to load image %S\n", texture->full_path);
+        debug_print("STBI ERROR: failed to load image %S\n", texture->full_path);
     }
 }
 
@@ -272,7 +273,7 @@ FUNCTION void d3d11_load_font(Font *font, String8 full_path, s32 ascii_start, s3
     String8 file    = os->read_entire_file(full_path);
     ASSERT(file.data);
     if (!file.data) {
-        print("Failed to load font %S\n", full_path);
+        debug_print("Failed to load font %S\n", full_path);
         return;
     }
     defer(os->free_file_memory(file.data));
@@ -520,7 +521,7 @@ float4 ps(PS_Input input) : SV_TARGET
     return input.color * tex_color;
 }
 )XX";
-    String8 hlsl = string(source);
+    String8 hlsl = str8_cstring(source);
     d3d11_compile_shader(hlsl, layout_desc, ARRAYSIZE(layout_desc), &immediate_input_layout, &immediate_vs, &immediate_ps);
 }
 
@@ -558,7 +559,7 @@ FUNCTION void create_pbr_shader()
 #include "pbr.hlsl"
     ;
     
-    String8 hlsl = string(pbr_source);
+    String8 hlsl = str8_cstring(pbr_source);
     d3d11_compile_shader(hlsl, layout_desc, ARRAY_COUNT(layout_desc), &pbr_input_layout, &pbr_vs, &pbr_ps);
 }
 
