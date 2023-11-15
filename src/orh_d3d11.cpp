@@ -1,8 +1,9 @@
-/* orh_d3d11.cpp - v0.03 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.04 - C++ D3D11 immediate mode renderer.
 
 #include "orh.h" before this file.
 
 REVISION HISTORY:
+0.04 - removed ability to pass sRGB bool to load_texture(). Now we always create 4-bpp non-sRGB texture.
 0.03 - renamed print() to debug_print() and some string names.
 0.02 - renamed some d3d11 objects.
 
@@ -215,13 +216,11 @@ FUNCTION void d3d11_create_texture(Texture *texture, s32 w, s32 h, u8 *color_dat
     texture2d->Release();
 }
 
-FUNCTION void d3d11_load_texture(Texture *texture, String8 full_path, b32 use_srgb = TRUE)
+FUNCTION void d3d11_load_texture(Texture *texture, String8 full_path)
 {
-    // @Speed:
     // @Memory:
     // @Todo: For now, we will force bpp to be 4. But in the future, we could save some VRAM by
     // keeping original file bpp and setting desc.Format accordingly!
-    //
     
 	texture->full_path = full_path;
     
@@ -239,10 +238,8 @@ FUNCTION void d3d11_load_texture(Texture *texture, String8 full_path, b32 use_sr
         desc.MipLevels  = 1;
         desc.ArraySize  = 1;
         
-        if (use_srgb)
-            desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-        else
-            desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        // @Note: We won't use _SRGB here; You should manually convert to linear space in the shader.
+        desc.Format     = DXGI_FORMAT_R8G8B8A8_UNORM;
         
         desc.SampleDesc = {1, 0};
         desc.Usage      = D3D11_USAGE_IMMUTABLE;

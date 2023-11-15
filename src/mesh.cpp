@@ -52,7 +52,8 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
             s32 map_name_len = 0;
             get(&file, &map_name_len);
             
-            String8 map_name = str8(file.data, map_name_len);
+            // Exporter includes extension in the file name. We only want the base name.
+            String8 map_name = extract_base_name(str8(file.data, map_name_len));
             advance(&file, map_name_len);
             
             mesh->material_info[i].texture_map_names[map_index] = str8_copy(arena, map_name);
@@ -64,10 +65,6 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
 
 FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)
 {
-    // @Temporary:
-    // @Todo: Change this so that we find a texture from a catalog/table.
-    // We must no just create a texture every time for each triangle list.
-    //
     for (s32 list_index = 0; list_index < mesh->triangle_list_info.count; list_index++) {
         Triangle_List_Info *list = &mesh->triangle_list_info[list_index];
         Material_Info *m         = &mesh->material_info[list->material_index];
@@ -75,25 +72,18 @@ FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)
         for (s32 map_index = 0; map_index < MaterialTextureMapType_COUNT; map_index++) {
             String8 map_name = m->texture_map_names[map_index];
             
-            // @Todo: @Cleanup: Is this the way we should do this...? Probably not!
-            // If we load all textures into a catalog, how would we decide whether to set sRGB or not?
-            //
-            b32 use_srgb = FALSE;
-            if (map_index == (s32)MaterialTextureMapType_ALBEDO)
-                use_srgb = TRUE;
-            
-            if (str8_empty(map_name)) {
-                list->texture_maps[map_index] = white_texture;
-            } else {
-                Arena_Temp scratch       = get_scratch(0, 0);
-                String8 texture_map_path = sprint(scratch.arena, "%S%S", os->data_folder, map_name);
-                d3d11_load_texture(&list->texture_maps[map_index], texture_map_path, use_srgb);
-                free_scratch(scratch);
+            Texture *map = &white_texture;
+            if (!str8_empty(map_name)) {
+                map = table_find_pointer(&texture_catalog, map_name);
             }
             
-            if (!list->texture_maps[map_index].width || !list->texture_maps[map_index].height) {
-                debug_print("MESH LOAD ERROR: Couldn't find texture %S\n", map_name);
+            if (!map) {
+                debug_print("MESH TEXTURE LOAD ERROR: Couldn't find texture %S\n", map_name);
+                list->texture_maps[map_index] = &white_texture;
+                continue;
             }
+            
+            list->texture_maps[map_index] = map;
         }
     }
 }
@@ -142,26 +132,23 @@ FUNCTION void generate_buffers_for_mesh(Triangle_Mesh *mesh)
     free_scratch(scratch);
 }
 
-FUNCTION void load_triangle_mesh(Arena *arena, Triangle_Mesh *mesh)
+FUNCTION void load_triangle_mesh(Triangle_Mesh *mesh, String8 full_path)
 {
-    // @Note: Must manually set name of mesh before calling this.
-    //
-    Arena_Temp scratch = get_scratch(0, 0);
-    String8 path       = sprint(scratch.arena, "%S%S.mesh", os->data_folder, mesh->name);
-    String8 file       = os->read_entire_file(path);
+    mesh->full_path = full_path;
+    
+    String8 file = os->read_entire_file(full_path);
     if (!file.data) {
-        debug_print("MESH LOAD ERROR: Couldn't load mesh at %S\n", path);
+        debug_print("MESH LOAD ERROR: Couldn't load mesh at %S\n", full_path);
         return;
     }
     
-    mesh->full_path = str8_copy(arena, path);
-    free_scratch(scratch);
+    String8 orig_file  = file;
+    Arena_Temp scratch = get_scratch(0, 0);
     
-    String8 orig_file = file;
-    
-    load_mesh_data(arena, mesh, file);
+    load_mesh_data(scratch.arena, mesh, file);
     load_mesh_textures(mesh);
     generate_buffers_for_mesh(mesh);
     
+    free_scratch(scratch);
     os->free_file_memory(orig_file.data);
 }

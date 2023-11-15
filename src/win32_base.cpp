@@ -214,7 +214,8 @@ FUNCTION b32 win32_write_entire_file(String8 full_path, String8 data)
 FUNCTION File_Group win32_get_all_files_in_path(Arena *arena, String8 path_wildcard)
 {
     File_Group result = {};
-    u64 file_count = 0;
+    
+    String8 directory = extract_parent_folder(path_wildcard);
     
     WIN32_FIND_DATA find_data;
     HANDLE find_handle = FindFirstFile((char*)path_wildcard.data, &find_data); 
@@ -227,7 +228,6 @@ FUNCTION File_Group win32_get_all_files_in_path(Arena *arena, String8 path_wildc
         info->file_size = (((u64)find_data.nFileSizeHigh << (u64)32) | (u64)find_data.nFileSizeLow);
         
         String8 file_name = str8_cstring(find_data.cFileName); // Includes extension.
-        String8 directory = extract_parent_folder(path_wildcard);
         
         info->full_path = str8_cat(arena, directory, file_name);
         info->base_name = str8_copy(arena, extract_base_name(file_name));
@@ -237,8 +237,6 @@ FUNCTION File_Group win32_get_all_files_in_path(Arena *arena, String8 path_wildc
         
         if(!FindNextFile(find_handle, &find_data)) break;
     }
-    
-    result.file_count = file_count;
     
     return result;
 }

@@ -54,12 +54,13 @@ FUNCTION void draw_entity(Entity *e)
         f32 roughness      = m->roughness;
         f32 ao             = m->ambient_occlusion;
         
-        auto *v = white_texture.view;
-        if (list->texture_maps[MaterialTextureMapType_NORMAL].view!= v)    use_normal_map = TRUE;
-        if (list->texture_maps[MaterialTextureMapType_ALBEDO].view!= v)    base_color.x   = -1.0f;
-        if (list->texture_maps[MaterialTextureMapType_METALLIC].view!= v)  metallic       = -1.0f;
-        if (list->texture_maps[MaterialTextureMapType_ROUGHNESS].view!= v) roughness      = -1.0f;
-        if (list->texture_maps[MaterialTextureMapType_AO].view!= v)        ao             = -1.0f;
+        // Make shader use texture maps.
+        Texture *w = &white_texture;
+        if (list->texture_maps[MaterialTextureMapType_NORMAL]   != w) use_normal_map = TRUE;
+        if (list->texture_maps[MaterialTextureMapType_ALBEDO]   != w) base_color.x   = -1.0f;
+        if (list->texture_maps[MaterialTextureMapType_METALLIC] != w) metallic       = -1.0f;
+        if (list->texture_maps[MaterialTextureMapType_ROUGHNESS]!= w) roughness      = -1.0f;
+        if (list->texture_maps[MaterialTextureMapType_AO]       != w) ao             = -1.0f;
         
         // Upload ps constants.
         PBR_PS_Constants ps_constants = {};
@@ -80,7 +81,7 @@ FUNCTION void draw_entity(Entity *e)
         
         // Upload textures.
         for (s32 map_index = 0; map_index < MaterialTextureMapType_COUNT; map_index++)
-            device_context->PSSetShaderResources(map_index, 1, &list->texture_maps[map_index].view);
+            device_context->PSSetShaderResources(map_index, 1, &list->texture_maps[map_index]->view);
         
         // Draw.
         device_context->DrawIndexed(list->num_indices, list->first_index, 0);

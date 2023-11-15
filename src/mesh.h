@@ -30,10 +30,7 @@ struct Triangle_List_Info {
     s32 num_indices;
     s32 first_index;
     
-    // @Temporary: Have them here for now.
-    // Must be pointers so we don't have duplicate textures!
-    Texture texture_maps[MaterialTextureMapType_COUNT];
-    //Texture *texture_maps[MaterialTextureMapType_COUNT];
+    Texture *texture_maps[MaterialTextureMapType_COUNT];
 };
 
 struct Material_Info {

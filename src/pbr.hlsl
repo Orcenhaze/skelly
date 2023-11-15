@@ -102,7 +102,11 @@ float4 ps(PS_Input input) : SV_TARGET
 	float  roughness_ = roughness         < 0.0f? roughness_map.Sample(sampler0, input.uv).r   : roughness;
 	float  ao_        = ambient_occlusion < 0.0f? ao_map       .Sample(sampler0, input.uv).r   : ambient_occlusion;
 
+	// Convert from sRGB to linear space.
+	albedo_ = pow(albedo_, 2.2);
+
 	if (use_normal_map == 1) {
+		// Convert from tangent space to world space.
 		normal_ = normal_ * 2.0 - 1.0;
 		normal_ = mul(input.tbn, normal_);
 	}

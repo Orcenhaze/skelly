@@ -5,6 +5,9 @@
 
 #include "mesh.h"
 
+GLOBAL Table<String8, Texture>       texture_catalog;
+GLOBAL Table<String8, Triangle_Mesh> mesh_catalog;
+
 struct Entity
 {
     String8 name;
@@ -15,6 +18,7 @@ struct Entity
     
     Triangle_Mesh *mesh;
 };
+GLOBAL Entity guy;
 
 FUNCTION void update_entity_transform(Entity *entity)
 {
@@ -59,8 +63,53 @@ GLOBAL Camera camera;
 #include "mesh.cpp"
 #include "draw.cpp"
 
-GLOBAL Triangle_Mesh guy_mesh;
-GLOBAL Entity guy;
+FUNCTION void load_textures(Table<String8, Texture> *table)
+{
+    Arena_Temp scratch = get_scratch(0, 0);
+    defer(free_scratch(scratch));
+    
+    String8 path_wild = sprint(scratch.arena, "%Stextures/*.png", os->data_folder);
+    
+    File_Group file_group = os->get_all_files_in_path(scratch.arena, path_wild);
+    File_Info *info       = file_group.first_file_info;
+    
+    while (info) {
+        // Use permanent arena for strings to persist.
+        String8 name = str8_copy(os->permanent_arena, info->base_name);
+        String8 path = str8_copy(os->permanent_arena, info->full_path);
+        
+        Texture tex  = {};
+        d3d11_load_texture(&tex, path);
+        
+        table_add(table, name, tex);
+        
+        info = info->next;
+    }
+}
+
+FUNCTION void load_meshes(Table<String8, Triangle_Mesh> *table)
+{
+    Arena_Temp scratch = get_scratch(0, 0);
+    defer(free_scratch(scratch));
+    
+    String8 path_wild = sprint(scratch.arena, "%Smeshes/*.mesh", os->data_folder);
+    
+    File_Group file_group = os->get_all_files_in_path(scratch.arena, path_wild);
+    File_Info *info       = file_group.first_file_info;
+    
+    while (info) {
+        // Use permanent arena for strings to persist.
+        String8 name = str8_copy(os->permanent_arena, info->base_name);
+        String8 path = str8_copy(os->permanent_arena, info->full_path);
+        
+        Triangle_Mesh mesh = {};
+        load_triangle_mesh(&mesh, path);
+        
+        table_add(table, name, mesh);
+        
+        info = info->next;
+    }
+}
 
 FUNCTION void game_init()
 {
@@ -69,15 +118,17 @@ FUNCTION void game_init()
     
     set_view_to_proj();
     
-    // Mesh init.
-    guy_mesh.name = S8LIT("guy");
-    load_triangle_mesh(os->permanent_arena, &guy_mesh);
+    //
+    // Load assets. Textures first because meshes reference them.
+    //
+    load_textures(&texture_catalog);
+    load_meshes(&mesh_catalog);
     
     // Entity init.
     guy.name        = S8LIT("guy");
     guy.position    = {};
     guy.orientation = quaternion_identity();
-    guy.mesh        = &guy_mesh;
+    guy.mesh        = table_find_pointer(&mesh_catalog, S8LIT("guy"));
     update_entity_transform(&guy);
 }
 

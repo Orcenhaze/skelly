@@ -1,4 +1,4 @@
-/* orh.h - v0.71 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.72 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.72 - fixed bug with string path helper functions.
 0.71 - renamed print() and added ability to load File_Info and File_Group and some string functions.
 0.70 - changed array_init() and did some cleanup.
 0.69 - added array_resize() for if we want to allocate memory upfront and fill data using indexing.
@@ -1487,7 +1488,7 @@ V* table_add(Table<K, V> *table, K key, V value)
     //
     String8 s = {};
     if (typeid(K) == typeid(String8)) { s = *(String8*)&key; }
-    else                              { s = string((u8*)&key, sizeof(K)); }
+    else                              { s = str8((u8*)&key, sizeof(K)); }
     
     u32 hash  = get_hash(s);
     s32 index = hash % table->capacity;
@@ -1528,7 +1529,7 @@ V table_find(Table<K, V> *table, K key)
     //
     String8 s = {};
     if (typeid(K) == typeid(String8)) { s = *(String8*)&key; }
-    else                              { s = string((u8*)&key, sizeof(K)); }
+    else                              { s = str8((u8*)&key, sizeof(K)); }
     
     u32 hash  = get_hash(s);
     s32 index = hash % table->capacity;
@@ -1562,7 +1563,7 @@ V* table_find_pointer(Table<K, V> *table, K key)
     //
     String8 s = {};
     if (typeid(K) == typeid(String8)) { s = *(String8*)&key; }
-    else                              { s = string((u8*)&key, sizeof(K)); }
+    else                              { s = str8((u8*)&key, sizeof(K)); }
     
     u32 hash  = get_hash(s);
     s32 index = hash % table->capacity;
@@ -3427,7 +3428,7 @@ String8 chop_extension(String8 path)
         return result;
     
     u64 last_period_pos = path.count;
-    for (u64 i = path.count - 1; i >= 0 ; i--) {
+    for (s64 i = path.count - 1; i >= 0 ; i--) {
         if (path[i] == '.') {
             last_period_pos = i;
             break;
@@ -3444,15 +3445,15 @@ String8 extract_file_name(String8 path)
     if (path.count <= 0)
         return result;
     
-    u64 last_slash_index = path.count;
-    for (u64 i = path.count - 1; i >= 0; i--) {
+    s64 last_slash_pos = -1;
+    for (s64 i = path.count - 1; i >= 0; i--) {
         if (is_slash(path[i])) {
-            last_slash_index = i;
+            last_slash_pos = i;
             break;
         }
     }
     
-    result = str8_skip(path, last_slash_index + 1);
+    result = str8_skip(path, last_slash_pos + 1);
     return result;
 }
 String8 extract_base_name(String8 path)
@@ -3470,7 +3471,7 @@ String8 extract_parent_folder(String8 path)
         return result;
     
     u64 last_slash_pos = path.count;
-    for (u64 i = path.count - 1; i >= 0; i--) {
+    for (s64 i = path.count - 1; i >= 0; i--) {
         if (is_slash(path[i])) {
             last_slash_pos = i;
             break;
