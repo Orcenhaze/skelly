@@ -114,7 +114,10 @@ Font dfont;
 
 ////////////////////////////////
 //~ Renderers info
-// Default immediate mode renderer info.
+
+//
+//~ Default immediate mode renderer info.
+//
 struct Immediate_VS_Constants
 {
     M4x4 object_to_proj_matrix;
@@ -138,8 +141,9 @@ GLOBAL Vertex_XCNU   immediate_vertices[MAX_IMMEDIATE_VERTICES];
 // @Note: If true: vertices we push to buffer are pixel positions relative to drawing rect and Y grows down.
 GLOBAL b32 is_using_pixel_coords;
 
-
-// PBR renderer info
+//
+//~ PBR renderer info
+//
 struct Vertex_XTBNUC
 {
     V3 position;

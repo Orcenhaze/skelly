@@ -74,7 +74,7 @@ FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)
             
             Texture *map = &white_texture;
             if (!str8_empty(map_name)) {
-                map = table_find_pointer(&texture_catalog, map_name);
+                map = table_find_pointer(&game->texture_catalog, map_name);
             }
             
             if (!map) {

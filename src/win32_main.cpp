@@ -8,6 +8,7 @@
 #include "orh.h"
 #include "orh_d3d11.cpp"
 
+#include "game.h"
 #include "game.cpp"
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,

@@ -3,65 +3,13 @@
 // @Cleanup: Move to appropriate files!!
 // @Cleanup:
 
-#include "mesh.h"
 
-GLOBAL Table<String8, Texture>       texture_catalog;
-GLOBAL Table<String8, Triangle_Mesh> mesh_catalog;
-
-struct Entity
-{
-    String8 name;
-    
-    V3           position;
-    Quaternion   orientation;
-    M4x4_Inverse object_to_world_matrix;
-    
-    Triangle_Mesh *mesh;
-};
-GLOBAL Entity guy;
-
-FUNCTION void update_entity_transform(Entity *entity)
-{
-    V3 pos         = entity->position;
-    Quaternion ori = entity->orientation;
-    
-    M4x4 m_non = m4x4_identity();
-    m_non._14 = pos.x;
-    m_non._24 = pos.y;
-    m_non._34 = pos.z;
-    //m_non._11 = scale.x;
-    //m_non._22 = scale.y;
-    //m_non._33 = scale.z;
-    
-    M4x4 m_inv = m4x4_identity();
-    m_inv._14 = -pos.x;
-    m_inv._24 = -pos.y;
-    m_inv._34 = -pos.z;
-    //m_inv._11 = 1.0f/scale.x;
-    //m_inv._22 = 1.0f/scale.y;
-    //m_inv._33 = 1.0f/scale.z;
-    
-    M4x4 r = m4x4_from_quaternion(ori);
-    
-    entity->object_to_world_matrix.forward = m_non * r;
-    entity->object_to_world_matrix.inverse = transpose(r) * m_inv;
-}
-
-
-GLOBAL V3 V3F = {0,  0, -1};
-GLOBAL V3 V3U = {0,  1,  0};
-GLOBAL V3 V3R = {1,  0,  0};
-
-struct Camera
-{
-    V3 position;
-    V3 forward;
-    M4x4_Inverse matrix; // look_at matrix.
-};
-GLOBAL Camera camera;
 
 #include "mesh.cpp"
+#include "entity.cpp"
 #include "draw.cpp"
+
+
 
 FUNCTION void load_textures(Table<String8, Texture> *table)
 {
@@ -111,27 +59,6 @@ FUNCTION void load_meshes(Table<String8, Triangle_Mesh> *table)
     }
 }
 
-FUNCTION void game_init()
-{
-    camera.position = v3(0, 0, 3);
-    camera.forward  = v3(0, 0, -1);
-    
-    set_view_to_proj();
-    
-    //
-    // Load assets. Textures first because meshes reference them.
-    //
-    load_textures(&texture_catalog);
-    load_meshes(&mesh_catalog);
-    
-    // Entity init.
-    guy.name        = S8LIT("guy");
-    guy.position    = {};
-    guy.orientation = quaternion_identity();
-    guy.mesh        = table_find_pointer(&mesh_catalog, S8LIT("guy"));
-    update_entity_transform(&guy);
-}
-
 FUNCTION void control_camera(Camera *cam, V3 delta_mouse)
 {
     f32 dt = os->dt;
@@ -173,17 +100,33 @@ FUNCTION void control_camera(Camera *cam, V3 delta_mouse)
                             V3U);
 }
 
+FUNCTION void game_init()
+{
+    game = PUSH_STRUCT_ZERO(os->permanent_arena, Game_State);
+    
+    set_view_to_proj();
+    
+    //
+    // Load assets. Textures first because meshes reference them.
+    //
+    load_textures(&game->texture_catalog);
+    load_meshes(&game->mesh_catalog);
+    
+    // Init camera.
+    game->camera = {{}, V3F};
+}
+
 FUNCTION void game_update()
 {
     LOCAL_PERSIST V3 old_ndc = {};
     V3 delta_mouse = os->mouse_ndc - old_ndc;
     old_ndc        = os->mouse_ndc;
     
-    control_camera(&camera, delta_mouse);
-    set_world_to_view(camera.matrix);
+    control_camera(&game->camera, delta_mouse);
+    set_world_to_view(game->camera.matrix);
 }
 
 FUNCTION void game_render()
 {
-    draw_entity(&guy);
+    
 }
