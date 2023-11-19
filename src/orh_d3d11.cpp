@@ -158,20 +158,37 @@ struct PBR_VS_Constants
     M4x4 object_to_proj_matrix;
     M4x4 object_to_world_matrix;
 };
+#define MAX_POINT_LIGHTS 5
+#define MAX_DIR_LIGHTS   2
 struct PBR_PS_Constants
 {
     // @Note: HLSL cbuffers pack everything in 16 bytes (Vector4), so we order stuff this way... yikes.
+    struct
+	{
+		V3  position;  // In world space
+		f32 intensity; // In candelas
+		V3  color;
+		f32 attenuation_radius;	// In world space units
+	} point_lights[MAX_POINT_LIGHTS];
     
-	V3  base_color;
+	struct
+	{
+		V3  direction; // In world space
+        f32 intensity; // In candelas
+		V3  color;
+		f32 indirect_lighting_intensity; // In candelas
+	} dir_lights[MAX_DIR_LIGHTS];
+    
+    V3  camera_position; // In world space
     b32 use_normal_map;
     
-    V3 camera_position; // In world space.
+	V3  base_color;
     f32 metallic;
-    
-    V3 light_position;  // In world space.
 	f32 roughness;
-    
     f32 ambient_occlusion;
+    
+    s32 num_point_lights;
+    s32 num_dir_lights;
 };
 GLOBAL ID3D11InputLayout  *pbr_input_layout;
 GLOBAL ID3D11Buffer       *pbr_vs_cbuffer;

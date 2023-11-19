@@ -1,4 +1,5 @@
 R"(
+
 struct VS_Input
 {
 	float3 position  : POSITION;
@@ -24,18 +25,39 @@ cbuffer VS_Constants : register(b0)
 	float4x4 object_to_world_matrix;
 }
 
+static const float PI = 3.14159265f;
+
+// If you modify max lights allowed, don't forget to also change it in (d3d11_orh.h)
+static const int MAX_POINT_LIGHTS = 5;
+static const int MAX_DIR_LIGHTS   = 2;
 cbuffer PS_Constants : register(b1)
 {
-	float3 base_color;
+	struct
+	{
+		float3 position;  // In world space
+		float  intensity; // In candelas
+		float3 color;
+		float  attenuation_radius;	// In world space units
+	} point_lights[MAX_POINT_LIGHTS];
+
+	struct
+	{
+		float3 direction; // In world space
+		float  intensity; // In candelas
+		float3 color;
+		float  indirect_lighting_intensity; // In candelas
+	} dir_lights[MAX_DIR_LIGHTS];
+
+	float3 camera_position; // In world space
 	int    use_normal_map;
 
-	float3 camera_position; // In world space.
+	float3 base_color;
 	float  metallic;
-	
-	float3 light_position;  // In world space.
 	float  roughness;
-	
 	float  ambient_occlusion;
+
+	int num_point_lights;
+	int num_dir_lights;
 }
 
 sampler           sampler0       : register(s0);
@@ -66,9 +88,15 @@ PS_Input vs(VS_Input input)
 //
 // Helper functions (GGX BRDF)
 //
-static const float PI = 3.14159265f;
+struct BRDF_Surface
+{
+	float3 normal;
+	float  roughness;
+	float3 albedo;
+	float  metalness;
+};
 
-float distribution_ggx(float3 N, float3 H, float roughness)
+float normal_distribution_ggx(float3 N, float3 H, float roughness)
 {
     float a      = roughness * roughness;
     float a2     = a * a;
@@ -92,6 +120,36 @@ float geometry_schlick_ggx(float NdotV, float roughness)
     return num / denom;
 }
 
+float3 BRDF(BRDF_Surface surface, float3 V, float3 L)
+{
+	const float3 N         = surface.normal;
+	const float  roughness = surface.roughness;
+	const float3 albedo    = surface.albedo;
+	const float  metallic  = surface.metalness;
+
+	float3 H = normalize(V + L);
+
+	// Fresnel-Schlick approximation for specular reflection.
+	float3 F0 = 0.04; 
+	F0        = lerp(F0, albedo, metallic);
+    float3 F  = F0 + (1.0 - F0) * pow(saturate(1.0 - dot(V, H)), 5.0);
+
+	// Cook-Torrance microfacet BRDF.
+    float NdotL = saturate(dot(N, L));
+    float NdotV = saturate(dot(N, V));
+    float D     = normal_distribution_ggx(N, H, roughness);
+    float G     = geometry_schlick_ggx(NdotV, roughness);
+    float denominator = 4.0 * max(NdotL * NdotV, 0.0) + 0.001;
+    float3 specular   = (D * F * G) / denominator;
+
+    // Diffuse BRDF.
+    float3 kS      = F;
+    float3 kD      = (1.0 - kS) * (1.0 - metallic);
+    float3 diffuse = (kD * albedo) / PI;
+
+    return diffuse + specular;
+}
+
 float4 ps(PS_Input input) : SV_TARGET
 {
 	// @Note: A good reference for this is "Real Shading in Unreal Engine 4 by Brian Karis, Epic Games".
@@ -111,39 +169,46 @@ float4 ps(PS_Input input) : SV_TARGET
 		normal_ = mul(input.tbn, normal_);
 	}
 
-	// Lighting calculations.
-    float3 N = normalize(normal_);
     float3 V = normalize(camera_position - input.pos_world);
-    float3 L = normalize(light_position - input.pos_world);
-    float3 H = normalize(V + L); // Half vector (microfacet normal).
 
-    // Fresnel-Schlick approximation for specular reflection.
-	float3 F0 = 0.04; 
-	F0        = lerp(F0, albedo_, metallic_);
-    float3 F  = F0 + (1.0 - F0) * pow(saturate(1.0 - dot(V, H)), 5.0);
+    BRDF_Surface surface = (BRDF_Surface)0;
+    surface.normal       = normalize(normal_);
+    surface.roughness    = roughness_;
+	surface.albedo       = albedo_;
+	surface.metalness    = metallic_;
 
-	// Cook-Torrance microfacet BRDF.
-    float NdotL = saturate(dot(N, L));
-    float NdotV = saturate(dot(N, V));
-    float D     = distribution_ggx(N, H, roughness_);
-    float G     = geometry_schlick_ggx(NdotV, roughness_);
-    float3 kS   = F;
-    float3 kD   = 1.0 - kS;
-    kD         *= 1.0 - metallic_;
+	float3 Ia   = 0.0; // Ambient illumination
+	float3 IdIs = 0.0; // Diffuse and specular illumination
 
-    float denominator = 4.0 * max(NdotL * NdotV, 0.0) + 0.001;
-    float3 specular   = (D * G * F) / denominator;
+	// Point lights
+	// =================================================================================================
+    for (int i = 0; i < num_point_lights; i++) {
+    	float3 L    = normalize(point_lights[i].position - input.pos_world);
+	    float NdotL = saturate(dot(surface.normal, L));
+	    
+	    // Calculate light radiance/contribution.
+	    float  dist_to_light  = length(point_lights[i].position - input.pos_world);
+		float attenuation     = max(0.0, 1.0 - dist_to_light / point_lights[i].attenuation_radius);
+    	attenuation           = (attenuation * attenuation) / (dist_to_light * dist_to_light); // Quadratic attenuation for smoother falloff
+    	float3 radiance       = attenuation * point_lights[i].color * point_lights[i].intensity;
 
-    // Calculate light radiance.
-    float  dist_to_light = length(light_position - input.pos_world);
-    float  attenuation   = 1.0 / (dist_to_light * dist_to_light);
-    float3 radiance      = attenuation; // Should multiply with light color, but for now assume it's white.
+    	IdIs += BRDF(surface, V, L) * radiance * NdotL;
+    }
+   	
 
-    float3 diffuse = (kD * albedo_) / PI;
-    float3 color   = (diffuse + specular) * NdotL * radiance;
+	// Directional lights
+	// =================================================================================================
+    for (int j = 0; j < num_dir_lights; j++) {
+    	float3 L    = dir_lights[j].direction;
+    	float NdotL = saturate(dot(surface.normal, L));
+
+	    float3 radiance = dir_lights[j].color * dir_lights[j].intensity;
+
+	    IdIs += BRDF(surface, V, L) * radiance * NdotL;
+    	Ia   += dir_lights[j].indirect_lighting_intensity * surface.albedo * ao_;
+    }
     
-    float3 ambient = 0.3 * albedo_ * ao_;
-    color          = color + ambient;
+	float3 color = Ia + IdIs;
 
     // Apply Reinhard tone mapping.
     color = color / (color + 1.0);

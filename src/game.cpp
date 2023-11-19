@@ -1,15 +1,7 @@
 
-// @Cleanup: 
-// @Cleanup: Move to appropriate files!!
-// @Cleanup:
-
-
-
 #include "mesh.cpp"
 #include "entity.cpp"
 #include "draw.cpp"
-
-
 
 FUNCTION void load_textures(Table<String8, Texture> *table)
 {

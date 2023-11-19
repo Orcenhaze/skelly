@@ -64,8 +64,12 @@ FUNCTION void draw_entity(Entity *e)
         
         // Upload ps constants.
         PBR_PS_Constants ps_constants = {};
+        
+        // Set point lights from scene.
+        
+        // Set directional lights from scene.
+        
         ps_constants.camera_position   = game->camera.position;
-        ps_constants.light_position    = {1.5f, 0.3f, 2.5f};
         ps_constants.use_normal_map    = use_normal_map;
         ps_constants.base_color        = base_color.rgb;
         ps_constants.metallic          = metallic;
