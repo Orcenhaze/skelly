@@ -1,6 +1,7 @@
-/* win32_base.cpp - v0.02 - base functionality for win32_main.cpp
+/* win32_base.cpp - v0.03 - base functionality for win32_main.cpp
 
 REVISION HISTORY:
+0.03 - removed primary_window; now we pass HWND to functions that need it.
 0.02 - renamed print() to debug_print() and added ability to load File_Info and File_Group and string stuff.
 0.01 - added mouse capture for middle mouse button.
 
@@ -42,8 +43,6 @@ GLOBAL char     global_exe_full_path[256];
 GLOBAL char     global_exe_parent_folder[256];
 GLOBAL char     global_data_folder[256];
 //GLOBAL char     global_saved_games_folder[256];
-
-GLOBAL HWND     primary_window;
 
 ////////////////////////////////
 //~ Timing
@@ -267,9 +266,8 @@ FUNCTION void  win32_decommit(void *memory, u64 size)
 
 ////////////////////////////////
 //~ Message/input processing
-FUNCTION void win32_process_pending_messages()
+FUNCTION void win32_process_pending_messages(HWND window)
 {
-    HWND window = primary_window;
     MSG message;
     while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
         switch (message.message) {
@@ -369,6 +367,11 @@ FUNCTION void win32_process_pending_messages()
 
 FUNCTION LRESULT CALLBACK win32_wndproc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
+#if DEVELOPER
+    if (ImGui_ImplWin32_WndProcHandler(window, message, wparam, lparam))
+        return TRUE;
+#endif
+    
     LRESULT result = 0;
     
     switch (message) {
@@ -391,13 +394,13 @@ FUNCTION LRESULT CALLBACK win32_wndproc(HWND window, UINT message, WPARAM wparam
     return result;
 }
 
-FUNCTION void win32_process_inputs()
+FUNCTION void win32_process_inputs(HWND window)
 {
     // Mouse position.
     //
     POINT cursor; 
     GetCursorPos(&cursor);
-    ScreenToClient(primary_window, &cursor);
+    ScreenToClient(window, &cursor);
     V2 mouse_client = {
         (f32) cursor.x,
         ((f32)global_os.window_size.h - 1.0f) - cursor.y,
@@ -408,9 +411,24 @@ FUNCTION void win32_process_inputs()
         0.0f
     };
     
+#if DEVELOPER
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    if (io.WantCaptureKeyboard || io.WantCaptureMouse) {
+        clear_key_states_all();
+        
+        MSG message;
+        while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessage(&message);
+        }
+        
+        return;
+    }
+#endif
+    
     // Put input messages in queue + process mousewheel and such.
     //
-    win32_process_pending_messages();
+    win32_process_pending_messages(window);
     
     // Process queued inputs.
     //
@@ -536,8 +554,6 @@ HWND win32_create_window(int window_width, int window_height, LPCSTR window_name
         ExitProcess(0);
     }
     
-    primary_window = window;
-    
     return window;
 }
 
@@ -614,7 +630,7 @@ FUNCTION void win32_wasapi_free()
 
 ////////////////////////////////
 //~ OS_State init
-void win32_os_state_init()
+void win32_os_state_init(HWND window)
 {
     os = &global_os;
     
@@ -628,7 +644,7 @@ void win32_os_state_init()
     global_os.fullscreen        = FALSE;
 #else
     global_os.fullscreen        = TRUE;
-    win32_toggle_fullscreen(primary_window);
+    win32_toggle_fullscreen(window);
 #endif
     global_os.exit              = FALSE;
     
@@ -639,7 +655,7 @@ void win32_os_state_init()
     global_os.fps_max           = 120;
     
     // @Note: Force fps_max to primary monitor refresh rate if possible.
-    s32 refresh_hz = GetDeviceCaps(GetDC(primary_window), VREFRESH);
+    s32 refresh_hz = GetDeviceCaps(GetDC(window), VREFRESH);
     if ((!global_os.vsync) && (global_os.fps_max > 0) && (refresh_hz > 1))
         global_os.fps_max = refresh_hz;
     
@@ -678,10 +694,10 @@ void win32_os_state_init()
 
 ////////////////////////////////
 //~ Misc
-void win32_update_drawing_region()
+void win32_update_drawing_region(HWND window)
 {
     RECT rect;
-    GetClientRect(primary_window, &rect);
+    GetClientRect(window, &rect);
     V2u window_size = {(u32)(rect.right - rect.left), (u32)(rect.bottom - rect.top)};
     if (global_os.window_size != window_size) {
         Rect2 drawing_rect;

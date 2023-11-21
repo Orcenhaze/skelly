@@ -3,6 +3,10 @@
 #include "entity.cpp"
 #include "draw.cpp"
 
+#if DEVELOPER
+#include "editor.cpp"
+#endif
+
 FUNCTION void load_textures(Table<String8, Texture> *table)
 {
     Arena_Temp scratch = get_scratch(0, 0);
@@ -120,5 +124,7 @@ FUNCTION void game_update()
 
 FUNCTION void game_render()
 {
-    
+#if DEVELOPER
+    draw_editor();
+#endif
 }

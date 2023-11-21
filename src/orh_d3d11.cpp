@@ -825,6 +825,11 @@ FUNCTION void d3d11_resize()
     
     current_window_width  = window_width;
     current_window_height = window_height;
+    
+    // @Note: For now, we only have one "default" RenderTarget for our entire window; so we'll set it here.
+    // This must be moved somewhere more appropriate when we begin having multiple RenderTargets!
+    ASSERT((render_target_view != 0) && (depth_stencil_view != 0));
+    device_context->OMSetRenderTargets(1, &render_target_view, depth_stencil_view);
 }
 
 // Call in beginning of frame.
@@ -1024,7 +1029,7 @@ FUNCTION void immediate_end()
     // Output Merger.
     device_context->OMSetBlendState(default_blend_state, 0, 0XFFFFFFFFU);
     device_context->OMSetDepthStencilState(default_depth_state, 0);
-    device_context->OMSetRenderTargets(1, &render_target_view, depth_stencil_view);
+    // Render target is set in d3d11_resize()!
     
     // Draw.
     device_context->Draw(num_immediate_vertices, 0);
