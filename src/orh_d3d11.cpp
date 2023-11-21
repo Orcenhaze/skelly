@@ -198,7 +198,7 @@ GLOBAL ID3D11PixelShader  *pbr_ps;
 
 ////////////////////////////////
 //~ Textures
-FUNCTION void d3d11_create_texture(Texture *texture, s32 w, s32 h, u8 *color_data, b32 use_srgb = TRUE)
+FUNCTION void d3d11_create_texture(Texture *texture, s32 w, s32 h, u8 *color_data)
 {
     if (!color_data)
         return;
@@ -218,10 +218,8 @@ FUNCTION void d3d11_create_texture(Texture *texture, s32 w, s32 h, u8 *color_dat
     desc.MipLevels  = 1;
     desc.ArraySize  = 1;
     
-    if (use_srgb)
-        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-    else
-        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    // @Note: We won't use _SRGB here; You should manually convert to linear space in the shader.
+    desc.Format     = DXGI_FORMAT_R8G8B8A8_UNORM;
     
     desc.SampleDesc = {1, 0};
     desc.Usage      = D3D11_USAGE_IMMUTABLE;
@@ -277,6 +275,8 @@ FUNCTION void d3d11_load_texture(Texture *texture, String8 full_path)
     } else {
         debug_print("STBI ERROR: failed to load image %S\n", texture->full_path);
     }
+    
+    stbi_image_free(color_data);
 }
 
 ////////////////////////////////
