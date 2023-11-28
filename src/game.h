@@ -23,7 +23,7 @@ struct Game_State
 {
     Camera camera;
     
-    // @Todo: Catalogs need to have both table and array....SS
+    // @Todo: Catalogs need to have both table and array...
     Table<String8, Texture>       texture_catalog;
     Table<String8, Triangle_Mesh> mesh_catalog;
     

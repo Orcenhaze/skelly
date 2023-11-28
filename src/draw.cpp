@@ -46,11 +46,6 @@ FUNCTION void draw_entity(Entity *e)
     // Upload ps constants.
     PBR_PS_Constants ps_constants = {};
     
-    // @Debug: Constant buffer complaining that we are only providing 128 bytes instead of 272...
-    // @Todo: 
-    // @Todo: 
-    // @Todo: 
-    
     // Set point lights from scene.
     ps_constants.num_point_lights = game->num_point_lights;
     for (s32 i = 0; i < game->num_point_lights; i++) {
@@ -59,7 +54,7 @@ FUNCTION void draw_entity(Entity *e)
     
     // Set directional lights from scene.
     ps_constants.num_dir_lights = game->num_dir_lights;
-    for (s32 i = 0; i < game->num_point_lights; i++) {
+    for (s32 i = 0; i < game->num_dir_lights; i++) {
         ps_constants.dir_lights[i] = game->dir_lights[i];
     }
     

@@ -571,7 +571,7 @@ FUNCTION void create_pbr_shader()
         D3D11_BUFFER_DESC desc2 = desc;
         desc2.ByteWidth = ALIGN_UP(sizeof(PBR_PS_Constants), 16);
         
-        device->CreateBuffer(&desc, 0, &pbr_ps_cbuffer);
+        device->CreateBuffer(&desc2, 0, &pbr_ps_cbuffer);
     }
     
     char *pbr_source = 
