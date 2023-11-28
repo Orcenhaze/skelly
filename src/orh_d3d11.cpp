@@ -160,24 +160,25 @@ struct PBR_VS_Constants
 };
 #define MAX_POINT_LIGHTS 5
 #define MAX_DIR_LIGHTS   2
+struct Point_Light
+{
+    V3  position;  // In world space
+    f32 intensity; // In candelas
+    V3  color;
+    f32 attenuation_radius;	// In world space units
+};
+struct Directional_Light
+{
+    V3  direction; // In world space
+    f32 intensity; // In candelas
+    V3  color;
+    f32 indirect_lighting_intensity; // In candelas
+};
 struct PBR_PS_Constants
 {
     // @Note: HLSL cbuffers pack everything in 16 bytes (Vector4), so we order stuff this way... yikes.
-    struct
-	{
-		V3  position;  // In world space
-		f32 intensity; // In candelas
-		V3  color;
-		f32 attenuation_radius;	// In world space units
-	} point_lights[MAX_POINT_LIGHTS];
-    
-	struct
-	{
-		V3  direction; // In world space
-        f32 intensity; // In candelas
-		V3  color;
-		f32 indirect_lighting_intensity; // In candelas
-	} dir_lights[MAX_DIR_LIGHTS];
+    Point_Light       point_lights[MAX_POINT_LIGHTS];
+	Directional_Light dir_lights[MAX_DIR_LIGHTS];
     
     V3  camera_position; // In world space
     b32 use_normal_map;

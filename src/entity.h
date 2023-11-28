@@ -4,6 +4,7 @@
 struct Entity
 {
     String8 name;
+    u32 idx;
     
     V3           position;
     Quaternion   orientation;
@@ -11,6 +12,11 @@ struct Entity
     M4x4_Inverse object_to_world_matrix;
     
     Triangle_Mesh *mesh;
+};
+
+struct Entity_Manager
+{
+    Array<Entity> entities;
 };
 
 #endif //ENTITY_H

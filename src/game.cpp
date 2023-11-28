@@ -47,6 +47,7 @@ FUNCTION void load_meshes(Table<String8, Triangle_Mesh> *table)
         String8 path = str8_copy(os->permanent_arena, info->full_path);
         
         Triangle_Mesh mesh = {};
+        mesh.name = name;
         load_triangle_mesh(&mesh, path);
         
         table_add(table, name, mesh);
@@ -63,9 +64,9 @@ FUNCTION void control_camera(Camera *cam, V3 delta_mouse)
     V3 cam_f = cam->forward;
     V3 cam_r = normalize0(cross(cam_f, V3U));
     
-    f32 speed = 2.5f;
+    f32 speed = 2.0f;
     if (key_held(Key_SHIFT))
-        speed *= 2.0f;
+        speed *= 3.0f;
     
     if (key_held(Key_W)) 
         cam_p +=  cam_f * speed * dt;
@@ -100,11 +101,29 @@ FUNCTION void game_init()
 {
     game = PUSH_STRUCT_ZERO(os->permanent_arena, Game_State);
     
+    //
+    // Set default values for our lights.
+    //
+    for (s32 i = 0; i < MAX_POINT_LIGHTS; i++) {
+        Point_Light *light = game->point_lights + i;
+        light->position    = {};
+        light->intensity   = 1.0f;
+        light->color       = {1.0f, 1.0f, 1.0f};
+        light->attenuation_radius = 2.0f;
+    }
+    for (s32 i = 0; i < MAX_DIR_LIGHTS; i++) {
+        Directional_Light *light = game->dir_lights + i;
+        light->direction   = {-1.0f, -1.0f, -1.0f};
+        light->intensity   = 1.0f;
+        light->color       = {1.0f, 1.0f, 1.0f};
+        light->indirect_lighting_intensity = 1.0f;
+    }
+    
+    entity_manager_init(&game->entity_manager);
+    
     set_view_to_proj();
     
-    //
     // Load assets. Textures first because meshes reference them.
-    //
     load_textures(&game->texture_catalog);
     load_meshes(&game->mesh_catalog);
     
@@ -124,6 +143,13 @@ FUNCTION void game_update()
 
 FUNCTION void game_render()
 {
+    // Render all entities.
+    Entity_Manager *m = &game->entity_manager;
+    for (s32 i = 0; i < m->entities.count; i++) {
+        draw_entity(&m->entities[i]);
+    }
+    
+    
 #if DEVELOPER
     draw_editor();
 #endif

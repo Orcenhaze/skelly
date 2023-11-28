@@ -43,6 +43,28 @@ FUNCTION void draw_entity(Entity *e)
     device_context->OMSetDepthStencilState(default_depth_state, 0);
     device_context->OMSetRenderTargets(1, &render_target_view, depth_stencil_view);
     
+    // Upload ps constants.
+    PBR_PS_Constants ps_constants = {};
+    
+    // @Debug: Constant buffer complaining that we are only providing 128 bytes instead of 272...
+    // @Todo: 
+    // @Todo: 
+    // @Todo: 
+    
+    // Set point lights from scene.
+    ps_constants.num_point_lights = game->num_point_lights;
+    for (s32 i = 0; i < game->num_point_lights; i++) {
+        ps_constants.point_lights[i] = game->point_lights[i];
+    }
+    
+    // Set directional lights from scene.
+    ps_constants.num_dir_lights = game->num_dir_lights;
+    for (s32 i = 0; i < game->num_point_lights; i++) {
+        ps_constants.dir_lights[i] = game->dir_lights[i];
+    }
+    
+    ps_constants.camera_position = game->camera.position;
+    
     // Draw triangle lists.
     for (s32 list_index = 0; list_index < mesh->triangle_list_info.count; list_index++) {
         Triangle_List_Info *list = &mesh->triangle_list_info[list_index];
@@ -62,14 +84,6 @@ FUNCTION void draw_entity(Entity *e)
         if (list->texture_maps[MaterialTextureMapType_ROUGHNESS]!= w) roughness      = -1.0f;
         if (list->texture_maps[MaterialTextureMapType_AO]       != w) ao             = -1.0f;
         
-        // Upload ps constants.
-        PBR_PS_Constants ps_constants = {};
-        
-        // Set point lights from scene.
-        
-        // Set directional lights from scene.
-        
-        ps_constants.camera_position   = game->camera.position;
         ps_constants.use_normal_map    = use_normal_map;
         ps_constants.base_color        = base_color.rgb;
         ps_constants.metallic          = metallic;

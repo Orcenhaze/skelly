@@ -26,3 +26,25 @@ FUNCTION void update_entity_transform(Entity *entity)
     entity->object_to_world_matrix.forward = m_non * r;
     entity->object_to_world_matrix.inverse = transpose(r) * m_inv;
 }
+
+FUNCTION Entity create_default_entity()
+{
+    Entity result = {};
+    result.orientation = quaternion_identity();
+    result.scale       = v3(1.0f);
+    update_entity_transform(&result);
+    
+    // @Hardcode:
+    // @Cleanup: Just Testing...
+    result.mesh = table_find_pointer(&game->mesh_catalog, S8LIT("sphere"));
+    if (result.mesh)
+        result.name = result.mesh->name;
+    
+    return result;
+}
+
+FUNCTION void entity_manager_init(Entity_Manager *manager)
+{
+    // @Todo: Still need to find a way to avoid reserving 8GB because of default ARENA_MAX_DEFAULT... ugh!
+    array_init(&manager->entities);
+}

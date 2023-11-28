@@ -1,4 +1,4 @@
-/* orh.h - v0.72 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.73 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.73 - array_add() now returns pointer to newly added item.
 0.72 - fixed bug with string path helper functions.
 0.71 - renamed print() and added ability to load File_Info and File_Group and some string functions.
 0.70 - changed array_init() and did some cleanup.
@@ -1320,13 +1321,15 @@ void array_reset(Array<T> *array)
 }
 
 template<typename T>
-void array_add(Array<T> *array, T item)
+T* array_add(Array<T> *array, T item)
 {
     if (array->count >= array->capacity)
         array_expand(array);
     
     array->data[array->count] = item;
     array->count++;
+    
+    return &array->data[array->count-1];
 }
 
 template<typename T>
