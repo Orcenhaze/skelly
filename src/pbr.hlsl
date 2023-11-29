@@ -35,7 +35,7 @@ cbuffer PS_Constants : register(b1)
 	struct
 	{
 		float3 position;  // In world space
-		float  intensity; // In candelas
+		float  intensity; // Unitless
 		float3 color;
 		float  attenuation_radius;	// In world space units
 	} point_lights[MAX_POINT_LIGHTS];
@@ -43,9 +43,9 @@ cbuffer PS_Constants : register(b1)
 	struct
 	{
 		float3 direction; // In world space
-		float  intensity; // In candelas
+		float  intensity; // Unitless
 		float3 color;
-		float  indirect_lighting_intensity; // In candelas
+		float  indirect_lighting_intensity; // Unitless
 	} dir_lights[MAX_DIR_LIGHTS];
 
 	float3 camera_position; // In world space
@@ -177,7 +177,7 @@ float4 ps(PS_Input input) : SV_TARGET
 	surface.albedo       = albedo_;
 	surface.metalness    = metallic_;
 
-	float3 Ia   = 0.0; // Ambient illumination
+	float3 Ia   = 0.3 * surface.albedo * ao_; // Ambient illumination
 	float3 IdIs = 0.0; // Diffuse and specular illumination
 
 	// Point lights
@@ -187,10 +187,10 @@ float4 ps(PS_Input input) : SV_TARGET
 	    float NdotL = saturate(dot(surface.normal, L));
 	    
 	    // Calculate light radiance/contribution.
-	    float  dist_to_light  = length(point_lights[i].position - input.pos_world);
-		float attenuation     = max(0.0, 1.0 - dist_to_light / point_lights[i].attenuation_radius);
-    	attenuation           = (attenuation * attenuation) / (dist_to_light * dist_to_light); // Quadratic attenuation for smoother falloff
-    	float3 radiance       = attenuation * point_lights[i].color * point_lights[i].intensity;
+	    float dist_to_light = length(point_lights[i].position - input.pos_world);
+		float attenuation   = max(0.0, 1.0 - dist_to_light / point_lights[i].attenuation_radius);
+    	attenuation         = (attenuation * attenuation)  / (dist_to_light * dist_to_light + 0.0001); // Quadratic attenuation for smoother falloff
+    	float3 radiance     = attenuation * point_lights[i].color * point_lights[i].intensity;
 
     	IdIs += BRDF(surface, V, L) * radiance * NdotL;
     }
@@ -199,13 +199,12 @@ float4 ps(PS_Input input) : SV_TARGET
 	// Directional lights
 	// =================================================================================================
     for (int j = 0; j < num_dir_lights; j++) {
-    	float3 L    = dir_lights[j].direction;
+    	float3 L    = -dir_lights[j].direction;
     	float NdotL = saturate(dot(surface.normal, L));
 
 	    float3 radiance = dir_lights[j].color * dir_lights[j].intensity;
 
 	    IdIs += BRDF(surface, V, L) * radiance * NdotL;
-    	Ia   += dir_lights[j].indirect_lighting_intensity * surface.albedo * ao_;
     }
     
 	float3 color = Ia + IdIs;

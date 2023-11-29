@@ -1,1 +1,2 @@
-- Import ImGui and make a simple editor to add entities and lighting to our game!
+- Tune light parameters
+- Add transformation gizmos and ability to switch between light and entity mode.

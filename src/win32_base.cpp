@@ -413,6 +413,7 @@ FUNCTION void win32_process_inputs(HWND window)
     
 #if DEVELOPER
     ImGuiIO& io = ImGui::GetIO(); (void)io;
+    debug_print("Want keyboard? %b     Want mouse? %b \n", io.WantCaptureKeyboard, io.WantCaptureMouse);
     if (io.WantCaptureKeyboard || io.WantCaptureMouse) {
         clear_key_states_all();
         

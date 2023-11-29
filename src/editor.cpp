@@ -51,12 +51,10 @@ FUNCTION void draw_light_info()
             ImGui::Separator();
             
             Point_Light *light = game->point_lights + i;
-            ImGui::InputFloat3("position", light->position.I, "%.3f");
-            ImGui::InputFloat("intensity (cd)", &light->intensity, 0.1f, 1.0f, "%.3f");
-            light->intensity = CLAMP(0.0f, light->intensity, 10.0f);
+            ImGui::DragFloat3("position", light->position.I, 0.005f, F32_MIN, F32_MAX, "%.3f");
+            ImGui::DragFloat("intensity (unitless)", &light->intensity, 0.005f, 0.0f, F32_MAX, "%.3f");
             ImGui::ColorEdit3("color", light->color.I);
-            ImGui::InputFloat("attenuation radius", &light->attenuation_radius, 0.1f, 1.0f, "%.3f");
-            light->attenuation_radius = CLAMP(0.0f, light->attenuation_radius, 500.0f);
+            ImGui::DragFloat("attenuation radius", &light->attenuation_radius, 0.005f, 0.0f, F32_MAX, "%.3f");
         }
         
     } else if (light_type == 1) {
@@ -67,13 +65,10 @@ FUNCTION void draw_light_info()
             ImGui::Separator();
             
             Directional_Light *light = game->dir_lights + i;
-            ImGui::InputFloat3("direction", light->direction.I, "%.3f");
-            // light->direction = normalize(light->direction);
-            ImGui::InputFloat("intensity (cd)", &light->intensity, 0.1f, 1.0f, "%.3f");
-            light->intensity = CLAMP(0.0f, light->intensity, 10.0f);
+            ImGui::DragFloat3("direction", light->direction.I, 0.005f, F32_MIN, F32_MAX, "%.3f");
+            ImGui::DragFloat("intensity (unitless)", &light->intensity, 0.005f, 0.0f, F32_MAX, "%.3f");
             ImGui::ColorEdit3("color", light->color.I);
-            ImGui::InputFloat("indirect intensity (cd)", &light->indirect_lighting_intensity, 0.1f, 1.0f, "%.3f");
-            light->indirect_lighting_intensity = CLAMP(0.0f, light->indirect_lighting_intensity, 6.0f);
+            ImGui::DragFloat("indirect intensity (unitless)", &light->indirect_lighting_intensity, 0.005f, 0.0f, F32_MAX, "%.3f");
         }
     }
     

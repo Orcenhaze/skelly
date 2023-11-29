@@ -1,4 +1,4 @@
-/* orh.h - v0.73 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.74 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.74 - fixed F32_MIN and F64_MIN, we had minimum normalized positive floating-point number.
 0.73 - array_add() now returns pointer to newly added item.
 0.72 - fixed bug with string path helper functions.
 0.71 - renamed print() and added ability to load File_Info and File_Group and some string functions.
@@ -266,9 +267,12 @@ typedef double             f64;
 #define U32_MAX            0xFFFFFFFFU
 #define U64_MAX            0xFFFFFFFFFFFFFFFFULL
 
-#define F32_MIN            1.17549435e-38F
+#define F32_MIN_POSITIVE   1.17549435e-38F
+#define F32_MIN            -F32_MAX
 #define F32_MAX            3.40282347e+38F
-#define F64_MIN            2.2250738585072014e-308
+
+#define F64_MIN_POSITIVE   2.2250738585072014e-308
+#define F64_MIN            -F64_MAX
 #define F64_MAX            1.7976931348623157e+308
 
 #ifndef TRUE

@@ -128,7 +128,7 @@ FUNCTION void game_init()
     load_meshes(&game->mesh_catalog);
     
     // Init camera.
-    game->camera = {{}, V3F};
+    game->camera = {{0.0f, 0.0f, 2.0f}, V3F};
 }
 
 FUNCTION void game_update()
