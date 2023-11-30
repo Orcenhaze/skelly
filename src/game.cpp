@@ -101,24 +101,6 @@ FUNCTION void game_init()
 {
     game = PUSH_STRUCT_ZERO(os->permanent_arena, Game_State);
     
-    //
-    // Set default values for our lights.
-    //
-    for (s32 i = 0; i < MAX_POINT_LIGHTS; i++) {
-        Point_Light *light = game->point_lights + i;
-        light->position    = {};
-        light->intensity   = 1.0f;
-        light->color       = {1.0f, 1.0f, 1.0f};
-        light->attenuation_radius = 2.0f;
-    }
-    for (s32 i = 0; i < MAX_DIR_LIGHTS; i++) {
-        Directional_Light *light = game->dir_lights + i;
-        light->direction   = {-1.0f, -1.0f, -1.0f};
-        light->intensity   = 1.0f;
-        light->color       = {1.0f, 1.0f, 1.0f};
-        light->indirect_lighting_intensity = 1.0f;
-    }
-    
     entity_manager_init(&game->entity_manager);
     
     set_view_to_proj();

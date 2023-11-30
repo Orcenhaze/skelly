@@ -1,2 +1,2 @@
-- Tune light parameters
-- Add transformation gizmos and ability to switch between light and entity mode.
+- Tune lighting parameters
+- Add mouse-picking and transformation gizmos.

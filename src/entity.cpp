@@ -35,6 +35,8 @@ FUNCTION Entity create_default_entity()
     update_entity_transform(&result);
     
     // @Hardcode:
+    // @Hardcode:
+    // @Hardcode:
     // @Cleanup: Just Testing...
     result.mesh = table_find_pointer(&game->mesh_catalog, S8LIT("sphere"));
     if (result.mesh)

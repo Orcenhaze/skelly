@@ -165,7 +165,7 @@ struct Point_Light
     V3  position;  // In world space
     f32 intensity; // In candelas
     V3  color;
-    f32 attenuation_radius;	// In world space units
+    f32 radius;	// Radius of light source in world space units
 };
 struct Directional_Light
 {
@@ -1168,6 +1168,98 @@ FUNCTION void immediate_line_3d(V3 p0, V3 p1, V4 color, f32 thickness = 0.1f)
     V3 v7 = a[0] + bitangent*half_thickness;
     
     immediate_hexahedron(v0, v1, v2, v3, v4, v5, v6, v7, color);
+}
+
+FUNCTION void immediate_cone(V3 position, V3 direction, f32 radius, f32 length, V4 color)
+{
+    // @Note: position is the center of the circle part of the cone.
+    
+    direction = normalize0(direction);
+    V3 tip    = position + length * direction;
+    
+    V3 tangent = {};
+    V3 unused  = {};
+    calculate_tangents(direction, &tangent, &unused);
+    
+    // Initial point
+    V3 current_vertex = position + radius * tangent;
+    
+    const s32 NUM_SEGMENTS = 50;
+    f32 theta    = TAU32 / NUM_SEGMENTS;
+    Quaternion q = quaternion_from_axis_angle(direction, theta);
+    
+    for (s32 i = 0; i < NUM_SEGMENTS; i++) {
+        V3 next_vertex = rotate_point_around_pivot(current_vertex, position, q);
+        
+        // Draw circle part.
+        immediate_triangle(position, current_vertex, next_vertex, color);
+        
+        // Draw the cone part.
+        immediate_triangle(current_vertex, tip, next_vertex, color);
+        
+        current_vertex = next_vertex;
+    }
+}
+
+FUNCTION void immediate_arrow(V3 position, V3 direction, f32 length, V4 color, f32 thickness = 0.05f)
+{
+    // @Note: position is the start of the arrow.
+    
+    direction = normalize0(direction);
+    V3 p0     = position;
+    V3 p1     = position + length * direction;
+    
+    immediate_line_3d(p0, p1, color, thickness);
+    immediate_cone(p1, direction, 2.5f * thickness, 0.5f, color);
+}
+
+FUNCTION void immediate_torus(V3 center, f32 radius, V3 normal, V4 color, f32 thickness = 0.1f)
+{
+    f32 half_thickness = thickness * 0.5f;
+    f32 inner_radius   = radius - half_thickness;
+    f32 outer_radius   = radius + half_thickness;
+    
+    V3 tangent = {};
+    V3 unused  = {};
+    calculate_tangents(normal, &tangent, &unused);
+    
+    // Initial points.
+    V3 inner_point_back  = center + inner_radius*tangent - half_thickness*normal;
+    V3 outer_point_back  = center + outer_radius*tangent - half_thickness*normal;
+    V3 inner_point_front = center + inner_radius*tangent + half_thickness*normal;
+    V3 outer_point_front = center + outer_radius*tangent + half_thickness*normal;
+    
+    const s32 NUM_SEGMENTS = 50;
+    f32 theta    = TAU32 / NUM_SEGMENTS;
+    Quaternion q = quaternion_from_axis_angle(normal, theta);
+    
+    for(s32 i = 0; i < NUM_SEGMENTS; i++)
+    {
+        // Rotate the points.
+        V3 inner_point_back_next  = rotate_point_around_pivot(inner_point_back,  center, q);
+        V3 outer_point_back_next  = rotate_point_around_pivot(outer_point_back,  center, q);
+        V3 inner_point_front_next = rotate_point_around_pivot(inner_point_front, center, q);
+        V3 outer_point_front_next = rotate_point_around_pivot(outer_point_front, center, q);
+        
+        // Back CCW.
+        V3 p0 = inner_point_back_next;
+        V3 p1 = inner_point_back;
+        V3 p2 = outer_point_back;
+        V3 p3 = outer_point_back_next;
+        
+        // Front CCW.
+        V3 p4 = inner_point_front_next;
+        V3 p5 = inner_point_front;
+        V3 p6 = outer_point_front;
+        V3 p7 = outer_point_front_next;
+        
+        immediate_hexahedron(p0, p1, p2, p3, p4, p5, p6, p7, color);
+        
+        inner_point_back  = inner_point_back_next;
+        outer_point_back  = outer_point_back_next;
+        inner_point_front = inner_point_front_next;
+        outer_point_front = outer_point_front_next;
+    }
 }
 
 ////////////////////////////////

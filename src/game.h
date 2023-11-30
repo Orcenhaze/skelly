@@ -37,6 +37,7 @@ struct Game_State
     
 #if DEVELOPER
     // Editor stuff.
+    // @Temporary: We need proper group selection and stuff!
     Selected_Entity selected_entity;
 #endif
 };
