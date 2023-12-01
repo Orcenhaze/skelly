@@ -37,7 +37,7 @@ cbuffer PS_Constants : register(b1)
 		float3 position;  // In world space
 		float  intensity; // Unitless
 		float3 color;
-		float  radius;	// Radius of light source in world space units
+		float  range;	  // In world space units
 	} point_lights[MAX_POINT_LIGHTS];
 
 	struct
@@ -150,32 +150,6 @@ float3 BRDF(BRDF_Surface surface, float3 V, float3 L)
     return diffuse + specular;
 }
 
-float attenuate_no_cusp(float distance, float radius, float max_intensity, float falloff)
-{
-	float s = distance / radius;
-
-	if (s >= 1.0) {
-		return 0.0;
-	} else {
-		float s2 = s * s;
-
-		return max_intensity * (1 - s2)*(1 - s2) / (1 + falloff * s2);	
-	}
-}
-
-float attenuate_cusp(float distance, float radius, float max_intensity, float falloff)
-{
-	float s = distance / radius;
-
-	if (s >= 1.0) {
-		return 0.0;
-	} else {
-		float s2 = s * s;
-
-		return max_intensity * (1 - s2)*(1 - s2) / (1 + falloff * s);	
-	}
-}
-
 float4 ps(PS_Input input) : SV_TARGET
 {
 	// @Note: A good reference for this is "Real Shading in Unreal Engine 4 by Brian Karis, Epic Games".
@@ -204,7 +178,7 @@ float4 ps(PS_Input input) : SV_TARGET
 	surface.metalness    = metallic_;
 
 	float3 Ia   = 0.3 * surface.albedo * ao_; // Ambient illumination
-	float3 IdIs = 0.0; // Diffuse and specular illumination
+	float3 IdIs = 0.0;                        // Diffuse and specular illumination
 
 	// Point lights
 	// =================================================================================================
@@ -213,15 +187,12 @@ float4 ps(PS_Input input) : SV_TARGET
 	    float NdotL = saturate(dot(surface.normal, L));
 	    
 	    // Calculate light radiance/contribution.
-	    float dist_to_light   = length(point_lights[i].position - input.pos_world);
-    	
-    	// @Note: According to https://www.youtube.com/watch?v=wzIcjzKQ2BE
-    	float d   = dist_to_light;
-    	float r   = point_lights[i].radius;
-    	float att = (2.0 / r * r) * (1.0 - (d / sqrt(d*d + r*r)));
-    	float3 radiance = att * point_lights[i].color * point_lights[i].intensity;
+	    float dist_to_light = length(point_lights[i].position - input.pos_world);
+    	float attenuation   = 1.0 / dist_to_light * dist_to_light;
+    	float3 radiance     = attenuation * point_lights[i].color * point_lights[i].intensity;
 
-    	IdIs += BRDF(surface, V, L) * radiance * NdotL;
+    	if (dist_to_light < point_lights[i].range)
+    		IdIs += BRDF(surface, V, L) * radiance * NdotL;
     }
    	
 

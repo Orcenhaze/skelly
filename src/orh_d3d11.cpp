@@ -163,16 +163,16 @@ struct PBR_VS_Constants
 struct Point_Light
 {
     V3  position;  // In world space
-    f32 intensity; // In candelas
+    f32 intensity; // Unitless
     V3  color;
-    f32 radius;	// Radius of light source in world space units
+    f32 range;	 // In world space units
 };
 struct Directional_Light
 {
     V3  direction; // In world space
-    f32 intensity; // In candelas
+    f32 intensity; // Unitless
     V3  color;
-    f32 indirect_lighting_intensity; // In candelas
+    f32 indirect_lighting_intensity; // Unitless @Incomplete: Is this used? 
 };
 struct PBR_PS_Constants
 {

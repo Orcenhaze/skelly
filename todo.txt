@@ -1,2 +1,2 @@
-- Tune lighting parameters
+- Improve entity mode in the editor.
 - Add mouse-picking and transformation gizmos.
