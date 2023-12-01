@@ -199,7 +199,7 @@ float4 ps(PS_Input input) : SV_TARGET
 	// Directional lights
 	// =================================================================================================
     for (int j = 0; j < num_dir_lights; j++) {
-    	float3 L    = -dir_lights[j].direction;
+    	float3 L    = normalize(-dir_lights[j].direction);
     	float NdotL = saturate(dot(surface.normal, L));
 
 	    float3 radiance = dir_lights[j].color * dir_lights[j].intensity;
