@@ -11,12 +11,24 @@ struct Entity
     V3           scale;
     M4x4_Inverse object_to_world_matrix;
     
+    // In world space. Updated in update_entity_transform().
+    Rect3 bounding_box;
+    
     Triangle_Mesh *mesh;
 };
 
 struct Entity_Manager
 {
     Array<Entity> entities;
+    
+#if DEVELOPER
+    // Editor stuff.
+    // @Temporary: We need proper group selection and stuff!
+    Entity *selected_entity;
+    
+    // Entity we are currently hovering over (closest to camera).
+    Entity *hovered_entity;
+#endif
 };
 
 #endif //ENTITY_H

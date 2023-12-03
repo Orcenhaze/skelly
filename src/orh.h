@@ -1,4 +1,4 @@
-/* orh.h - v0.74 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.75 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.75 - quaternion_get_axis() uses normalize0 now in case the vector part of the quaternion is zero.
 0.74 - fixed F32_MIN and F64_MIN, we had minimum normalized positive floating-point number.
 0.73 - array_add() now returns pointer to newly added item.
 0.72 - fixed bug with string path helper functions.
@@ -2506,7 +2507,7 @@ Quaternion quaternion_inverse(Quaternion q)
 }
 V3 quaternion_get_axis(Quaternion q)
 {
-    V3 result = normalize(q.v);
+    V3 result = normalize0(q.v);
     return result;
 }
 f32 quaternion_get_angle(Quaternion q)

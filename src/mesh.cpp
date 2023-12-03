@@ -74,7 +74,7 @@ FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)
             
             Texture *map = &white_texture;
             if (!str8_empty(map_name)) {
-                map = table_find_pointer(&game->texture_catalog, map_name);
+                map = table_find_pointer(&game->texture_catalog.table, map_name);
             }
             
             if (!map) {
@@ -132,6 +132,28 @@ FUNCTION void generate_buffers_for_mesh(Triangle_Mesh *mesh)
     free_scratch(scratch);
 }
 
+FUNCTION void generate_bounding_box_for_mesh(Triangle_Mesh *mesh)
+{
+    V3 min = v3(F32_MAX);
+    V3 max = v3(F32_MIN);
+    
+    for (s32 i = 0; i < mesh->vertices.count; i++) {
+        V3 v = mesh->vertices[i];
+        
+        if(v.x < min.x) min.x = v.x;
+        if(v.x > max.x) max.x = v.x;
+        
+        if(v.y < min.y) min.y = v.y;
+        if(v.y > max.y) max.y = v.y;
+        
+        if(v.z < min.z) min.z = v.z;
+        if(v.z > max.z) max.z = v.z;
+    }
+    
+    mesh->bounding_box_p0 = min;
+    mesh->bounding_box_p1 = max;
+}
+
 FUNCTION void load_triangle_mesh(Triangle_Mesh *mesh, String8 full_path)
 {
     mesh->full_path = full_path;
@@ -148,6 +170,7 @@ FUNCTION void load_triangle_mesh(Triangle_Mesh *mesh, String8 full_path)
     load_mesh_data(scratch.arena, mesh, file);
     load_mesh_textures(mesh);
     generate_buffers_for_mesh(mesh);
+    generate_bounding_box_for_mesh(mesh);
     
     free_scratch(scratch);
     os->free_file_memory(orig_file.data);

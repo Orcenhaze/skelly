@@ -6,7 +6,7 @@ FUNCTION Point_Light default_point_light()
     result.position    = {};
     result.intensity   = 1.0f;
     result.color       = {1.0f, 1.0f, 1.0f};
-    result.range       = 0.1f;
+    result.range       = 3.5f;
     return result;
 }
 FUNCTION Directional_Light default_dir_light()
@@ -35,28 +35,72 @@ FUNCTION void draw_main_editor_window()
             // Entity Mode
             //
             
+            Entity_Manager *manager = &game->entity_manager;
+            
             if (ImGui::Button("Create")) {
-                // @Hardcoded?
-                Entity *entity = array_add(&game->entity_manager.entities, create_default_entity());
-                game->selected_entity.ptr = entity;
+                Entity entity = create_default_entity();
+                create_entity_and_select(manager, entity);
             }
             
             ImGui::Separator();
             
             LOCAL_PERSIST char name[128] = {};
-            if (game->selected_entity.ptr) {
-                Entity *e = game->selected_entity.ptr;
+            if (manager->selected_entity) {
+                Entity *e = manager->selected_entity;
                 
                 MEMORY_ZERO_ARRAY(name);
                 ASSERT(ARRAY_COUNT(name) > e->name.count + 1);
                 MEMORY_COPY(name, e->name.data, e->name.count);
                 
                 // For now only display info.
-                ImGui::Text("%s", name);
-                if (ImGui::InputFloat3("position", e->position.I))        {update_entity_transform(e);}
-                // @Todo: Use axis angle.
-                if (ImGui::InputFloat4("Orientation", e->orientation.I)) {update_entity_transform(e);}
-                if (ImGui::InputFloat3("scale", e->scale.I))             {update_entity_transform(e);}
+                ImGui::Text("%s (%u)", name, e->idx);
+                
+                ImGui::Separator();
+                
+                //
+                // Position
+                //
+                if (ImGui::DragFloat3("position", e->position.I, 0.005f, F32_MIN, F32_MAX, "%.3f")) {
+                }
+                
+                //
+                // Orientation (just display, use gizmo to modify).
+                //
+                V3  axis  = quaternion_get_axis(e->orientation);
+                f32 angle = quaternion_get_angle(e->orientation);
+                ImGui::Text("Axis: [%.3f, %.3f, %.3f], Angle: %.3f", axis.x, axis.y, axis.y, angle);
+                
+                //
+                // Scale
+                //
+                LOCAL_PERSIST f32 scale = 1.0f;
+                scale = e->scale.x;
+                if (ImGui::DragFloat("Scale", &scale, 0.005f, 1.0f, F32_MAX, "%.3f")) {
+                    e->scale = v3(scale);	
+                }
+                
+                //
+                // Mesh
+                //
+                LOCAL_PERSIST s32 item_current_idx = 0;
+                if (!str8_empty(manager->selected_entity->mesh->name)) {
+                    const u8* combo_preview_value = manager->selected_entity->mesh->name.data;
+                    if (ImGui::BeginCombo("Mesh", (const char*)combo_preview_value)) {
+                        for (s32 n = 0; n < game->mesh_catalog.items.count; n++) {
+                            const bool is_selected = (item_current_idx == n);
+                            if (ImGui::Selectable((const char*) game->mesh_catalog.items[n]->name.data, is_selected)) {
+                                item_current_idx = n;
+                                
+                                e->mesh = game->mesh_catalog.items[n];
+                            }
+                            
+                            // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                            if (is_selected)
+                                ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
                 
             }
             

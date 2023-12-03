@@ -7,7 +7,7 @@
 #include "editor.cpp"
 #endif
 
-FUNCTION void load_textures(Table<String8, Texture> *table)
+FUNCTION void load_textures(Catalog<String8, Texture> *catalog)
 {
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
@@ -25,13 +25,13 @@ FUNCTION void load_textures(Table<String8, Texture> *table)
         Texture tex  = {};
         d3d11_load_texture(&tex, path);
         
-        table_add(table, name, tex);
+        add(catalog, name, tex);
         
         info = info->next;
     }
 }
 
-FUNCTION void load_meshes(Table<String8, Triangle_Mesh> *table)
+FUNCTION void load_meshes(Catalog<String8, Triangle_Mesh> *catalog)
 {
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
@@ -50,7 +50,7 @@ FUNCTION void load_meshes(Table<String8, Triangle_Mesh> *table)
         mesh.name = name;
         load_triangle_mesh(&mesh, path);
         
-        table_add(table, name, mesh);
+        add(catalog, name, mesh);
         
         info = info->next;
     }
@@ -101,16 +101,19 @@ FUNCTION void game_init()
 {
     game = PUSH_STRUCT_ZERO(os->permanent_arena, Game_State);
     
+    catalog_init(&game->texture_catalog);
+    catalog_init(&game->mesh_catalog);
+    
     entity_manager_init(&game->entity_manager);
     
     set_view_to_proj();
     
+    // Init camera.
+    game->camera = {{0.0f, 0.0f, 2.0f}, V3F};
+    
     // Load assets. Textures first because meshes reference them.
     load_textures(&game->texture_catalog);
     load_meshes(&game->mesh_catalog);
-    
-    // Init camera.
-    game->camera = {{0.0f, 0.0f, 2.0f}, V3F};
 }
 
 FUNCTION void game_update()
@@ -119,20 +122,73 @@ FUNCTION void game_update()
     V3 delta_mouse = os->mouse_ndc - old_ndc;
     old_ndc        = os->mouse_ndc;
     
+    game->mouse_world = unproject(game->camera.position, 
+                                  1.0f, 
+                                  os->mouse_ndc, 
+                                  world_to_view_matrix, 
+                                  view_to_proj_matrix);
+    
     control_camera(&game->camera, delta_mouse);
     set_world_to_view(game->camera.matrix);
+    
+    //
+    // Update all entities.
+    //
+    Entity_Manager *manager = &game->entity_manager;
+    for (s32 i = 0; i < manager->entities.count; i++) {
+        Entity *e = &manager->entities[i];
+        update_entity_transform(e);
+    }
+    
+#if DEVELOPER
+    //
+    // Mouse picking
+    //
+    Ray camera_ray = {game->camera.position, normalize0(game->mouse_world - game->camera.position)};
+    f32 sort_index = F32_MAX;
+    
+    manager->hovered_entity = 0;
+    
+    for (s32 i = 0; i < manager->entities.count; i++) {
+        Entity *e = &manager->entities[i];
+        
+        if (ray_box_intersect(&camera_ray, e->bounding_box)) {
+            if (camera_ray.t < sort_index) {
+                sort_index              = camera_ray.t;
+                manager->hovered_entity = e;
+            }
+        }
+    }
+    
+    // @Todo: If ctrl- was pressed, we should add it to a group?
+    //
+    if (manager->hovered_entity && key_pressed(Key_MLEFT)) {
+        manager->selected_entity = manager->hovered_entity;
+    }
+#endif
 }
 
 FUNCTION void game_render()
 {
     // Render all entities.
-    Entity_Manager *m = &game->entity_manager;
-    for (s32 i = 0; i < m->entities.count; i++) {
-        draw_entity(&m->entities[i]);
+    Entity_Manager *manager = &game->entity_manager;
+    for (s32 i = 0; i < manager->entities.count; i++) {
+        Entity *e = &manager->entities[i];
+        
+        draw_entity(e);
     }
     
     
 #if DEVELOPER
     draw_editor();
+    
+    if (manager->hovered_entity) {
+        immediate_begin(TRUE);
+        set_texture(0);
+        immediate_cuboid(get_center(manager->hovered_entity->bounding_box), 
+                         0.5f*get_size(manager->hovered_entity->bounding_box), 
+                         {0,1,1,1});
+        immediate_end();
+    }
 #endif
 }

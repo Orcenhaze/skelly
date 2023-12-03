@@ -64,7 +64,10 @@ struct Triangle_Mesh
     
     Array<u32> indices;
     
-    //Bounding_Box    bounding_box;    // Computed at mesh load time.
+    // Bounds of the mesh, computed at mesh load time, in local space.
+    V3 bounding_box_p0;
+    V3 bounding_box_p1;
+    
     //Bounding_Volume bounding_volume; // Loaded from a .MESHBV file.
     
     // Ideally, num_triangle_lists == num_materials. 

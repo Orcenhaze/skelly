@@ -25,6 +25,12 @@ FUNCTION void update_entity_transform(Entity *entity)
     
     entity->object_to_world_matrix.forward = m_non * r;
     entity->object_to_world_matrix.inverse = transpose(r) * m_inv;
+    
+    if (entity->mesh) {
+        V3 p0 = entity->object_to_world_matrix.forward * entity->mesh->bounding_box_p0;
+        V3 p1 = entity->object_to_world_matrix.forward * entity->mesh->bounding_box_p1;
+        entity->bounding_box = { min_v3(p0, p1), max_v3(p0, p1) };
+    }
 }
 
 FUNCTION Entity create_default_entity()
@@ -34,13 +40,8 @@ FUNCTION Entity create_default_entity()
     result.scale       = v3(1.0f);
     update_entity_transform(&result);
     
-    // @Hardcode:
-    // @Hardcode:
-    // @Hardcode:
-    // @Cleanup: Just Testing...
-    result.mesh = table_find_pointer(&game->mesh_catalog, S8LIT("sphere"));
-    if (result.mesh)
-        result.name = result.mesh->name;
+    // @Cleanup: First mesh in catalog is default for now...
+    result.mesh = game->mesh_catalog.items[0];
     
     return result;
 }
@@ -50,3 +51,18 @@ FUNCTION void entity_manager_init(Entity_Manager *manager)
     // @Todo: Still need to find a way to avoid reserving 8GB because of default ARENA_MAX_DEFAULT... ugh!
     array_init(&manager->entities);
 }
+
+FUNCTION Entity* create_new_entity(Entity_Manager *manager, Entity entity)
+{
+    Entity *new_entity = array_add(&game->entity_manager.entities, entity);
+    return new_entity;
+}
+
+#if DEVELOPER
+FUNCTION void create_entity_and_select(Entity_Manager *manager, Entity entity)
+{
+    Entity *e = create_new_entity(manager, entity);
+    manager->selected_entity = e;
+}
+
+#endif
