@@ -1,1 +1,1 @@
-- Add transformation gizmos.
+- Cleanup gizmo.cpp and address the bugs (translation issue and bounding box issue when rotating).

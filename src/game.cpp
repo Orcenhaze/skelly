@@ -2,6 +2,7 @@
 #include "mesh.cpp"
 #include "entity.cpp"
 #include "draw.cpp"
+#include "gizmo.cpp"
 
 #if DEVELOPER
 #include "editor.cpp"
@@ -165,6 +166,16 @@ FUNCTION void game_update()
     if (manager->hovered_entity && key_pressed(Key_MLEFT)) {
         manager->selected_entity = manager->hovered_entity;
     }
+    
+    //
+    // Process Gizmos
+    //
+    if (key_pressed(Key_F1)) gizmo_mode = GizmoMode_TRANSLATION;
+    if (key_pressed(Key_F2)) gizmo_mode = GizmoMode_ROTATION;
+    if (key_pressed(Key_F3)) gizmo_mode = GizmoMode_SCALE;
+    if (manager->selected_entity) {
+        gizmo_execute(camera_ray, manager->selected_entity);
+    }
 #endif
 }
 
@@ -189,6 +200,14 @@ FUNCTION void game_render()
                          0.5f*get_size(manager->hovered_entity->bounding_box), 
                          {0,1,1,1});
         immediate_end();
+    }
+    
+    //
+    // Render Gizmos.
+    //
+    if (manager->selected_entity) {
+        Ray camera_ray = {game->camera.position, normalize0(game->mouse_world - game->camera.position)};
+        gizmo_render(camera_ray, manager->selected_entity);
     }
 #endif
 }

@@ -21,6 +21,39 @@ struct Plane
     V3 normal;
 };
 
+struct Circle
+{
+    V3  center;
+    V3  normal;
+    f32 radius;
+};
+
+FUNCTION Rect3 get_plane_bounds(V3 center, V3 normal, f32 scale)
+{
+    V3 tangent, bitangent;
+    calculate_tangents(normal, &tangent, &bitangent);
+    
+    f32 half_scale = 0.5f * scale;
+    
+    V3 p0 = center - tangent*half_scale - bitangent*half_scale;
+    V3 p1 = center + tangent*half_scale + bitangent*half_scale;
+    
+    Rect3 result = {min_v3(p0, p1), max_v3(p0, p1)};
+    return result;
+}
+
+FUNCTION b32 point_inside_box_test(V3 p, Rect3 box)
+{
+    b32 result = false;
+    
+    if((p.x >= box.min.x) && (p.x <= box.max.x) &&
+       (p.y >= box.min.y) && (p.y <= box.max.y) &&
+       (p.z >= box.min.z) && (p.z <= box.max.z))
+        result = true;
+    
+    return result;
+}
+
 FUNCTION b32 box_overlap_test(Rect3 A, Rect3 B)
 {
     b32 result = ((A.max.x > B.min.x) &&
@@ -71,7 +104,6 @@ FUNCTION b32 ray_plane_intersect(Ray *ray, Plane plane)
 
 FUNCTION f32 closest_distance_ray_ray(Ray *r0, Ray *r1)
 {
-	// @Todo: @Debug: There may be a bug here when we are parallel? Double check
     // @Note: Ray directions must be normalized!
     
     // @Note: Originally looked at code from https://nelari.us/post/gizmos/,

@@ -1,8 +1,9 @@
-/* orh_d3d11.cpp - v0.04 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.05 - C++ D3D11 immediate mode renderer.
 
 #include "orh.h" before this file.
 
 REVISION HISTORY:
+0.05 - added d3d11_clear_depth() to clear depth only. Added immediate_rect_3d().
 0.04 - removed ability to pass sRGB bool to load_texture(). Now we always create 4-bpp non-sRGB texture.
 0.03 - renamed print() to debug_print() and some string names.
 0.02 - renamed some d3d11 objects.
@@ -851,6 +852,12 @@ FUNCTION void d3d11_viewport(FLOAT top_left_x, FLOAT top_left_y, FLOAT width, FL
     viewport.MaxDepth = 1;
 }
 
+FUNCTION void d3d11_clear_depth()
+{
+    // @Note: Clear depth buffer to the "far" value (0.0f instead of 1.0f if using reverse-z perspective projection).
+    device_context->ClearDepthStencilView(depth_stencil_view, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+}
+
 FUNCTION void d3d11_clear(FLOAT r, FLOAT g, FLOAT b, FLOAT a)
 {
     // Go linear; using SRGB framebuffer (render_target_view).
@@ -858,9 +865,7 @@ FUNCTION void d3d11_clear(FLOAT r, FLOAT g, FLOAT b, FLOAT a)
     color.rgb = pow(color.rgb, 2.2f);
     
     device_context->ClearRenderTargetView(render_target_view, color.I);
-    
-    // @Note: Clear depth buffer to the "far" value (0.0f instead of 1.0f if using reverse-z perspective projection).
-    device_context->ClearDepthStencilView(depth_stencil_view, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+    d3d11_clear_depth();
 }
 
 FUNCTION void d3d11_clear() 
@@ -1096,6 +1101,19 @@ FUNCTION void immediate_quad(V3 p0, V3 p1, V3 p2, V3 p3, V4 color)
     immediate_triangle(p0, p2, p3, color);
 }
 
+FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V4 color)
+{
+    V3 tangent, bitangent;
+    calculate_tangents(normal, &tangent, &bitangent);
+    
+    V3 p0 = center - tangent*half_scale - bitangent*half_scale;
+    V3 p1 = center + tangent*half_scale - bitangent*half_scale;
+    V3 p2 = center + tangent*half_scale + bitangent*half_scale;
+    V3 p3 = center - tangent*half_scale + bitangent*half_scale;
+    
+    immediate_quad(p0, p1, p2, p3, color);
+}
+
 FUNCTION void immediate_hexahedron(V3 p0, V3 p1, V3 p2, V3 p3,
                                    V3 p4, V3 p5, V3 p6, V3 p7,
                                    V4 color)
@@ -1170,29 +1188,27 @@ FUNCTION void immediate_line_3d(V3 p0, V3 p1, V4 color, f32 thickness = 0.1f)
     immediate_hexahedron(v0, v1, v2, v3, v4, v5, v6, v7, color);
 }
 
-FUNCTION void immediate_cone(V3 position, V3 direction, f32 radius, f32 length, V4 color)
+FUNCTION void immediate_cone(V3 base_center, V3 direction, f32 base_radius, f32 length, V4 color)
 {
-    // @Note: position is the center of the circle part of the cone.
-    
     direction = normalize0(direction);
-    V3 tip    = position + length * direction;
+    V3 tip    = base_center + length * direction;
     
     V3 tangent = {};
     V3 unused  = {};
     calculate_tangents(direction, &tangent, &unused);
     
     // Initial point
-    V3 current_vertex = position + radius * tangent;
+    V3 current_vertex = base_center + base_radius * tangent;
     
     const s32 NUM_SEGMENTS = 50;
     f32 theta    = TAU32 / NUM_SEGMENTS;
     Quaternion q = quaternion_from_axis_angle(direction, theta);
     
     for (s32 i = 0; i < NUM_SEGMENTS; i++) {
-        V3 next_vertex = rotate_point_around_pivot(current_vertex, position, q);
+        V3 next_vertex = rotate_point_around_pivot(current_vertex, base_center, q);
         
         // Draw circle part.
-        immediate_triangle(position, current_vertex, next_vertex, color);
+        immediate_triangle(base_center, current_vertex, next_vertex, color);
         
         // Draw the cone part.
         immediate_triangle(current_vertex, tip, next_vertex, color);
@@ -1201,16 +1217,17 @@ FUNCTION void immediate_cone(V3 position, V3 direction, f32 radius, f32 length, 
     }
 }
 
-FUNCTION void immediate_arrow(V3 position, V3 direction, f32 length, V4 color, f32 thickness = 0.05f)
+FUNCTION void immediate_arrow(V3 start, V3 direction, f32 length, V4 color, f32 thickness = 0.05f)
 {
-    // @Note: position is the start of the arrow.
+    f32 cone_length = 0.25f * length;
+    length         -= cone_length;
     
     direction = normalize0(direction);
-    V3 p0     = position;
-    V3 p1     = position + length * direction;
+    V3 p0     = start;
+    V3 p1     = start + length * direction;
     
     immediate_line_3d(p0, p1, color, thickness);
-    immediate_cone(p1, direction, 2.5f * thickness, 0.5f, color);
+    immediate_cone(p1, direction, 2.5f * thickness, cone_length, color);
 }
 
 FUNCTION void immediate_torus(V3 center, f32 radius, V3 normal, V4 color, f32 thickness = 0.1f)
