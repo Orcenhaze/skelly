@@ -73,10 +73,14 @@ FUNCTION void draw_main_editor_window()
                 //
                 // Scale
                 //
-                LOCAL_PERSIST f32 scale = 1.0f;
-                scale = e->scale.x;
-                if (ImGui::DragFloat("Scale", &scale, 0.005f, 1.0f, F32_MAX, "%.3f")) {
-                    e->scale = v3(scale);	
+                /* 
+                                LOCAL_PERSIST f32 scale = 1.0f;
+                                scale = e->scale.x;
+                                if (ImGui::DragFloat("Scale", &scale, 0.005f, 1.0f, F32_MAX, "%.3f")) {
+                                    e->scale = v3(scale);	
+                                }
+                 */
+                if (ImGui::DragFloat3("Scale", e->scale.I, 0.005f, 1.0f, F32_MAX, "%.3f")) {
                 }
                 
                 //

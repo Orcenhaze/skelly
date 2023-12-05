@@ -11,9 +11,6 @@ struct Entity
     V3           scale;
     M4x4_Inverse object_to_world_matrix;
     
-    // In world space. Updated in update_entity_transform().
-    Rect3 bounding_box;
-    
     Triangle_Mesh *mesh;
 };
 

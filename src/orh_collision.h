@@ -13,6 +13,7 @@ union Ray
 {
     struct { V3  origin; V3 direction; f32 t; };
     struct { V3  o;      V3 d;         f32 t; };
+    
 };
 
 struct Plane

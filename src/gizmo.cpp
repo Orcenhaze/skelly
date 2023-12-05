@@ -5,7 +5,9 @@
 // @Cleanup: This needs some pest control!
 
 // @Debug: Translation gizmo is a bit weird when it's far from the camera.
-// @Debug: Rotation of entities is giving us wrong bounding box.
+// Fix is simple. Treat axes as planes as well. Get intersection with plane, dot with axis to get delta.
+
+// @Todo: Don't render gizmo when active and render infinite axis instead?
 
 // @Incomplete: Add scale gizmo!
 

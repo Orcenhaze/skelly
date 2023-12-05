@@ -1,8 +1,9 @@
-/* orh_d3d11.cpp - v0.05 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.06 - C++ D3D11 immediate mode renderer.
 
 #include "orh.h" before this file.
 
 REVISION HISTORY:
+0.06 - set_object_to_world() now takes scale and calculates TRS matrix properly.
 0.05 - added d3d11_clear_depth() to clear depth only. Added immediate_rect_3d().
 0.04 - removed ability to pass sRGB bool to load_texture(). Now we always create 4-bpp non-sRGB texture.
 0.03 - renamed print() to debug_print() and some string names.
@@ -922,7 +923,7 @@ FUNCTION void set_world_to_view(M4x4_Inverse matrix)
     world_to_view_matrix = matrix;
 }
 
-FUNCTION void set_object_to_world(V3 position, Quaternion orientation)
+FUNCTION void set_object_to_world(V3 position, Quaternion orientation, V3 scale)
 {
     // @Note: immediate_() family functions (like immediate_quad(), immediate_triangle(), etc.. ) MUST 
     // use object-space coordinates for their geometry after calling this function. 
@@ -948,14 +949,19 @@ FUNCTION void set_object_to_world(V3 position, Quaternion orientation)
     // that the quad object is in it's own local space and it will be transformed to the world in the
     // vertex shader.
     
-    M4x4 m = m4x4_identity();
-    m._14  = position.x;
-    m._24  = position.y;
-    m._34  = position.z;
+    M4x4 t = m4x4_identity();
+    t._14  = position.x;
+    t._24  = position.y;
+    t._34  = position.z;
     
     M4x4 r = m4x4_from_quaternion(orientation);
     
-    object_to_world_matrix = m * r;
+    M4x4 s = m4x4_identity();
+    s._11  = scale.x;
+    s._22  = scale.y;
+    s._33  = scale.z;
+    
+    object_to_world_matrix = t * r * s;
 }
 
 FUNCTION V2 pixel_to_ndc(V2 pixel)

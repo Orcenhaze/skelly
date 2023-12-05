@@ -57,8 +57,9 @@ FUNCTION void load_meshes(Catalog<String8, Triangle_Mesh> *catalog)
     }
 }
 
-FUNCTION void control_camera(Camera *cam, V3 delta_mouse)
+FUNCTION void control_camera(Camera *cam)
 {
+    V3 delta_mouse = game->delta_mouse;
     f32 dt = os->dt;
     
     V3 cam_p = cam->position;
@@ -120,8 +121,8 @@ FUNCTION void game_init()
 FUNCTION void game_update()
 {
     LOCAL_PERSIST V3 old_ndc = {};
-    V3 delta_mouse = os->mouse_ndc - old_ndc;
-    old_ndc        = os->mouse_ndc;
+    game->delta_mouse = os->mouse_ndc - old_ndc;
+    old_ndc           = os->mouse_ndc;
     
     game->mouse_world = unproject(game->camera.position, 
                                   1.0f, 
@@ -129,7 +130,7 @@ FUNCTION void game_update()
                                   world_to_view_matrix, 
                                   view_to_proj_matrix);
     
-    control_camera(&game->camera, delta_mouse);
+    control_camera(&game->camera);
     set_world_to_view(game->camera.matrix);
     
     //
@@ -153,7 +154,22 @@ FUNCTION void game_update()
     for (s32 i = 0; i < manager->entities.count; i++) {
         Entity *e = &manager->entities[i];
         
-        if (ray_box_intersect(&camera_ray, e->bounding_box)) {
+        /*
+@Todo: Use ray-mesh intersection for more accurate picking!
+
+         @Note: Transforming camera ray to entity object space (from https://gamedev.stackexchange.com/questions/72440/the-correct-way-to-transform-a-ray-with-a-matrix):
+                Transforming the ray position and direction by the inverse model transformation is correct. However, many ray-intersection routines assume that the ray direction is a unit vector. If the model transformation involves scaling, the ray direction won't be a unit vector afterward, and should likely be renormalized.
+                
+                However, the distance along the ray returned by the intersection routines will then be measured in model space, and won't represent the distance in world space. If it's a uniform scale, you can simply multiply the returned distance by the scale factor to convert it back to world-space distance. For non-uniform scaling it's trickier; probably the best way is to transform the intersection point back to world space and then re-measure the distance from the ray origin there.
+         
+*/
+        
+        V3 o = (e->object_to_world_matrix.inverse * camera_ray.origin);
+        V3 d = (e->object_to_world_matrix.inverse * v4(camera_ray.direction, 0.0f)).xyz;
+        
+        Ray ray = {o, normalize(d)};
+        
+        if (ray_box_intersect(&ray, e->mesh->bounding_box)) {
             if (camera_ray.t < sort_index) {
                 sort_index              = camera_ray.t;
                 manager->hovered_entity = e;
@@ -193,14 +209,19 @@ FUNCTION void game_render()
 #if DEVELOPER
     draw_editor();
     
+#if 0
     if (manager->hovered_entity) {
+        // Draw bounding_box of mesh.
         immediate_begin(TRUE);
         set_texture(0);
-        immediate_cuboid(get_center(manager->hovered_entity->bounding_box), 
-                         0.5f*get_size(manager->hovered_entity->bounding_box), 
+        set_object_to_world(manager->hovered_entity->position, manager->hovered_entity->orientation, manager->hovered_entity->scale);
+        
+        immediate_cuboid(get_center(manager->hovered_entity->mesh->bounding_box), 
+                         0.5f*get_size(manager->hovered_entity->mesh->bounding_box), 
                          {0,1,1,1});
         immediate_end();
     }
+#endif
     
     //
     // Render Gizmos.

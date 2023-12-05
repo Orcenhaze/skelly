@@ -28,6 +28,7 @@ struct Game_State
     Entity_Manager entity_manager;
     
     Camera camera;
+    V3 delta_mouse; // current - previous mouse_ndc.
     V3 mouse_world;
     
     s32               num_point_lights;

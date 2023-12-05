@@ -1,4 +1,4 @@
-/* orh.h - v0.75 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.76 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.76 - no need to pass scale to get_rotaion(). Added invert() to invert M4x4. Fixed SIGN() to include 0.
 0.75 - quaternion_get_axis() uses normalize0 now in case the vector part of the quaternion is zero.
 0.74 - fixed F32_MIN and F64_MIN, we had minimum normalized positive floating-point number.
 0.73 - array_add() now returns pointer to newly added item.
@@ -366,7 +367,7 @@ auto GLUE(__defer_, __COUNTER__) = MakeDeferScope([&](){code;})
 #define SQUARE(x) ((x) * (x))
 #define CUBE(x)   ((x) * (x) * (x))
 #define ABS(x)    ((x) > 0 ? (x) : -(x))
-#define SIGN(x)   ((x) > 0 ?  1  :  -1 )
+#define SIGN(x)   ((x > 0) - (x < 0))
 
 #if COMPILER_CL
 #    pragma warning(push)
@@ -596,12 +597,13 @@ FUNCDEF inline f32 quaternion_get_angle_turns(Quaternion q);
 FUNCDEF M4x4 m4x4_identity();
 FUNCDEF M4x4 m4x4_from_quaternion(Quaternion q);
 FUNCDEF M4x4 transpose(M4x4 m);
+FUNCDEF b32  invert(M4x4 m, M4x4 *result);
 FUNCDEF V4   transform(M4x4 m, V4 v);
 FUNCDEF inline V3   get_column(M4x4 m, u32 c);
 FUNCDEF inline V3   get_row(M4x4 m, u32 r);
 FUNCDEF inline V3   get_translation(M4x4 m);
 FUNCDEF inline V3   get_scale(M4x4 m);
-FUNCDEF inline M4x4 get_rotaion(M4x4 m, V3 scale);
+FUNCDEF inline M4x4 get_rotaion(M4x4 m);
 
 // Linear interpolation. Returns value between a and b based on fraction t.
 FUNCDEF inline f32 lerp(f32 a, f32 t, f32 b);
@@ -2573,6 +2575,72 @@ M4x4 transpose(M4x4 m)
     };
     return result;
 }
+b32 invert(M4x4 m, M4x4 *result)
+{
+    // @Note: Call this to compute the inverse of a matrix of unknown origin.
+    // Otherwise constructing the inverse of a matrix by hand could be faster.
+    
+    // @Note: Read up on how to compute the inverse:
+    // https://mathworld.wolfram.com/MatrixInverse.html
+    
+    // @Note: Taken from the MESA implementation of the GLU libray:
+    // https://www.mesa3d.org/
+    // https://github.com/Starlink/mesa/blob/master/src/glu/sgi/libutil/project.c
+    //
+    //
+    //
+    // The implementation uses:
+    //
+    // inverse(M) = adjugate(M) / determinant(M);
+    //
+    // And the determinants are expanded using the Laplace expansion.
+    
+    f32 inv[16], det;
+    
+    inv[0] =   m.I[5]*m.I[10]*m.I[15] - m.I[5]*m.I[11]*m.I[14] - m.I[9]*m.I[6]*m.I[15]
+        + m.I[9]*m.I[7]*m.I[14] + m.I[13]*m.I[6]*m.I[11] - m.I[13]*m.I[7]*m.I[10];
+    inv[4] =  -m.I[4]*m.I[10]*m.I[15] + m.I[4]*m.I[11]*m.I[14] + m.I[8]*m.I[6]*m.I[15]
+        - m.I[8]*m.I[7]*m.I[14] - m.I[12]*m.I[6]*m.I[11] + m.I[12]*m.I[7]*m.I[10];
+    inv[8] =   m.I[4]*m.I[9]*m.I[15] - m.I[4]*m.I[11]*m.I[13] - m.I[8]*m.I[5]*m.I[15]
+        + m.I[8]*m.I[7]*m.I[13] + m.I[12]*m.I[5]*m.I[11] - m.I[12]*m.I[7]*m.I[9];
+    inv[12] = -m.I[4]*m.I[9]*m.I[14] + m.I[4]*m.I[10]*m.I[13] + m.I[8]*m.I[5]*m.I[14]
+        - m.I[8]*m.I[6]*m.I[13] - m.I[12]*m.I[5]*m.I[10] + m.I[12]*m.I[6]*m.I[9];
+    inv[1] =  -m.I[1]*m.I[10]*m.I[15] + m.I[1]*m.I[11]*m.I[14] + m.I[9]*m.I[2]*m.I[15]
+        - m.I[9]*m.I[3]*m.I[14] - m.I[13]*m.I[2]*m.I[11] + m.I[13]*m.I[3]*m.I[10];
+    inv[5] =   m.I[0]*m.I[10]*m.I[15] - m.I[0]*m.I[11]*m.I[14] - m.I[8]*m.I[2]*m.I[15]
+        + m.I[8]*m.I[3]*m.I[14] + m.I[12]*m.I[2]*m.I[11] - m.I[12]*m.I[3]*m.I[10];
+    inv[9] =  -m.I[0]*m.I[9]*m.I[15] + m.I[0]*m.I[11]*m.I[13] + m.I[8]*m.I[1]*m.I[15]
+        - m.I[8]*m.I[3]*m.I[13] - m.I[12]*m.I[1]*m.I[11] + m.I[12]*m.I[3]*m.I[9];
+    inv[13] =  m.I[0]*m.I[9]*m.I[14] - m.I[0]*m.I[10]*m.I[13] - m.I[8]*m.I[1]*m.I[14]
+        + m.I[8]*m.I[2]*m.I[13] + m.I[12]*m.I[1]*m.I[10] - m.I[12]*m.I[2]*m.I[9];
+    inv[2] =   m.I[1]*m.I[6]*m.I[15] - m.I[1]*m.I[7]*m.I[14] - m.I[5]*m.I[2]*m.I[15]
+        + m.I[5]*m.I[3]*m.I[14] + m.I[13]*m.I[2]*m.I[7] - m.I[13]*m.I[3]*m.I[6];
+    inv[6] =  -m.I[0]*m.I[6]*m.I[15] + m.I[0]*m.I[7]*m.I[14] + m.I[4]*m.I[2]*m.I[15]
+        - m.I[4]*m.I[3]*m.I[14] - m.I[12]*m.I[2]*m.I[7] + m.I[12]*m.I[3]*m.I[6];
+    inv[10] =  m.I[0]*m.I[5]*m.I[15] - m.I[0]*m.I[7]*m.I[13] - m.I[4]*m.I[1]*m.I[15]
+        + m.I[4]*m.I[3]*m.I[13] + m.I[12]*m.I[1]*m.I[7] - m.I[12]*m.I[3]*m.I[5];
+    inv[14] = -m.I[0]*m.I[5]*m.I[14] + m.I[0]*m.I[6]*m.I[13] + m.I[4]*m.I[1]*m.I[14]
+        - m.I[4]*m.I[2]*m.I[13] - m.I[12]*m.I[1]*m.I[6] + m.I[12]*m.I[2]*m.I[5];
+    inv[3] =  -m.I[1]*m.I[6]*m.I[11] + m.I[1]*m.I[7]*m.I[10] + m.I[5]*m.I[2]*m.I[11]
+        - m.I[5]*m.I[3]*m.I[10] - m.I[9]*m.I[2]*m.I[7] + m.I[9]*m.I[3]*m.I[6];
+    inv[7] =   m.I[0]*m.I[6]*m.I[11] - m.I[0]*m.I[7]*m.I[10] - m.I[4]*m.I[2]*m.I[11]
+        + m.I[4]*m.I[3]*m.I[10] + m.I[8]*m.I[2]*m.I[7] - m.I[8]*m.I[3]*m.I[6];
+    inv[11] = -m.I[0]*m.I[5]*m.I[11] + m.I[0]*m.I[7]*m.I[9] + m.I[4]*m.I[1]*m.I[11]
+        - m.I[4]*m.I[3]*m.I[9] - m.I[8]*m.I[1]*m.I[7] + m.I[8]*m.I[3]*m.I[5];
+    inv[15] =  m.I[0]*m.I[5]*m.I[10] - m.I[0]*m.I[6]*m.I[9] - m.I[4]*m.I[1]*m.I[10]
+        + m.I[4]*m.I[2]*m.I[9] + m.I[8]*m.I[1]*m.I[6] - m.I[8]*m.I[2]*m.I[5];
+    
+    det = m.I[0]*inv[0] + m.I[1]*inv[4] + m.I[2]*inv[8] + m.I[3]*inv[12];
+    if (det == 0)
+        return FALSE;
+    
+    det = 1.0f / det;
+    
+    for (s32 i = 0; i < 16; i++)
+        result->I[i] = inv[i] * det;
+    
+    return TRUE;
+}
 V4 transform(M4x4 m, V4 v)
 {
     V4 result = 
@@ -2606,8 +2674,10 @@ V3 get_scale(M4x4 m)
     f32 sz = length(get_column(m, 2));
     return {sx, sy, sz};
 }
-M4x4 get_rotaion(M4x4 m, V3 scale)
+M4x4 get_rotaion(M4x4 m)
 {
+    V3 scale = get_scale(m);
+    
     V3 c0 = get_column(m, 0) / scale.x;
     V3 c1 = get_column(m, 1) / scale.y;
     V3 c2 = get_column(m, 2) / scale.z;
@@ -2617,7 +2687,7 @@ M4x4 get_rotaion(M4x4 m, V3 scale)
         c0.x, c1.x, c2.x, 0.0f,
         c0.y, c1.y, c2.y, 0.0f,
         c0.z, c1.z, c2.z, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f
+        0.0f, 0.0f, 0.0f, 1.0f
     };
     return result;
 }

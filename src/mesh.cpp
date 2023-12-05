@@ -150,8 +150,7 @@ FUNCTION void generate_bounding_box_for_mesh(Triangle_Mesh *mesh)
         if(v.z > max.z) max.z = v.z;
     }
     
-    mesh->bounding_box_p0 = min;
-    mesh->bounding_box_p1 = max;
+    mesh->bounding_box = {min, max};
 }
 
 FUNCTION void load_triangle_mesh(Triangle_Mesh *mesh, String8 full_path)
