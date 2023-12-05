@@ -9,7 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
-0.76 - no need to pass scale to get_rotaion(). Added invert() to invert M4x4. Fixed SIGN() to include 0.
+0.76 - no need to pass scale to get_rotation(). Added invert() to invert M4x4. Fixed SIGN() to include 0.
 0.75 - quaternion_get_axis() uses normalize0 now in case the vector part of the quaternion is zero.
 0.74 - fixed F32_MIN and F64_MIN, we had minimum normalized positive floating-point number.
 0.73 - array_add() now returns pointer to newly added item.
@@ -603,7 +603,7 @@ FUNCDEF inline V3   get_column(M4x4 m, u32 c);
 FUNCDEF inline V3   get_row(M4x4 m, u32 r);
 FUNCDEF inline V3   get_translation(M4x4 m);
 FUNCDEF inline V3   get_scale(M4x4 m);
-FUNCDEF inline M4x4 get_rotaion(M4x4 m);
+FUNCDEF inline M4x4 get_rotation(M4x4 m);
 
 // Linear interpolation. Returns value between a and b based on fraction t.
 FUNCDEF inline f32 lerp(f32 a, f32 t, f32 b);
@@ -2674,7 +2674,7 @@ V3 get_scale(M4x4 m)
     f32 sz = length(get_column(m, 2));
     return {sx, sy, sz};
 }
-M4x4 get_rotaion(M4x4 m)
+M4x4 get_rotation(M4x4 m)
 {
     V3 scale = get_scale(m);
     
