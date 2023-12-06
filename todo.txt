@@ -1,4 +1,4 @@
-- Cleanup gizmo.cpp and address the bugs (translation issue, rendering, etc.).
+- Cleanup gizmo.cpp; too ugly.
 - Projection is a bit weird on edges, things get scaled weirdly.
 
 TIMESTAMPS:

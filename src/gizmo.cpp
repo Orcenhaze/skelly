@@ -3,11 +3,10 @@
 // @Note: This file is NOT independant. It's using the engine's types, collision routines and immediate-mode renderer.
     
 // @Cleanup: This needs some pest control!
+// @Cleanup: This needs some pest control!
+// @Cleanup: This needs some pest control!
 
-// @Debug: Translation gizmo is a bit weird when it's far from the camera.
-// Fix is simple. Treat axes as planes as well. Get intersection with plane, dot with axis to get delta.
-
-// @Todo: Don't render gizmo when active and render infinite axis instead?
+// @Todo: Replace gizmo_old and new points!!
 
 // @Incomplete: Add scale gizmo!
 
@@ -22,6 +21,7 @@ enum Gizmo_Mode
 
 enum Gizmo_Element
 {
+    // Different elements used depending on gizmo mode.
     GizmoElement_NONE,
     GizmoElement_XAXIS,
     GizmoElement_YAXIS,
@@ -32,71 +32,135 @@ enum Gizmo_Element
     GizmoElement_CPLANE, // camera_ray plane.
 };
 
+struct Gizmo_Rendering_Params 
+{
+    // @Todo: Docs, explain what these are used for...
+    // @Todo: Docs, explain what these are used for...
+    //
+    f32 scale;
+    f32 threshold;
+    f32 thickness;
+    f32 plane_scale;
+    V3  position_to_camera; // position of entity to camera.
+};
+
+// @Todo: Create a state struct?
+// @Todo: Create a state struct?
+// @Todo: Create a state struct?
+
 struct Gizmo_Geometry
 {
-    Ray    x_axis,   y_axis,   z_axis;
-    Plane  x_plane,  y_plane,  z_plane;
-    Circle x_circle, y_circle, z_circle, c_circle;
+    Ray    axes   [3];
+    Plane  planes [3];
+    Circle circles[4];
 };
+
+// @Cleanup
+// @Cleanup
+// @Cleanup
 
 GLOBAL b32            gizmo_is_active; // True iff close to an element and MouseButton_Left is down.
 GLOBAL Gizmo_Mode     gizmo_mode;
 GLOBAL Gizmo_Element  gizmo_element;
-GLOBAL Gizmo_Geometry gizmo_geom;
 
-V3 gizmo_new_point;
-V3 gizmo_old_point;
-V3 gizmo_start_point; // For visualizing rotations.
+// @Todo: Replace.
+GLOBAL V3 gizmo_new_point;
+GLOBAL V3 gizmo_old_point;
+GLOBAL V3 gizmo_start_point; // For visualizing rotations.
 
-V4 gizmo_active_color = {1.0f, 1.0f, 1.0f, 1.0f};
-V4 gizmo_plane_color  = {1.0f, 1.0f, 0.0f, 0.5f};
-V4 gizmo_xaxis_color  = {1.0f, 0.0f, 0.0f, 0.8f};
-V4 gizmo_yaxis_color  = {0.0f, 1.0f, 0.0f, 0.8f};
-V4 gizmo_zaxis_color  = {0.0f, 0.0f, 1.0f, 0.8f};
+GLOBAL V3         original_position;
+GLOBAL Quaternion original_orientation;
+GLOBAL V3         original_scale;
 
-FUNCTION void gizmo_render_translation(f32 axis_scale, f32 thickness, f32 plane_scale,
-                                       V4 *colors)
+GLOBAL V3                     click_offset;
+GLOBAL Gizmo_Rendering_Params click_rendering_params; // From when we first clicked.
+GLOBAL Gizmo_Geometry         click_geometry; // From when we first clicked.
+
+
+GLOBAL V4 gizmo_active_color = {1.0f, 1.0f, 1.0f, 1.0f};
+GLOBAL V4 gizmo_plane_color  = {1.0f, 1.0f, 0.0f, 0.5f};
+GLOBAL V4 gizmo_axes_colors[3] =
 {
-    s32 color_index     = gizmo_element;
-    colors[color_index] = gizmo_active_color;
+    {1.0f, 0.0f, 0.0f, 0.8f}, // x-axis
+    {0.0f, 1.0f, 0.0f, 0.8f}, // y-axis
+    {0.0f, 0.0f, 1.0f, 0.8f}, // z-axis
+};
+
+FUNCTION Gizmo_Rendering_Params gizmo_calculate_rendering_params(V3 camera_position, V3 entity_position)
+{
+    V3 position_to_camera  = camera_position - entity_position;
+    f32 distance_to_camera = length(position_to_camera);
+    position_to_camera     = normalize0(position_to_camera);
     
-    Ray x_axis          = gizmo_geom.x_axis; 
-    Ray y_axis          = gizmo_geom.y_axis; 
-    Ray z_axis          = gizmo_geom.z_axis; 
-    Plane x_plane       = gizmo_geom.x_plane;
-    Plane y_plane       = gizmo_geom.y_plane;
-    Plane z_plane       = gizmo_geom.z_plane;
+    Gizmo_Rendering_Params result = {};
     
+    result.scale              = distance_to_camera / 5.00f; // @Hardcode: scale.
+    result.threshold          = result.scale       * 0.07f; // @Hardcode: threshold ratio.
+    result.thickness          = result.scale       * 0.05f; // @Hardcode: thickness ratio.
+    result.plane_scale        = result.scale       * 0.50f; // @Hardcode: plane_scale ratio.
+    result.position_to_camera = position_to_camera;
+    
+    return result;
+}
+
+FUNCTION Gizmo_Geometry gizmo_calculate_geometry(V3 entity_position, Gizmo_Rendering_Params params)
+{
+    Gizmo_Geometry result = {};
+    
+    result.axes[0] = {entity_position, {1.0f, 0.0f, 0.0f}, F32_MAX};
+    result.axes[1] = {entity_position, {0.0f, 1.0f, 0.0f}, F32_MAX};
+    result.axes[2] = {entity_position, {0.0f, 0.0f, 1.0f}, F32_MAX};
+    
+    f32 plane_scale = params.plane_scale;
+    V3 sx = {0.0f, plane_scale, plane_scale};
+    V3 sy = {plane_scale, 0.0f, plane_scale};
+    V3 sz = {plane_scale, plane_scale, 0.0f};
+    
+    result.planes[0] = {entity_position + sx, {1.0f, 0.0f, 0.0f}};
+    result.planes[1] = {entity_position + sy, {0.0f, 1.0f, 0.0f}};
+    result.planes[2] = {entity_position + sz, {0.0f, 0.0f, 1.0f}};
+    
+    f32 scale = params.scale;
+    result.circles[0] = {entity_position,        {1.0f, 0.0f, 0.0f}, scale+(scale*0.10f)};
+    result.circles[1] = {entity_position,        {0.0f, 1.0f, 0.0f}, scale+(scale*0.05f)};
+    result.circles[2] = {entity_position,        {0.0f, 0.0f, 1.0f}, scale+(scale*0.00f)};
+    result.circles[3] = {entity_position, params.position_to_camera, scale+(scale*0.30f)};
+    
+    return result;
+}
+
+FUNCTION void gizmo_render_translation(Gizmo_Geometry geometry, Gizmo_Rendering_Params params)
+{
     // Ignore z-buffer.
     d3d11_clear_depth();
     immediate_begin();
     set_texture(0);
     
-    immediate_arrow(x_axis.o, x_axis.d, axis_scale, colors[GizmoElement_XAXIS], thickness);
-    immediate_arrow(y_axis.o, y_axis.d, axis_scale, colors[GizmoElement_YAXIS], thickness);
-    immediate_arrow(z_axis.o, z_axis.d, axis_scale, colors[GizmoElement_ZAXIS], thickness);
+    // Axes
+    for (s32 i = 0; i < 3; i++) {
+        Ray axis = geometry.axes[i];
+        V4 color = gizmo_axes_colors[i];
+        if ((gizmo_element - GizmoElement_XAXIS) == i)
+            color = gizmo_active_color;
+        
+        immediate_arrow(axis.o, axis.d, params.scale, color, params.thickness);
+    }
     
-    immediate_rect_3d(x_plane.center, x_plane.normal, 0.5f*plane_scale, colors[GizmoElement_XPLANE]);
-    immediate_rect_3d(y_plane.center, y_plane.normal, 0.5f*plane_scale, colors[GizmoElement_YPLANE]);
-    immediate_rect_3d(z_plane.center, z_plane.normal, 0.5f*plane_scale, colors[GizmoElement_ZPLANE]);
+    // Planes
+    for (s32 i = 0; i < 3; i++) {
+        Plane plane = geometry.planes[i];
+        V4 color = gizmo_plane_color;
+        if ((gizmo_element - GizmoElement_XPLANE) == i)
+            color = gizmo_active_color;
+        
+        immediate_rect_3d(plane.center, plane.normal, 0.5f*params.plane_scale, color);
+    }
     
     immediate_end();
 }
 
-FUNCTION void gizmo_render_rotation(f32 thickness, V4 *colors)
+FUNCTION void gizmo_render_rotation(Gizmo_Geometry geometry, Gizmo_Rendering_Params params)
 {
-    // Use axis colors for circle planes.
-    s32 color_index     = gizmo_element - GizmoElement_XPLANE + 1;
-    colors[color_index] = gizmo_active_color;
-    
-    Circle x_circle     = gizmo_geom.x_circle;
-    Circle y_circle     = gizmo_geom.y_circle;
-    Circle z_circle     = gizmo_geom.z_circle;
-    Circle c_circle     = gizmo_geom.c_circle;
-    
-    // Assuming they all have the same center.
-    V3 c = c_circle.center;
-    
     // Ignore z-buffer.
     d3d11_clear_depth();
     immediate_begin();
@@ -104,129 +168,94 @@ FUNCTION void gizmo_render_rotation(f32 thickness, V4 *colors)
     
     if(gizmo_is_active)
     {
-        immediate_line_3d(c, gizmo_new_point, gizmo_active_color, thickness*0.50f);
-        immediate_line_3d(c, gizmo_start_point, gizmo_active_color, thickness*0.20f);
+        // Assuming they all have the same center.
+        immediate_line_3d(geometry.circles[0].center, gizmo_new_point, gizmo_active_color, params.thickness*0.50f);
+        immediate_line_3d(geometry.circles[0].center, gizmo_start_point, gizmo_active_color, params.thickness*0.20f);
     }
     
-    immediate_torus(c, x_circle.radius, x_circle.normal, colors[GizmoElement_XAXIS],  thickness);
-    immediate_torus(c, y_circle.radius, y_circle.normal, colors[GizmoElement_YAXIS],  thickness);
-    immediate_torus(c, z_circle.radius, z_circle.normal, colors[GizmoElement_ZAXIS],  thickness);
-    immediate_torus(c, c_circle.radius, c_circle.normal, colors[GizmoElement_XPLANE], thickness);
+    for (s32 i = 0; i < 4; i++) {
+        Circle circle = geometry.circles[i];
+        
+        V4 color;
+        if (i == 3) color = gizmo_plane_color;
+        else       color  = gizmo_axes_colors[i];
+        if ((gizmo_element - GizmoElement_XPLANE) == i)
+            color = gizmo_active_color;
+        
+        immediate_torus(circle.center, circle.radius, circle.normal, color, params.thickness);
+    }
     
     immediate_end();
 }
 
 FUNCTION void gizmo_render(Ray camera_ray, Entity *selected_entity)
 {
-    
-    // @Cleanup:
-    // @Cleanup:
-    // @Cleanup:
-    // @Cleanup:
+    V3 pos_to_cam   = camera_ray.o - selected_entity->position;
+    f32 cam_dist    = length(pos_to_cam);
     
     V3 pos = selected_entity->position;
+    Gizmo_Rendering_Params params = gizmo_calculate_rendering_params(camera_ray.origin, pos);
+    Gizmo_Geometry geometry       = gizmo_calculate_geometry(pos, params);
     
-    f32 dist__          = F32_MAX;
-    f32 t__             = F32_MAX;
-    b32 is_close        = false;
+    // @Cleanup: Cleanup inactive stuff...
+    // @Cleanup:
+    // @Cleanup:
     
-    V3 pos_cam          = camera_ray.o - pos;
-    f32 cam_dist        = length(pos_cam);
-    pos_cam             = normalize(pos_cam);
-    
-    f32 scale           = cam_dist / 5.00f; // @Hardcode: scale.
-    f32 threshold       = scale    * 0.07f; // @Hardcode: threshold ratio.
-    f32 thickness       = scale    * 0.05f; // @Hardcode: thickness ratio.
-    f32 plane_scale     = scale    * 0.50f; // @Hardcode: plane_scale ratio.
-    
-    V4 colors[7]
-    {
-        {},
-        gizmo_xaxis_color,
-        gizmo_yaxis_color,
-        gizmo_zaxis_color,
-        gizmo_plane_color,
-        gizmo_plane_color,
-        gizmo_plane_color,
-    };
-    
-    if(gizmo_mode == GizmoMode_TRANSLATION) 
-        gizmo_render_translation(scale, thickness, plane_scale, colors);
-    else if(gizmo_mode == GizmoMode_ROTATION)
-        gizmo_render_rotation(thickness, colors);
+    if(gizmo_mode == GizmoMode_TRANSLATION) {
+        if (!gizmo_is_active) {
+            gizmo_render_translation(geometry, params);
+        } else {
+            V4 ghost_color = {0.2f, 0.2f, 0.2f, 0.4f};
+            d3d11_clear_depth();
+            immediate_begin();
+            set_texture(0);
+            immediate_cube(original_position, 0.05f, ghost_color);
+            
+            if (gizmo_element < GizmoElement_XPLANE) {
+                s32 axis_index = gizmo_element - GizmoElement_XAXIS;
+                Ray axis       = click_geometry.axes[axis_index];
+                
+                immediate_arrow(axis.o, axis.d, click_rendering_params.scale, ghost_color, click_rendering_params.thickness);
+                
+                immediate_line_3d(original_position + -50000*axis.d, 
+                                  original_position +  50000*axis.d, 
+                                  gizmo_axes_colors[axis_index], 0.01f);
+            } else {
+                s32 plane_index = gizmo_element - GizmoElement_XPLANE;
+                Plane plane     = click_geometry.planes[plane_index];
+                immediate_rect_3d(plane.center, plane.normal, 0.5f*click_rendering_params.plane_scale, ghost_color);
+                
+                s32 tangent_index   = (plane_index + 1) % 3;
+                s32 bitangent_index = (plane_index + 2) % 3;
+                
+                Ray axis0 = click_geometry.axes[tangent_index];
+                Ray axis1 = click_geometry.axes[bitangent_index];
+                
+                immediate_line_3d(original_position + -50000*axis0.d, 
+                                  original_position +  50000*axis0.d, 
+                                  gizmo_axes_colors[tangent_index], 0.01f);
+                immediate_line_3d(original_position + -50000*axis1.d, 
+                                  original_position +  50000*axis1.d, 
+                                  gizmo_axes_colors[bitangent_index], 0.01f);
+            }
+            immediate_end();
+        }
+        
+        
+    } else if(gizmo_mode == GizmoMode_ROTATION) {
+        gizmo_render_rotation(geometry, params);
+    }
 }
 
 FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
 {
-    
-    // @Cleanup:
-    // @Cleanup:
-    // @Cleanup:
-    // @Cleanup:
+    f32 best_dist = F32_MAX;
+    f32 best_t    = F32_MAX;
+    b32 is_close  = false;
     
     V3 pos = selected_entity->position;
-    
-    f32 dist__          = F32_MAX;
-    f32 t__             = F32_MAX;
-    b32 is_close        = false;
-    
-    V3 pos_cam          = camera_ray.o - pos;
-    f32 cam_dist        = length(pos_cam);
-    pos_cam             = normalize(pos_cam);
-    
-    f32 scale           = cam_dist / 5.00f; // @Hardcode: scale.
-    f32 threshold       = scale    * 0.07f; // @Hardcode: threshold ratio.
-    f32 thickness       = scale    * 0.05f; // @Hardcode: thickness ratio.
-    f32 plane_scale     = scale    * 0.50f; // @Hardcode: plane_scale ratio.
-    
-    gizmo_geom.x_axis   = {pos, {1.0f, 0.0f, 0.0f}, F32_MAX};
-    gizmo_geom.y_axis   = {pos, {0.0f, 1.0f, 0.0f}, F32_MAX};
-    gizmo_geom.z_axis   = {pos, {0.0f, 0.0f, 1.0f}, F32_MAX};
-    
-    V3 sx = {0.0f, plane_scale, plane_scale};
-    V3 sy = {plane_scale, 0.0f, plane_scale};
-    V3 sz = {plane_scale, plane_scale, 0.0f};
-    
-    gizmo_geom.x_plane  = {pos + sx, {1.0f, 0.0f, 0.0f}};
-    gizmo_geom.y_plane  = {pos + sy, {0.0f, 1.0f, 0.0f}};
-    gizmo_geom.z_plane  = {pos + sz, {0.0f, 0.0f, 1.0f}};
-    
-    gizmo_geom.x_circle = {pos, {1.0f, 0.0f, 0.0f}, scale+(scale*0.10f)};
-    gizmo_geom.y_circle = {pos, {0.0f, 1.0f, 0.0f}, scale+(scale*0.05f)};
-    gizmo_geom.z_circle = {pos, {0.0f, 0.0f, 1.0f}, scale+(scale*0.00f)};
-    gizmo_geom.c_circle = {pos,            pos_cam, scale+(scale*0.30f)};
-    
-    
-    // @Note: Storing everything in Gizmo_Geometry will be useful when rendering the gizmos.
-    Ray *axes[3] = 
-    {
-        &gizmo_geom.x_axis,
-        &gizmo_geom.y_axis,
-        &gizmo_geom.z_axis
-    };
-    Plane *planes[3] =
-    {
-        &gizmo_geom.x_plane,
-        &gizmo_geom.y_plane,
-        &gizmo_geom.z_plane
-    };
-    Circle *circles[4] = 
-    {
-        &gizmo_geom.x_circle,
-        &gizmo_geom.y_circle,
-        &gizmo_geom.z_circle,
-        &gizmo_geom.c_circle
-    };
-    V4 colors[7]
-    {
-        {},
-        gizmo_xaxis_color,
-        gizmo_yaxis_color,
-        gizmo_zaxis_color,
-        gizmo_plane_color,
-        gizmo_plane_color,
-        gizmo_plane_color,
-    };
+    Gizmo_Rendering_Params params = gizmo_calculate_rendering_params(camera_ray.origin, pos);
+    Gizmo_Geometry geometry       = gizmo_calculate_geometry(pos, params);
     
     //
     // Choose a gizmo element based on distance or intersection.
@@ -235,14 +264,12 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
         if (gizmo_mode == GizmoMode_TRANSLATION) {
             // Axes.
             for (s32 i = 0; i < 3; i++) {
-                // @Debug: Using closest_distance_ray_ray() causes unwanted behaviour when
-                // moving the cursor away from the gizmo element. 
+                Ray *axis   = &geometry.axes[i];
+                f32 dist    = closest_distance_ray_ray(&camera_ray, axis);
+                b32 t_valid = (axis->t > 0) && (axis->t < params.scale);
                 
-                f32 dist    = closest_distance_ray_ray(&camera_ray, axes[i]);
-                b32 t_valid = (axes[i]->t > 0) && (axes[i]->t < scale);
-                
-                if ((dist < dist__) && (dist < threshold) && (t_valid)) {
-                    dist__ = dist;
+                if ((dist < best_dist) && (dist < params.threshold) && (t_valid)) {
+                    best_dist = dist;
                     
                     is_close      = true;
                     gizmo_element = (Gizmo_Element)(GizmoElement_XAXIS + i);
@@ -251,51 +278,47 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
             
             // Planes.
             for (s32 i = 0; i < 3; i++) {
-                if (ray_plane_intersect(&camera_ray, *planes[i])) {
-                    V3 on_plane        = camera_ray.o + camera_ray.d*camera_ray.t;
-                    Rect3 plane_bounds = get_plane_bounds(planes[i]->center, planes[i]->normal, plane_scale);
+                Plane plane = geometry.planes[i];
+                if (ray_plane_intersect(&camera_ray, plane)) {
+                    V3 on_plane        = camera_ray.o + camera_ray.t*camera_ray.d;
+                    Rect3 plane_bounds = get_plane_bounds(plane.center, plane.normal, params.plane_scale);
                     
                     // Only compare the dimensions of the plane. So guarantee equality for 
                     // the other dimension to have a proper point_inside_box_test().
                     on_plane.I[i]      = plane_bounds.min.I[i];
                     
-                    if (point_inside_box_test(on_plane, plane_bounds) && (camera_ray.t < t__)) {
-                        t__ = camera_ray.t;
+                    if (point_inside_box_test(on_plane, plane_bounds) && (camera_ray.t < best_t)) {
+                        best_t = camera_ray.t;
                         
                         is_close      = true;
                         gizmo_element = (Gizmo_Element)(GizmoElement_XPLANE + i);
                     }
                 }
             }
-        } // GizmoMode_Translation
-        
-        else if (gizmo_mode == GizmoMode_ROTATION) {
+        } else if (gizmo_mode == GizmoMode_ROTATION) {
             for (s32 i = 0; i < 4; i++) {
-                V3  c = circles[i]->center;
-                f32 r = circles[i]->radius;
-                V3  n = circles[i]->normal;
+                V3  center = geometry.circles[i].center;
+                f32 radius = geometry.circles[i].radius;
+                V3  normal = geometry.circles[i].normal;
                 
-                Plane circle_plane = {c, n};
+                Plane circle_plane = {center, normal};
                 
-                // @Todo: If we don't intersect the circle_plane, we should find another
-                // way to choose a circle. 
                 if (ray_plane_intersect(&camera_ray, circle_plane)) {
-                    V3 on_plane  = camera_ray.o + camera_ray.d*camera_ray.t;
-                    V3 on_circle = c + r*normalize(on_plane - c);
+                    V3 on_plane  = camera_ray.o + camera_ray.t*camera_ray.d;
+                    V3 on_circle = center + radius*normalize(on_plane - center);
                     f32 dist     = length(on_plane - on_circle);
                     
-                    if ((dist < dist__) && (dist < threshold) && (camera_ray.t < t__)) {
-                        dist__ = dist;
-                        t__    = camera_ray.t;
+                    if ((dist < best_dist) && (dist < params.threshold) && (camera_ray.t < best_t)) {
+                        best_dist = dist;
+                        best_t    = camera_ray.t;
                         
                         is_close      = true;
                         gizmo_element = (Gizmo_Element)(GizmoElement_XPLANE + i);
                     }
                 }
             }
-        } // GizmoMode_Rotation
-        
-    } // !gizmo_is_active
+        }
+    }
     
     
     
@@ -303,10 +326,52 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
     // Decide if gizmo_is_active or not.
     //
     if (is_close && key_held(Key_MLEFT)) {
-        gizmo_is_active = true;
+        gizmo_is_active   = TRUE;
+        
+        original_position    = selected_entity->position;
+        original_orientation = selected_entity->orientation;
+        original_scale       = selected_entity->scale;
+        
+        click_rendering_params = params;
+        click_geometry         = geometry;
+        
+        // @Cleanup:
+        // @Cleanup:
+        // @Cleanup:
+        // Calculate click_offset
+        if (gizmo_element < GizmoElement_XPLANE) {
+            // Axes.
+            s32 axis_index  = gizmo_element - GizmoElement_XAXIS;
+            Ray *axis       = &geometry.axes[axis_index];
+            
+            // We'll manipulate using a plane. The active axis lies on that plane. We want its normal.
+            V3 ignored      = {};
+            V3 plane_normal = {};
+            calculate_tangents(axis->d, &plane_normal, &ignored);
+            Plane plane = {original_position, plane_normal};
+            
+            if (ray_plane_intersect(&camera_ray, plane)) {
+                V3 on_plane = camera_ray.o + camera_ray.t*camera_ray.d;
+                //on_plane.I[idx] = plane.center.I[idx];
+                
+                V3 v = on_plane - original_position;
+                click_offset = dot(v, axis->d) * axis->d;
+            }
+        } else {
+            // Planes.
+            s32 plane_index = gizmo_element - GizmoElement_XPLANE;
+            Plane plane     = geometry.planes[plane_index];
+            
+            if (ray_plane_intersect(&camera_ray, plane)) {
+                V3 on_plane = camera_ray.o + camera_ray.t*camera_ray.d;
+                
+                V3 v = on_plane - original_position;
+                click_offset = v;
+            }
+        }
     }
     if (!key_held(Key_MLEFT)) {
-        gizmo_is_active = false;
+        gizmo_is_active = FALSE;
         gizmo_element   = is_close? gizmo_element : GizmoElement_NONE;
         
         gizmo_old_point = {};
@@ -322,37 +387,49 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
         if (gizmo_mode == GizmoMode_TRANSLATION) {
             V3 delta = {};
             
+            // @Todo: Debug values on edges. We are getting weird snapping!
+            //
             if (gizmo_element < GizmoElement_XPLANE) {
                 // Axes.
                 s32 axis_index  = gizmo_element - GizmoElement_XAXIS;
-                Ray *axis       = axes[axis_index];
+                Ray *axis       = &geometry.axes[axis_index];
                 
-                closest_distance_ray_ray(&camera_ray, axis);
-                gizmo_new_point = axis->o + axis->t*axis->d;
+                // We'll manipulate using a plane. The active axis lies on that plane. We want its normal.
+                V3 ignored      = {};
+                V3 plane_normal = {};
+                calculate_tangents(axis->d, &plane_normal, &ignored);
+                Plane plane = {original_position, plane_normal};
+                
+                if (ray_plane_intersect(&camera_ray, plane)) {
+                    V3 on_plane = camera_ray.o + camera_ray.t*camera_ray.d;
+                    //on_plane.I[idx] = plane.center.I[idx];
+                    
+                    V3 v = on_plane - original_position;
+                    selected_entity->position = original_position + dot(v, axis->d) * axis->d;
+                    selected_entity->position -= click_offset;
+                    
+                    debug_print("t: %f\n", camera_ray.t);
+                }
+                
             } else {
                 // Planes.
                 s32 plane_index = gizmo_element - GizmoElement_XPLANE;
-                Plane *plane    = planes[plane_index];
+                Plane plane     = geometry.planes[plane_index];
                 
-                if (ray_plane_intersect(&camera_ray, *plane)) {
-                    gizmo_new_point = camera_ray.o + camera_ray.d*camera_ray.t;
-                    gizmo_new_point.I[plane_index] = plane->center.I[plane_index];
+                if (ray_plane_intersect(&camera_ray, plane)) {
+                    V3 on_plane = camera_ray.o + camera_ray.t*camera_ray.d;
+                    
+                    V3 v = on_plane - original_position;
+                    selected_entity->position = original_position + v;
+                    selected_entity->position -= click_offset;
                 }
             }
             
-            // Skip if this is the first frame we start interacting with a gizmo.
-            if (length2(gizmo_old_point) != 0) 
-                delta = gizmo_new_point - gizmo_old_point;
-            
-            selected_entity->position += delta;
-            
-            // Store point for next frame to calculate the delta.
-            gizmo_old_point = gizmo_new_point;
         } else if(gizmo_mode == GizmoMode_ROTATION) {
             s32 plane_index = gizmo_element - GizmoElement_XPLANE;
-            V3  c           = circles[plane_index]->center;
-            f32 r           = circles[plane_index]->radius;
-            V3  n           = circles[plane_index]->normal;
+            V3  c           = geometry.circles[plane_index].center;
+            f32 r           = geometry.circles[plane_index].radius;
+            V3  n           = geometry.circles[plane_index].normal;
             
             Plane circle_plane = {c, n};
             
@@ -381,5 +458,5 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
             gizmo_old_point = gizmo_new_point;
         }
         
-    } // gizmo_is_active
+    }
 }
