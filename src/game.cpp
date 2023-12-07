@@ -227,8 +227,7 @@ FUNCTION void game_render()
     // Render Gizmos.
     //
     if (manager->selected_entity) {
-        Ray camera_ray = {game->camera.position, normalize0(game->mouse_world - game->camera.position)};
-        gizmo_render(camera_ray, manager->selected_entity);
+        gizmo_render();
     }
 #endif
 }

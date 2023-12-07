@@ -2,9 +2,8 @@
 
 // @Note: This file is NOT independant. It's using the engine's types, collision routines and immediate-mode renderer.
     
-// @Cleanup: Rendering, one more iteration... Make it more flexible to be able to draw old stuff.
-
-// @Todo: Pass gizmo origin and return delta instead of what we're doing. This will allow us to use the delta on multiple entities if we allow multiple enitity selection.
+// @Todo: Pass gizmo_origin instead of selected_entity and return delta movement/rotation; this will
+ // allow us to use the delta on multiple entities when we allow multiple enitity selection.
 
 // @Incomplete: Add scale gizmo!
 
@@ -72,8 +71,8 @@ struct Gizmo_Geometry
 };
 
 GLOBAL b32            gizmo_is_active; // Whether we are interacting with the gizmo. True when we find the best gizmo element candidate and press the left mouse button.
+GLOBAL Gizmo_Element  gizmo_element;   // The current best candidate (could be none) based on distance and intersection with corresponding geometry of the element. 
 GLOBAL Gizmo_Mode     gizmo_mode;
-GLOBAL Gizmo_Element  gizmo_element; // The current best candidate (could be none) based on distance and intersection with corresponding geometry of the element. 
 
 GLOBAL Gizmo_Geometry         geometry;
 GLOBAL Gizmo_Rendering_Params params;
@@ -120,72 +119,69 @@ FUNCTION void gizmo_calculate_geometry(V3 gizmo_origin)
     geometry.circles[3] = {gizmo_origin, params.position_to_camera, scale+(scale*0.30f)};
 }
 
-FUNCTION void gizmo_render_axis(Gizmo_Element element, Ray axis, f32 scale, f32 thickness)
+FUNCTION void gizmo_render()
 {
-    ASSERT((element >= GizmoElement_TRANSLATE_X) && (element <= GizmoElement_TRANSLATE_Z));
-    V4 color = (element == gizmo_element)? gizmo_active_color : colors[element];
+    f32 s  = params.scale;
+    f32 th = params.thickness;
+    f32 ps = params.plane_scale;
     
     d3d11_clear_depth();
     immediate_begin();
     set_texture(0);
-    immediate_arrow(axis.o, axis.d, scale, color, thickness);
-    immediate_end();
-}
-
-FUNCTION void gizmo_render_plane(Gizmo_Element element, Plane plane, f32 plane_scale)
-{
-    ASSERT((element >= GizmoElement_TRANSLATE_YZ) && (element <= GizmoElement_TRANSLATE_XY));
-    V4 color = (element == gizmo_element)? gizmo_active_color : colors[element];
     
-    d3d11_clear_depth();
-    immediate_begin();
-    set_texture(0);
-    immediate_rect_3d(plane.center, plane.normal, 0.5f*plane_scale, color);
-    immediate_end();
-}
-
-FUNCTION void gizmo_render_ring(Gizmo_Element element, Circle circle, f32 thickness)
-{
-    ASSERT((element >= GizmoElement_ROTATE_X) && (element <= GizmoElement_ROTATE_C));
-    V4 color = (element == gizmo_element)? gizmo_active_color : colors[element];
-    
-    d3d11_clear_depth();
-    immediate_begin();
-    set_texture(0);
-    immediate_torus(circle.center, circle.radius, circle.normal, color, thickness);
-    immediate_end();
-}
-
-FUNCTION void gizmo_render(Ray camera_ray, Entity *selected_entity)
-{
     if (gizmo_mode == GizmoMode_TRANSLATION) {
-        
-        gizmo_render_axis(GizmoElement_TRANSLATE_X, geometry.axes[0], params.scale, params.thickness);
-        gizmo_render_axis(GizmoElement_TRANSLATE_Y, geometry.axes[1], params.scale, params.thickness);
-        gizmo_render_axis(GizmoElement_TRANSLATE_Z, geometry.axes[2], params.scale, params.thickness);
-        
-        gizmo_render_plane(GizmoElement_TRANSLATE_YZ, geometry.planes[0], params.plane_scale);
-        gizmo_render_plane(GizmoElement_TRANSLATE_ZX, geometry.planes[1], params.plane_scale);
-        gizmo_render_plane(GizmoElement_TRANSLATE_XY, geometry.planes[2], params.plane_scale);
-        
+        if (!gizmo_is_active) {
+            // Draw all translation elements
+            for (s32 i = 0; i < 3; i++) {
+                Ray axis    = geometry.axes[i];
+                Plane plane = geometry.planes[i];
+                
+                V4 axis_c   = (gizmo_element == GizmoElement_TRANSLATE_X + i)? gizmo_active_color : colors[GizmoElement_TRANSLATE_X + i];
+                V4 plane_c  = (gizmo_element == GizmoElement_TRANSLATE_YZ + i)? gizmo_active_color : colors[GizmoElement_TRANSLATE_YZ + i];
+                
+                immediate_arrow(axis.o, axis.d, s, axis_c, th);
+                immediate_rect_3d(plane.center, plane.normal, 0.5f*ps, plane_c);
+            }
+        } else {
+            // Draw selected/active translation element.
+            if (gizmo_element <= GizmoElement_TRANSLATE_Z) {
+                s32 index = gizmo_element - GizmoElement_TRANSLATE_X;
+                Ray axis  = geometry.axes[index];
+                V3 p0     = click_point - axis.d * 2000.0f;
+                V3 p1     = click_point + axis.d * 2000.0f;
+                immediate_line_3d(p0, p1, colors[gizmo_element], 0.01f);
+            } else if (gizmo_element <= GizmoElement_TRANSLATE_XY) {
+                // When interacting with a plane, draw the other two axes.
+                s32 index = gizmo_element - GizmoElement_TRANSLATE_YZ;
+                Ray axis  = geometry.axes[(index + 1) % 3];
+                V3 p0     = click_point - axis.d * 2000.0f;
+                V3 p1     = click_point + axis.d * 2000.0f;
+                immediate_line_3d(p0, p1, colors[(index + 1) % 3 + 1], 0.01f);
+                axis      = geometry.axes[(index + 2) % 3];
+                p0        = click_point - axis.d * 2000.0f;
+                p1        = click_point + axis.d * 2000.0f;
+                immediate_line_3d(p0, p1, colors[(index + 2) % 3 + 1], 0.01f);
+            }
+        }
     } else if (gizmo_mode == GizmoMode_ROTATION) {
-        
-        gizmo_render_ring(GizmoElement_ROTATE_X, geometry.circles[0], params.thickness);
-        gizmo_render_ring(GizmoElement_ROTATE_Y, geometry.circles[1], params.thickness);
-        gizmo_render_ring(GizmoElement_ROTATE_Z, geometry.circles[2], params.thickness);
-        gizmo_render_ring(GizmoElement_ROTATE_C, geometry.circles[3], params.thickness);
-        
-        if(gizmo_is_active)
-        {
-            d3d11_clear_depth();
-            immediate_begin();
-            set_texture(0);
-            // Assuming they all have the same center.
-            immediate_line_3d(geometry.circles[0].center, click_point, gizmo_active_color, params.thickness*0.50f);
-            immediate_line_3d(geometry.circles[0].center, current_point, gizmo_active_color, params.thickness*0.20f);
-            immediate_end();
+        if (!gizmo_is_active) {
+            // Draw all circles/rings.
+            for (s32 i = 0; i < 4; i++) {
+                Circle circle = geometry.circles[i];
+                V4 circle_c   = (gizmo_element == GizmoElement_ROTATE_X + i)? gizmo_active_color : colors[GizmoElement_ROTATE_X + i];
+                immediate_torus(circle.center, circle.radius, circle.normal, circle_c, th);
+            }
+        } else {
+            // Draw selected/active circle.
+            s32 index     = gizmo_element - GizmoElement_ROTATE_X;
+            Circle circle = geometry.circles[index];
+            immediate_line_3d(circle.center, click_point, gizmo_active_color, params.thickness*0.20f);
+            immediate_line_3d(circle.center, current_point, gizmo_active_color, params.thickness*0.50f);
+            immediate_torus(circle.center, circle.radius, circle.normal, colors[gizmo_element], params.thickness);
         }
     }
+    
+    immediate_end();
 }
 
 FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
