@@ -1,5 +1,4 @@
-- Cleanup gizmo.cpp; too ugly.
-- Projection is a bit weird on edges, things get scaled weirdly.
+- Multiple entity selection, draw wireframe around selected entitites, make gizmo support that.
 
 TIMESTAMPS:
 Get Quaternion orientation from M4x4: https://www.youtube.com/watch?v=aeDMABSW_KE&list=PLmV5I2fxaiCI9IAdFmGChKbIbenqRMi6Z&index=11 @39:00

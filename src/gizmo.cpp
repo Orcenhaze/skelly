@@ -2,8 +2,7 @@
 
 // @Note: This file is NOT independant. It's using the engine's types, collision routines and immediate-mode renderer.
     
-// @Todo: Pass gizmo_origin instead of selected_entity and return delta movement/rotation; this will
- // allow us to use the delta on multiple entities when we allow multiple enitity selection.
+// @Todo: Pass gizmo_origin instead of selected_entity and return delta movement/rotation; this will allow us to use the delta on multiple entities when we allow multiple enitity selection.
 
 // @Incomplete: Add scale gizmo!
 
@@ -53,14 +52,10 @@ GLOBAL V4 colors[] =
 
 struct Gizmo_Rendering_Params 
 {
-    // @Todo: Docs, explain what these are used for...
-    // @Todo: Docs, explain what these are used for...
-    //
-    f32 scale;
-    f32 threshold;
-    f32 thickness;
-    f32 plane_scale;
-    V3  position_to_camera; // position of entity to camera.
+    f32 scale;       // Used for length of axes.
+    f32 threshold;   // Used for picking element candidates.
+    f32 thickness;   // Used for thickness of axis lines and rotation rings.
+    f32 plane_scale; // Used for translation planes.
 };
 
 struct Gizmo_Geometry
@@ -86,19 +81,18 @@ GLOBAL V4 gizmo_active_color = {1.0f, 1.0f, 1.0f, 1.0f};
 
 FUNCTION void gizmo_calculate_rendering_params(V3 camera_position, V3 gizmo_origin)
 {
-    V3 position_to_camera     = camera_position - gizmo_origin;
-    f32 distance_to_camera    = length(position_to_camera);
-    position_to_camera        = normalize0(position_to_camera);
+    f32 distance_to_camera    = length(camera_position - gizmo_origin);
     
     params.scale              = distance_to_camera / 5.00f; // @Hardcode: scale.
     params.threshold          = params.scale       * 0.07f; // @Hardcode: threshold ratio.
-    params.thickness          = params.scale       * 0.05f; // @Hardcode: thickness ratio.
+    params.thickness          = params.scale       * 0.03f; // @Hardcode: thickness ratio.
     params.plane_scale        = params.scale       * 0.50f; // @Hardcode: plane_scale ratio.
-    params.position_to_camera = position_to_camera;
 }
 
-FUNCTION void gizmo_calculate_geometry(V3 gizmo_origin)
+FUNCTION void gizmo_calculate_geometry(V3 camera_position, V3 gizmo_origin)
 {
+    V3 origin_to_camera = normalize0(camera_position - gizmo_origin);
+    
     geometry.axes[0]    = {gizmo_origin, {1.0f, 0.0f, 0.0f}, F32_MAX};
     geometry.axes[1]    = {gizmo_origin, {0.0f, 1.0f, 0.0f}, F32_MAX};
     geometry.axes[2]    = {gizmo_origin, {0.0f, 0.0f, 1.0f}, F32_MAX};
@@ -113,10 +107,10 @@ FUNCTION void gizmo_calculate_geometry(V3 gizmo_origin)
     geometry.planes[2]  = {gizmo_origin + sz, {0.0f, 0.0f, 1.0f}};
     
     f32 scale           = params.scale;
-    geometry.circles[0] = {gizmo_origin,        {1.0f, 0.0f, 0.0f}, scale+(scale*0.10f)};
-    geometry.circles[1] = {gizmo_origin,        {0.0f, 1.0f, 0.0f}, scale+(scale*0.05f)};
-    geometry.circles[2] = {gizmo_origin,        {0.0f, 0.0f, 1.0f}, scale+(scale*0.00f)};
-    geometry.circles[3] = {gizmo_origin, params.position_to_camera, scale+(scale*0.30f)};
+    geometry.circles[0] = {gizmo_origin, {1.0f, 0.0f, 0.0f}, scale+(scale*0.10f)};
+    geometry.circles[1] = {gizmo_origin, {0.0f, 1.0f, 0.0f}, scale+(scale*0.05f)};
+    geometry.circles[2] = {gizmo_origin, {0.0f, 0.0f, 1.0f}, scale+(scale*0.00f)};
+    geometry.circles[3] = {gizmo_origin,   origin_to_camera, scale+(scale*0.30f)};
 }
 
 FUNCTION void gizmo_render()
@@ -192,7 +186,7 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
     
     V3 pos = selected_entity->position;
     gizmo_calculate_rendering_params(camera_ray.origin, pos);
-    gizmo_calculate_geometry(pos);
+    gizmo_calculate_geometry(camera_ray.origin, pos);
     
     //
     // If we're not interacting with the gizmo, find the "best" gizmo element candidate based on distance and intersection.
