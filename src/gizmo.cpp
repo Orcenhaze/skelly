@@ -2,8 +2,6 @@
 
 // @Note: This file is NOT independant. It's using the engine's types, collision routines and immediate-mode renderer.
     
-// @Todo: Pass gizmo_origin instead of selected_entity and return delta movement/rotation; this will allow us to use the delta on multiple entities when we allow multiple enitity selection.
-
 // @Incomplete: Add scale gizmo!
 
 */ 
@@ -68,6 +66,7 @@ struct Gizmo_Geometry
 GLOBAL b32            gizmo_is_active; // Whether we are interacting with the gizmo. True when we find the best gizmo element candidate and press the left mouse button.
 GLOBAL Gizmo_Element  gizmo_element;   // The current best candidate (could be none) based on distance and intersection with corresponding geometry of the element. 
 GLOBAL Gizmo_Mode     gizmo_mode;
+GLOBAL const f32      gizmo_max_t = 300.0f; // Max limit for camera_ray.t when intersecting.
 
 GLOBAL Gizmo_Geometry         geometry;
 GLOBAL Gizmo_Rendering_Params params;
@@ -178,15 +177,21 @@ FUNCTION void gizmo_render()
     immediate_end();
 }
 
-FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
+FUNCTION void gizmo_execute(Ray camera_ray, V3 gizmo_origin, 
+                            V3         *delta_position_out, 
+                            Quaternion *delta_rotation_out, 
+                            V3         *delta_scale_out)
 {
+    *delta_position_out = {0.0f, 0.0f, 0.0f};
+    *delta_rotation_out = quaternion_identity();
+    *delta_scale_out    = {0.0f, 0.0f, 0.0f};
+    
     f32 best_dist = F32_MAX;
     f32 best_t    = F32_MAX;
     b32 is_close  = false;
     
-    V3 pos = selected_entity->position;
-    gizmo_calculate_rendering_params(camera_ray.origin, pos);
-    gizmo_calculate_geometry(camera_ray.origin, pos);
+    gizmo_calculate_rendering_params(camera_ray.origin, gizmo_origin);
+    gizmo_calculate_geometry(camera_ray.origin, gizmo_origin);
     
     //
     // If we're not interacting with the gizmo, find the "best" gizmo element candidate based on distance and intersection.
@@ -253,8 +258,9 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
             Ray axis  = geometry.axes[index];
             V3 ignored, plane_normal;
             calculate_tangents(axis.d, &plane_normal, &ignored);
-            Plane plane = {pos, plane_normal};
-            if (ray_plane_intersect(&camera_ray, plane)) {
+            Plane plane = {gizmo_origin, plane_normal};
+            b32 is_hit  = ray_plane_intersect(&camera_ray, plane);
+            if (is_hit && (camera_ray.t < gizmo_max_t)) {
                 V3 on_plane   = camera_ray.o + camera_ray.t*camera_ray.d;
                 current_point = plane.center + axis.d * dot(on_plane - plane.center, axis.d);
             }
@@ -262,7 +268,8 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
             // The element is a plane.
             s32 index   = gizmo_element - GizmoElement_TRANSLATE_YZ;
             Plane plane = geometry.planes[index];
-            if (ray_plane_intersect(&camera_ray, plane)) {
+            b32 is_hit  = ray_plane_intersect(&camera_ray, plane);
+            if (is_hit && (camera_ray.t < gizmo_max_t)) {
                 V3 on_plane   = camera_ray.o + camera_ray.t*camera_ray.d;
                 current_point = on_plane;
             }
@@ -274,8 +281,8 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
             V3  normal = geometry.circles[index].normal;
             
             Plane circle_plane = {center, normal};
-            
-            if (ray_plane_intersect(&camera_ray, circle_plane)) {
+            b32 is_hit         = ray_plane_intersect(&camera_ray, circle_plane);
+            if (is_hit && (camera_ray.t < gizmo_max_t)) {
                 V3 on_plane   = camera_ray.o + camera_ray.t*camera_ray.d;
                 V3 on_circle  = center + radius*normalize(on_plane - center);
                 current_point = on_circle;
@@ -290,7 +297,7 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
         gizmo_is_active = TRUE;
         
         click_point  = current_point;
-        click_offset = click_point - pos;
+        click_offset = click_point - gizmo_origin;
         
         // Initially the same to avoid errors.
         previous_point = current_point;
@@ -305,8 +312,7 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
     //
     if (gizmo_is_active) {
         if (gizmo_mode == GizmoMode_TRANSLATION) {
-            V3 delta = (current_point - pos) - click_offset;
-            selected_entity->position += delta;
+            *delta_position_out = (current_point - gizmo_origin) - click_offset;
         } else if(gizmo_mode == GizmoMode_ROTATION) {
             s32 index = gizmo_element - GizmoElement_ROTATE_X;
             V3 c      = geometry.circles[index].center;
@@ -319,9 +325,7 @@ FUNCTION void gizmo_execute(Ray camera_ray, Entity *selected_entity)
             f32 sin   = dot(cross(a, b), n);
             f32 theta = _arctan2(sin, cos);
             
-            Quaternion delta = quaternion_from_axis_angle(n, theta);
-            
-            selected_entity->orientation = delta * selected_entity->orientation;
+            *delta_rotation_out = quaternion_from_axis_angle(n, theta);
         }
         
         previous_point = current_point;

@@ -111,11 +111,17 @@ FUNCTION void game_init()
     set_view_to_proj();
     
     // Init camera.
-    game->camera = {{0.0f, 0.0f, 2.0f}, V3F};
+    game->camera = {{-2.0f, 3.0f, 5.0f}, V3F};
+    control_camera(&game->camera);
+    set_world_to_view(game->camera.matrix);
     
     // Load assets. Textures first because meshes reference them.
     load_textures(&game->texture_catalog);
     load_meshes(&game->mesh_catalog);
+    
+    // Set initial default dir light.
+    game->num_dir_lights = 1;
+    game->dir_lights[0]  = default_dir_light();
 }
 
 FUNCTION void game_update()
@@ -143,60 +149,99 @@ FUNCTION void game_update()
     }
     
 #if DEVELOPER
-    //
-    // Mouse picking
-    //
+    
     Ray camera_ray = {game->camera.position, normalize0(game->mouse_world - game->camera.position)};
-    f32 sort_index = F32_MAX;
     
-    manager->hovered_entity = 0;
-    
-    for (s32 i = 0; i < manager->entities.count; i++) {
-        Entity *e = &manager->entities[i];
-        
-        /*
-@Todo: Use ray-mesh intersection for more accurate picking!
-
-         @Note: Transforming camera ray to entity object space (from https://gamedev.stackexchange.com/questions/72440/the-correct-way-to-transform-a-ray-with-a-matrix):
-                Transforming the ray position and direction by the inverse model transformation is correct. However, many ray-intersection routines assume that the ray direction is a unit vector. If the model transformation involves scaling, the ray direction won't be a unit vector afterward, and should likely be renormalized.
-                
-                However, the distance along the ray returned by the intersection routines will then be measured in model space, and won't represent the distance in world space. If it's a uniform scale, you can simply multiply the returned distance by the scale factor to convert it back to world-space distance. For non-uniform scaling it's trickier; probably the best way is to transform the intersection point back to world space and then re-measure the distance from the ray origin there.
-         
-*/
-        
-        V3 o = (e->object_to_world_matrix.inverse * camera_ray.origin);
-        V3 d = (e->object_to_world_matrix.inverse * v4(camera_ray.direction, 0.0f)).xyz;
-        
-        Ray ray = {o, normalize(d)};
-        
-        if (ray_box_intersect(&ray, e->mesh->bounding_box)) {
-            if (camera_ray.t < sort_index) {
-                sort_index              = camera_ray.t;
-                manager->hovered_entity = e;
-            }
-        }
-    }
-    
-    // @Todo: If ctrl- was pressed, we should add it to a group?
-    //
-    if (manager->hovered_entity && key_pressed(Key_MLEFT)) {
-        manager->selected_entity = manager->hovered_entity;
-    }
-    
+    // @Note: We have to check if we are interacting with gizmo before doing mouse picking because 
+    // we don't want mouse clicks to overlap. Maybe there's a better way to get around this.
     //
     // Process Gizmos
     //
-    if (key_pressed(Key_F1)) gizmo_mode = GizmoMode_TRANSLATION;
-    if (key_pressed(Key_F2)) gizmo_mode = GizmoMode_ROTATION;
-    if (key_pressed(Key_F3)) gizmo_mode = GizmoMode_SCALE;
     if (manager->selected_entity) {
-        gizmo_execute(camera_ray, manager->selected_entity);
+        if (key_pressed(Key_F1)) gizmo_mode = GizmoMode_TRANSLATION;
+        if (key_pressed(Key_F2)) gizmo_mode = GizmoMode_ROTATION;
+        if (key_pressed(Key_F3)) gizmo_mode = GizmoMode_SCALE;
+        V3 delta_pos;
+        Quaternion delta_rot;
+        V3 delta_scale;
+        gizmo_execute(camera_ray, manager->selected_entity->position, &delta_pos, &delta_rot, &delta_scale);
+        for (s32 i = 0; i < manager->selected_entities.count; i++) {
+            Entity *e = manager->selected_entities[i];
+            e->position   += delta_pos;
+            e->orientation = delta_rot * e->orientation;
+            e->scale      += delta_scale;
+        }
+    }
+    
+    //
+    // Mouse picking
+    //
+    if (key_pressed(Key_MLEFT) && !gizmo_is_active) {
+        f32 sort_index      = F32_MAX;
+        Entity *best_entity = 0;
+        b32 multi_select    = key_held(Key_SHIFT);
+        
+        // Pick closest entity to camera (iff we intersect with one).
+        for (s32 i = 0; i < manager->entities.count; i++) {
+            Entity *e = &manager->entities[i];
+            Triangle_Mesh *mesh = e->mesh;
+            
+            /*
+             @Note: Transforming camera ray to entity object space (from https://gamedev.stackexchange.com/questions/72440/the-correct-way-to-transform-a-ray-with-a-matrix):
+                    Transforming the ray position and direction by the inverse model transformation is correct. However, many ray-intersection routines assume that the ray direction is a unit vector. If the model transformation involves scaling, the ray direction won't be a unit vector afterward, and should likely be renormalized.
+                    
+                    However, the distance along the ray returned by the intersection routines will then be measured in model space, and won't represent the distance in world space. If it's a uniform scale, you can simply multiply the returned distance by the scale factor to convert it back to world-space distance. For non-uniform scaling it's trickier; probably the best way is to transform the intersection point back to world space and then re-measure the distance from the ray origin there.
+             
+    */
+            
+            V3 o = (e->object_to_world_matrix.inverse * camera_ray.origin);
+            V3 d = (e->object_to_world_matrix.inverse * v4(camera_ray.direction, 0.0f)).xyz;
+            
+            // camera ray in object space of entity mesh.
+            Ray ray_object = {o, normalize(d)};
+            
+            b32 is_hit = ray_mesh_intersect(&ray_object, mesh->vertices.count, mesh->vertices.data, mesh->indices.count, mesh->indices.data);
+            if (is_hit && (ray_object.t < sort_index)) {
+                sort_index  = ray_object.t;
+                best_entity = e;
+            }
+        }
+        
+        if (best_entity) {
+            if (multi_select) {
+                s32 find_index = array_find_index(&manager->selected_entities, best_entity);
+                if (find_index == -1)
+                    array_add(&manager->selected_entities, best_entity);
+                else
+                    array_unordered_remove_by_index(&manager->selected_entities, find_index);
+            } else {
+                array_reset(&manager->selected_entities);
+                array_add(&manager->selected_entities, best_entity);
+            }
+        } else {
+            if (!multi_select)
+                array_reset(&manager->selected_entities);
+        }
+        
+        if (manager->selected_entities.count) {
+            manager->selected_entity = manager->selected_entities[manager->selected_entities.count-1];
+        } else {
+            manager->selected_entity = 0;
+        }
     }
 #endif
 }
 
 FUNCTION void game_render()
 {
+#if DEVELOPER
+    // Draw simple wireframe quad instead of viewport grid for now.
+    immediate_begin(TRUE);
+    set_texture(0);
+    immediate_rect_3d({}, V3U, 200.0f, {.8f, .8f, .8f, 0.1f});
+    immediate_end();
+#endif
+    
     // Render all entities.
     Entity_Manager *manager = &game->entity_manager;
     for (s32 i = 0; i < manager->entities.count; i++) {
@@ -207,26 +252,16 @@ FUNCTION void game_render()
     
     
 #if DEVELOPER
-    draw_editor();
+    draw_editor_ui();
     
-#if 0
-    if (manager->hovered_entity) {
-        // Draw bounding_box of mesh.
-        immediate_begin(TRUE);
-        set_texture(0);
-        set_object_to_world(manager->hovered_entity->position, manager->hovered_entity->orientation, manager->hovered_entity->scale);
-        
-        immediate_cuboid(get_center(manager->hovered_entity->mesh->bounding_box), 
-                         0.5f*get_size(manager->hovered_entity->mesh->bounding_box), 
-                         {0,1,1,1});
-        immediate_end();
-    }
-#endif
-    
-    //
-    // Render Gizmos.
-    //
     if (manager->selected_entity) {
+        // Draw wireframe for selected entities.
+        for (s32 i = 0; i < manager->selected_entities.count; i++) {
+            Entity *e = manager->selected_entities[i];
+            draw_entity_wireframe(e);
+        }
+        
+        // Render gizmos.
         gizmo_render();
     }
 #endif

@@ -1,24 +1,4 @@
 
-// @Cleanup: Not sure if these should be here...
-FUNCTION Point_Light default_point_light()
-{
-    Point_Light result = {};
-    result.position    = {};
-    result.intensity   = 1.0f;
-    result.color       = {1.0f, 1.0f, 1.0f};
-    result.range       = 3.5f;
-    return result;
-}
-FUNCTION Directional_Light default_dir_light()
-{
-    Directional_Light result = {};
-    result.direction                   = {-1.0f, -1.0f, -1.0f};
-    result.intensity                   = 1.0f;
-    result.color                       = {1.0f, 1.0f, 1.0f};
-    result.indirect_lighting_intensity = 1.0f;
-    return result;
-}
-
 FUNCTION void draw_main_editor_window()
 {
     const char *modes[] = {"Entity Mode", "Point Light Mode", "Directional Light Mode"};
@@ -39,7 +19,7 @@ FUNCTION void draw_main_editor_window()
             
             if (ImGui::Button("Create")) {
                 Entity entity = create_default_entity();
-                create_entity_and_select(manager, entity);
+                create_new_entity(manager, entity);
             }
             
             ImGui::Separator();
@@ -180,7 +160,7 @@ FUNCTION void draw_main_editor_window()
     ImGui::End();
 }
 
-FUNCTION void draw_editor()
+FUNCTION void draw_editor_ui()
 {
     LOCAL_PERSIST bool show_demo = FALSE;
     if (show_demo)

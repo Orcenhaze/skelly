@@ -38,6 +38,10 @@ FUNCTION void entity_manager_init(Entity_Manager *manager)
 {
     // @Todo: Still need to find a way to avoid reserving 8GB because of default ARENA_MAX_DEFAULT... ugh!
     array_init(&manager->entities);
+    
+#if DEVELOPER
+    array_init(&manager->selected_entities);
+#endif
 }
 
 FUNCTION Entity* create_new_entity(Entity_Manager *manager, Entity entity)
@@ -45,12 +49,3 @@ FUNCTION Entity* create_new_entity(Entity_Manager *manager, Entity entity)
     Entity *new_entity = array_add(&game->entity_manager.entities, entity);
     return new_entity;
 }
-
-#if DEVELOPER
-FUNCTION void create_entity_and_select(Entity_Manager *manager, Entity entity)
-{
-    Entity *e = create_new_entity(manager, entity);
-    manager->selected_entity = e;
-}
-
-#endif

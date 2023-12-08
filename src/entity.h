@@ -20,11 +20,8 @@ struct Entity_Manager
     
 #if DEVELOPER
     // Editor stuff.
-    // @Temporary: We need proper group selection and stuff!
-    Entity *selected_entity;
-    
-    // Entity we are currently hovering over (closest to camera).
-    Entity *hovered_entity;
+    Array<Entity*> selected_entities;
+    Entity *selected_entity; // Last one we seleceted: selected_entities[selected_entities.count-1]
 #endif
 };
 

@@ -20,6 +20,25 @@ struct Camera
     M4x4_Inverse matrix; // look_at matrix.
 };
 
+FUNCTION inline Point_Light default_point_light()
+{
+    Point_Light result = {};
+    result.position    = {};
+    result.intensity   = 1.0f;
+    result.color       = {1.0f, 1.0f, 1.0f};
+    result.range       = 3.5f;
+    return result;
+}
+FUNCTION inline Directional_Light default_dir_light()
+{
+    Directional_Light result = {};
+    result.direction                   = {-1.0f, -1.0f, -1.0f};
+    result.intensity                   = 6.0f;
+    result.color                       = {1.0f, 1.0f, 1.0f};
+    result.indirect_lighting_intensity = 1.0f;
+    return result;
+}
+
 struct Game_State
 {
     Catalog<String8, Texture>       texture_catalog;

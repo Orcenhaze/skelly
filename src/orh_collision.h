@@ -103,6 +103,52 @@ FUNCTION b32 ray_plane_intersect(Ray *ray, Plane plane)
     return result;
 }
 
+FUNCTION b32 ray_triangle_intersect(Ray *ray, V3 p0, V3 p1, V3 p2)
+{
+    ray->t = F32_MAX;
+    
+    V3 e1 = p1 - p0, e2 = p2 - p0, h = cross(ray->direction, e2);
+    f32 a = dot(e1, h);
+    if (ABS(a) == 0) return FALSE;
+    
+    f32 f = 1 / a;
+    V3  s = ray->origin - p0;
+    f32 u = f * dot(s, h);
+    if (u < 0 || u > 1) return FALSE;
+    
+    V3  q = cross(s, e1);
+    f32 v = f * dot(ray->direction, q);
+    if (v < 0 || u + v > 1) return FALSE;
+    
+    f32 t = f * dot(e2, q);
+    if (t < 0) return FALSE;
+    
+    ray->t = t;
+    return TRUE;
+}
+
+FUNCTION b32 ray_mesh_intersect(Ray *ray, s64 num_vertices, V3 *vertices, s64 num_indices, u32 *indices)
+{
+    ASSERT((num_indices % 3) == 0);
+    
+    f32 best_t = F32_MAX;
+    Ray temp_r = *ray;
+    
+    for (s32 i = 0; i < num_indices; i += 3) {
+        V3 p0 = vertices[indices[i + 0]];
+        V3 p1 = vertices[indices[i + 1]];
+        V3 p2 = vertices[indices[i + 2]];
+        
+        b32 is_hit = ray_triangle_intersect(&temp_r, p0, p1, p2);
+        if (is_hit && (temp_r.t < best_t)) {
+            best_t = temp_r.t;
+        }
+    }
+    
+    ray->t = best_t;
+    return (best_t != F32_MAX);
+}
+
 FUNCTION f32 closest_distance_ray_ray(Ray *r0, Ray *r1)
 {
     // @Note: Ray directions must be normalized!
