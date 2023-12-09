@@ -29,20 +29,6 @@ struct Circle
     f32 radius;
 };
 
-FUNCTION Rect3 get_plane_bounds(V3 center, V3 normal, f32 scale)
-{
-    V3 tangent, bitangent;
-    calculate_tangents(normal, &tangent, &bitangent);
-    
-    f32 half_scale = 0.5f * scale;
-    
-    V3 p0 = center - tangent*half_scale - bitangent*half_scale;
-    V3 p1 = center + tangent*half_scale + bitangent*half_scale;
-    
-    Rect3 result = {min_v3(p0, p1), max_v3(p0, p1)};
-    return result;
-}
-
 FUNCTION b32 point_inside_box_test(V3 p, Rect3 box)
 {
     b32 result = false;

@@ -214,11 +214,12 @@ FUNCTION void gizmo_execute(Ray camera_ray, V3 gizmo_origin,
             for (s32 i = 0; i < 3; i++) {
                 Plane plane = geometry.planes[i];
                 if (ray_plane_intersect(&camera_ray, plane)) {
-                    V3 on_plane        = camera_ray.o + camera_ray.t*camera_ray.d;
-                    Rect3 plane_bounds = get_plane_bounds(plane.center, plane.normal, params.plane_scale);
-                    // Only compare the dimensions of the plane. So guarantee equality for the other dimension to have a proper point_inside_box_test().
-                    on_plane.I[i]      = plane_bounds.min.I[i];
-                    if (point_inside_box_test(on_plane, plane_bounds) && (camera_ray.t < best_t)) {
+                    V3 on_plane = camera_ray.o + camera_ray.t*camera_ray.d;
+                    V3 offset   = on_plane - plane.center; 
+                    b32 is_hit  = ((ABS(offset.x) <= 0.5f*params.plane_scale) &&
+                                   (ABS(offset.y) <= 0.5f*params.plane_scale) &&
+                                   (ABS(offset.z) <= 0.5f*params.plane_scale));
+                    if (is_hit && (camera_ray.t < best_t)) {
                         best_t        = camera_ray.t;
                         is_close      = true;
                         gizmo_element = (Gizmo_Element)(GizmoElement_TRANSLATE_YZ + i);
