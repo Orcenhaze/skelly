@@ -1,4 +1,4 @@
-/* orh.h - v0.76 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.77 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.77 - added array_add_unique(). Added operator== for V3.
 0.76 - no need to pass scale to get_rotation(). Added invert() to invert M4x4. Fixed SIGN() to include 0.
 0.75 - quaternion_get_axis() uses normalize0 now in case the vector part of the quaternion is zero.
 0.74 - fixed F32_MIN and F64_MIN, we had minimum normalized positive floating-point number.
@@ -844,6 +845,16 @@ inline V3 operator/(V3 v, f32 s)
     V3 result = operator*(v, 1.0f/s);
     return result;
 }
+inline b32 operator==(V3 a, V3 b)
+{
+    b32 result = (length2(a - b) < 9.99999944E-11f);
+    return result;
+}
+inline b32 operator!=(V3 a, V3 b)
+{
+    b32 result = !(a == b);
+    return result;
+}
 inline V3& operator+=(V3 &a, V3 b) 
 { 
     a = a + b;
@@ -1410,6 +1421,15 @@ s32 array_find_index(Array<T> *array, T item)
     }
     
     return result;
+}
+
+template<typename T>
+void array_add_unique(Array<T> *array, T item)
+{
+    s32 find_index = array_find_index(array, item);
+    if (find_index < 0) {
+        array_add(array, item);
+    }
 }
 
 /////////////////////////////////////////

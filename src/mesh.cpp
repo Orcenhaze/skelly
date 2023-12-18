@@ -3,7 +3,7 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
 {
     s32 version = 0;
     get(&file, &version);
-    ASSERT(version == MESH_FILE_VERSION);
+    ASSERT(version <= MESH_FILE_VERSION);
     
     Triangle_Mesh_Header header = {};
     get(&file, &header);
@@ -60,7 +60,71 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
         }
     }
     
+    //
+    // Read Skeleton_Info
+    //
+    s32 num_rest_pose_joints;
+    get(&file, &num_rest_pose_joints);
+    
+    if (num_rest_pose_joints > 0) {
+        Skeleton_Info *sk_info = &mesh->skeleton_info;
+        array_init_and_resize(&sk_info->joint_info, num_rest_pose_joints);
+        for (s32 i = 0; i < num_rest_pose_joints; i++) {
+            Skeleton_Joint_Info *joint = &sk_info->joint_info[i];
+            
+            // Read 4x4 matrix.
+            get(&file, &joint->inverse_rest_pose);
+            
+            // Read name
+            // @Todo: Maybe lifetime of these names shouldn't be permanent...
+            s32 joint_name_len = 0;
+            get(&file, &joint_name_len);
+            String8 joint_name = str8(file.data, joint_name_len);
+            advance(&file, joint_name_len);
+            joint->name = str8_copy(os->permanent_arena, joint_name);
+            
+            // Read parent id.
+            get(&file, &joint->parent_id);
+        }
+        
+        s32 num_canonical_vertices;
+        get(&file, &num_canonical_vertices);
+        ASSERT(num_canonical_vertices > 0);
+        array_init_and_resize(&sk_info->vertex_blend_info, num_canonical_vertices);
+        
+        for (s32 i = 0; i < num_canonical_vertices; i++) {
+            Vertex_Blend_Info *blend = &sk_info->vertex_blend_info[i];
+            
+            get(&file, &blend->num_pieces);
+            
+            for (s32 piece_index = 0; piece_index < blend->num_pieces; piece_index++) {
+                get(&file, &blend->pieces[piece_index].joint_id);
+                get(&file, &blend->pieces[piece_index].weight);
+            }
+        }
+    }
+    
+    
     ASSERT(file.count == 0);
+    
+    // @Todo: @Speed: Not sure if there's a faster way to construct this...
+    //
+    // Construct canonical_vertex_map.
+    {
+        Array<V3> canonical_vertices;
+        defer(array_free(&canonical_vertices));
+        array_init_and_reserve(&canonical_vertices, mesh->vertices.count);
+        for (s32 i = 0; i < mesh->vertices.count; i++)
+            array_add_unique(&canonical_vertices, mesh->vertices[i]);
+        
+        array_init_and_resize(&mesh->canonical_vertex_map, mesh->vertices.count);
+        for (s32 i = 0; i < mesh->vertices.count; i++) {
+            s32 find_index = array_find_index(&canonical_vertices, mesh->vertices[i]);
+            ASSERT(find_index >= 0);
+            
+            mesh->canonical_vertex_map[i] = find_index;
+        }
+    }
 }
 
 FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)

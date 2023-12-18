@@ -6,7 +6,7 @@ directory = "C:\\work\\skelly\\data\\"
 extension = ".mesh"
 
 # File format version. Increment when modifying file.
-version = 1
+version = 2
 
 """
     About this mesh exporter:
@@ -15,10 +15,40 @@ version = 1
     - It only exports one index of Vertex Colors.
     - The exported object must have _at least_ one material slot.
     - It generates the convex hull if `make_convex_hull` is set to 1.
+    - It exports vertex weights and rest pose skeleton info.
+        MESH origin and ARMATURE origin must match!
     
-    INCOMPLETE:
-    1) Doesn't export skeletal hierarchy nor animation.
+    @Cleanup: This is super ugly and messy, I need to clean it up!
+    @Cleanup:
+    @Cleanup:
+    @Cleanup:
+    @Cleanup:
+    @Cleanup:
     
+    
+    MISC:
+    
+    // @Note: 
+    // "object space" is where mesh vertices exist (MESH object origin), a.k.a. "model space".
+    // "armature space" is where joint matrices often exist (ARMATURE object origin).
+    // This exporter requires that armature origin and mesh origin are the same (object space == armature space).
+
+    // Gives the joint's current pose matrix(4x4) in armature space.
+    bpy.data.objects['Armature'].pose.bones["Torso"].matrix
+    
+    // Gives the joint's rest pose matrix in armature space.
+    // Both are the same.
+    bpy.data.objects['Armature'].pose.bones["Torso"].bone.matrix_local
+    bpy.data.objects['Armature'].data.bones["Torso"].matrix_local
+    
+    // Gives the joint's current pose matrix(4x4) relative to the same joint in rest pose.
+    // Translation part of the matrix is zero (as we can't translate joints in pose mode).
+    bpy.data.objects['Armature'].pose.bones["Torso"].matrix_basis
+    
+    // Gives the joint's rest pose matrix(3x3) relative to parent (no translation)
+    bpy.data.objects['Armature'].data.bones["Torso"].matrix
+    
+    // TODO: Assert that armature origin is the same as object/mesh/model origin. Throw error otherwise.
 """
 
 """ IMPORTS
@@ -30,6 +60,7 @@ import array
 import bpy
 import bmesh
 import pdb
+import mathutils
 
 class Vertex_XTBNUC:
     def __init__(self, X, TBN, UV, C):
@@ -42,8 +73,24 @@ class Vertex_XTBNUC:
     def __hash__(self):
         return hash((self.position, self.tbn, self.uv, self.color))
 
+class Joint_Info:
+    def __init__(self):
+        self.inv_rest_pose_matrix  = [] # as array
+        self.name                  = ""
+        self.parent_id             = 0  # could be negative (root's parent)
+
+
+class Vertex_Blend_Info:
+    def __init__(self):
+        self.num_pieces  = 0  # How many joints influence this vertex
+        self.pieces      = [] # list of (joint_id, weight)
+
 """ GLOBAL VARIABLES
 """
+# Quaternion to transform from Blender's space coordinates to "our" space coordinates.
+# Rotate -90deg around x-axis.
+qBlenderToEngine = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0)).to_matrix().to_4x4()
+
 # Poor man's enum of Material_Texture_Map_Type:
 MapType_ALBEDO    = 0
 MapType_NORMAL    = 1
@@ -55,6 +102,11 @@ MapType_COUNT     = 5
 vertex_to_index_map = {}    # {Vertex_XTBNUC hash : int}
 xtbnuc_vertices     = []
 
+rest_pose_joints     = []   # list of all (Joint_Info) count=num_rest_pose_joints
+num_rest_pose_joints = 0
+
+vertex_blends        = []  # list of all (Vertex_Blend_Info) count= len(mesh_data.vertices)
+
 # Data to write:
 triangle_mesh_header  = []
 vertices 			  = []
@@ -64,6 +116,7 @@ colors 			      = []
 indices 		      = []
 triangle_list_info    = []
 material_info         = []
+skeleton_info         = []
 
 # Reading material_info:
 # for i in range header.num_materials:
@@ -72,8 +125,99 @@ material_info         = []
 #     read length of texture map file_name
 #     read the texture map file_name
 
+""" UTILS
+"""
+def append_string(the_list, the_string):
+    length  = len(the_string.encode('utf-8'))
+    unicode = [ord(c) for c in the_string]
+    the_list.append(length)
+    the_list.append(unicode) # Append as a list of unicode ints.
+
 """ FUNCTIONS
 """
+
+
+def add_joint(inv_rest_pose, name, parent_id):
+    joint = Joint_Info()
+    joint.inv_rest_pose_matrix = [elem for row in inv_rest_pose for elem in row]
+    joint.name                 = name
+    joint.parent_id            = parent_id
+    
+    rest_pose_joints.append(joint)
+    global num_rest_pose_joints
+    num_rest_pose_joints += 1
+    
+    return num_rest_pose_joints-1 # id of the joint that was just added.
+
+def parse_armature(armature):
+    #
+    # This function will fill the rest_pose_joints[] list with Joint_Info (num_rest_pose_joints as many)
+    #
+
+    # Search for root candidates
+    bones = armature.data.bones
+    root_candidates = [b for b in bones if not b.parent]
+    # root_candidates = [b for b in bones if not b.parent and b.name[:4].lower() == 'root']
+
+    # Only one node can be eligible
+    if len(root_candidates) > 1:
+      raise Exception( 'A single root must exist in the armature.')
+    elif len(root_candidates) == 0:
+      raise Exception( 'No root found.')
+
+    # Get the root
+    root = root_candidates[0]
+    del root_candidates  
+
+    rest_pose_matrix = qBlenderToEngine @ root.matrix_local
+
+    root_id = add_joint(rest_pose_matrix.inverted(), root.name, -1)
+    
+    # recursively compute others bones data
+    for child in root.children:
+        recursively_add_joint(child, root_id)
+
+def recursively_add_joint(joint, parent_id):
+    rest_pose_matrix = qBlenderToEngine @ joint.matrix_local
+    joint_id         = add_joint(rest_pose_matrix.inverted(), joint.name, parent_id)
+
+    for child in joint.children:
+      recursively_add_joint(child, joint_id)
+
+def parse_weights(mesh_obj, mesh_data):
+    #
+    # This function will fill the vertex_blends[] list with Vertex_Blend_Info (len(mesh_data.vertices) as many)
+    # 
+
+    # Iterate through vertices
+    for vertex in mesh_data.vertices:
+        vertex_blend = Vertex_Blend_Info()
+    
+        # Create a list to store ids and weights for the current vertex
+        pieces = []
+
+        # Iterate through vertex groups
+        for group in mesh_obj.vertex_groups:
+            # Check if the vertex is assigned to this group
+            for v_group in vertex.groups:
+                if v_group.group == group.index:
+                    pieces.append({'bone_index': group.index, 'weight': v_group.weight})
+
+        # Sort the weights by weight value (descending order)
+        pieces.sort(key=lambda x: x['weight'], reverse=True)
+
+        # Truncate the list to a maximum of 4 weights per vertex
+        pieces = pieces[:4]
+
+        # If the length of weights is less than 4, append zero-weight entries
+        #while len(pieces) < 4:
+        #    pieces.append({'bone_index': -1, 'weight': 0.0})
+
+        vertex_blend.num_pieces = len(pieces)
+        vertex_blend.pieces     = [value for d in pieces for value in d.values()]
+
+        # Append the vertex weights dictionary to the list
+        vertex_blends.append(vertex_blend)
 
 def append_attribute_default_value_to_material_info(input):
     if input.type == "RGBA":
@@ -137,11 +281,8 @@ def set_materials(materials):
 
         # Append basenames to material_info.
         for s in range(MapType_COUNT):
-            file_name         = texture_map_names[s]
-            file_name_len     = len(file_name.encode('utf-8'))
-            file_name_unicode = [ord(c) for c in file_name]
-            material_info.append(file_name_len)
-            material_info.append(file_name_unicode) # Append as a list of unicode ints.
+            file_name = texture_map_names[s]
+            append_string(material_info, file_name)
 
 def add_unique_vertex_and_append_index(vertex):
     h = hash(vertex)
@@ -149,7 +290,7 @@ def add_unique_vertex_and_append_index(vertex):
         vertex_to_index_map[h] = len(xtbnuc_vertices)
         xtbnuc_vertices.append(vertex)
     indices.append(vertex_to_index_map[h])
-    
+
 def main():
     """ VARIABLES
     """
@@ -220,13 +361,17 @@ def main():
             face_tangent   = loop.tangent
             face_normal    = loop.normal
             face_bitangent = loop.bitangent_sign * face_normal.cross(face_tangent)
+            
+            face_tangent   = qBlenderToEngine @ face_tangent
+            face_normal    = qBlenderToEngine @ face_normal
+            face_bitangent = qBlenderToEngine @ face_bitangent
         
             TBN = face_tangent[:] + face_bitangent[:] + face_normal[:]
             if smooth_shaded:
                 TBN = face_tangent[:] + face_bitangent[:] + mesh_data.vertices[loop.vertex_index].normal[:]
 
             # Construct and add vertex if it's unique.
-            X     = mesh_data.vertices[loop.vertex_index].co[:]
+            X     = (qBlenderToEngine @ mesh_data.vertices[loop.vertex_index].co)[:]
             UV    = mesh_data.uv_layers.active.data[loop_index].uv[:] if mesh_data.uv_layers.active is not None else [0.0, 1.0]
             UV    = (UV[0], 1.0 - UV[1])    # Flip vertically, to make origin top-left.
             C     = mesh_data.vertex_colors[0].data[loop_index].color[:]
@@ -261,6 +406,28 @@ def main():
         tbns    .extend(v.tbn)
         uvs     .extend(v.uv)
         colors  .extend(v.color)
+
+    # Prepare Skeleton Info
+    if obj.parent and obj.parent.type == "ARMATURE":
+        armature = obj.parent
+        if obj.matrix_world != armature.matrix_world:
+            raise Exception("ARMATURE and MESH origins must match!");
+        parse_armature(armature)
+        parse_weights(obj, mesh_data)
+
+    # Set skeleton_info to export.
+    skeleton_info.append(num_rest_pose_joints)
+    if num_rest_pose_joints:
+        for joint in rest_pose_joints:
+            skeleton_info.extend(joint.inv_rest_pose_matrix)
+            append_string(skeleton_info, joint.name)
+            skeleton_info.append(joint.parent_id)
+        
+        skeleton_info.append(len(mesh_data.vertices))
+        for blend in vertex_blends:
+            skeleton_info.append(blend.num_pieces)
+            skeleton_info.extend(blend.pieces)
+
 
     """ TRIANGLE_MESH_HEADER
     """
@@ -299,6 +466,15 @@ def main():
         if isinstance(e, list):
             array.array('b', e).tofile(f)
 
+    # skeleton_info has different types inside it.
+    for e in skeleton_info:
+        if isinstance(e, float):
+            f.write(struct.pack("<f", e))
+        if isinstance(e, int):
+            f.write(struct.pack("<i", e))
+        if isinstance(e, list):
+            array.array('b', e).tofile(f)
+    
     f.close()
 
     # Clear console (for debugging)
