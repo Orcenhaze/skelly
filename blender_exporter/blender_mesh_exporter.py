@@ -102,8 +102,8 @@ MapType_COUNT     = 5
 vertex_to_index_map = {}    # {Vertex_XTBNUC hash : int}
 xtbnuc_vertices     = []
 
-rest_pose_joints     = []   # list of all (Joint_Info) count=num_rest_pose_joints
-num_rest_pose_joints = 0
+skeleton_joints     = []   # list of all (Joint_Info) count=num_skeleton_joints
+num_skeleton_joints = 0
 
 vertex_blends        = []  # list of all (Vertex_Blend_Info) count= len(mesh_data.vertices)
 
@@ -143,15 +143,15 @@ def add_joint(inv_rest_pose, name, parent_id):
     joint.name                 = name
     joint.parent_id            = parent_id
     
-    rest_pose_joints.append(joint)
-    global num_rest_pose_joints
-    num_rest_pose_joints += 1
+    skeleton_joints.append(joint)
+    global num_skeleton_joints
+    num_skeleton_joints += 1
     
-    return num_rest_pose_joints-1 # id of the joint that was just added.
+    return num_skeleton_joints-1 # id of the joint that was just added.
 
 def parse_armature(armature):
     #
-    # This function will fill the rest_pose_joints[] list with Joint_Info (num_rest_pose_joints as many)
+    # This function will fill the skeleton_joints[] list with Joint_Info (num_skeleton_joints as many)
     #
 
     # Search for root candidates
@@ -314,6 +314,14 @@ def main():
     if not obj.material_slots.values():
         raise Exception("The object must have at least one Material Slot.")
     
+    # Get armature if available and set pose position to REST pose.
+    armature = None
+    if obj.parent and obj.parent.type == "ARMATURE":
+        armature = obj.parent
+        if obj.matrix_world != armature.matrix_world:
+            raise Exception("ARMATURE and MESH origins must match!");
+        armature.data.pose_position = 'REST'
+    
     mesh_data      = obj.data
     orig_mesh_data = mesh_data.copy()
     
@@ -407,26 +415,20 @@ def main():
         uvs     .extend(v.uv)
         colors  .extend(v.color)
 
-    # Prepare Skeleton Info
-    if obj.parent and obj.parent.type == "ARMATURE":
-        armature = obj.parent
-        if obj.matrix_world != armature.matrix_world:
-            raise Exception("ARMATURE and MESH origins must match!");
+    # Prepare and set Skeleton Info
+    if armature != None:
         parse_armature(armature)
         parse_weights(obj, mesh_data)
-
-    # Set skeleton_info to export.
-    skeleton_info.append(num_rest_pose_joints)
-    if num_rest_pose_joints:
-        for joint in rest_pose_joints:
-            skeleton_info.extend(joint.inv_rest_pose_matrix)
-            append_string(skeleton_info, joint.name)
-            skeleton_info.append(joint.parent_id)
-        
-        skeleton_info.append(len(mesh_data.vertices))
-        for blend in vertex_blends:
-            skeleton_info.append(blend.num_pieces)
-            skeleton_info.extend(blend.pieces)
+        if num_skeleton_joints:
+            for joint in skeleton_joints:
+                skeleton_info.extend(joint.inv_rest_pose_matrix)
+                append_string(skeleton_info, joint.name)
+                skeleton_info.append(joint.parent_id)
+            
+            skeleton_info.append(len(mesh_data.vertices)) # num_canonical_vertices
+            for blend in vertex_blends:
+                skeleton_info.append(blend.num_pieces)
+                skeleton_info.extend(blend.pieces)
 
 
     """ TRIANGLE_MESH_HEADER
@@ -438,6 +440,7 @@ def main():
     triangle_mesh_header.append(len(indices))           # num_indices
     triangle_mesh_header.append(len(triangle_lists))    # num_triangle_lists
     triangle_mesh_header.append(len(materials))		    # num_materials
+    triangle_mesh_header.append(num_skeleton_joints)
 
     """ WRITE TO BINARY FILE
     """

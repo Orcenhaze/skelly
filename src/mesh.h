@@ -93,8 +93,8 @@ struct Skeleton_Joint_Info
 
 struct Skeleton_Info
 {
-    Array<Skeleton_Joint_Info> joint_info; // num_rest_pose_joints of these.
-    Array<Vertex_Blend_Info>   vertex_blend_info;   // Per canonical vertex;
+    Array<Skeleton_Joint_Info> joint_info;        // num_skeleton_joints of these.
+    Array<Vertex_Blend_Info>   vertex_blend_info; // Per canonical vertex;
 };
 
 
@@ -121,6 +121,8 @@ struct Triangle_Mesh_Header {
     
     s32 num_triangle_lists;      // Mul by sizeof(Triangle_List_Info) to get bytes
     s32 num_materials;      
+    
+    s32 num_skeleton_joints;     // Mul by sizeof(Skeleton_Joint_Info) to get bytes
 };
 
 struct Triangle_List_Info {

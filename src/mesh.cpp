@@ -63,13 +63,10 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
     //
     // Read Skeleton_Info
     //
-    s32 num_rest_pose_joints;
-    get(&file, &num_rest_pose_joints);
-    
-    if (num_rest_pose_joints > 0) {
+    if (header.num_skeleton_joints) {
         Skeleton_Info *sk_info = &mesh->skeleton_info;
-        array_init_and_resize(&sk_info->joint_info, num_rest_pose_joints);
-        for (s32 i = 0; i < num_rest_pose_joints; i++) {
+        array_init_and_resize(&sk_info->joint_info, header.num_skeleton_joints);
+        for (s32 i = 0; i < header.num_skeleton_joints; i++) {
             Skeleton_Joint_Info *joint = &sk_info->joint_info[i];
             
             // Read 4x4 matrix.
@@ -107,7 +104,7 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
     
     ASSERT(file.count == 0);
     
-    // @Todo: @Speed: Not sure if there's a faster way to construct this...
+    // @Todo: @Speed: Not sure if there's a faster way to construct this... maybe when reading vertex_blends?
     //
     // Construct canonical_vertex_map.
     {
