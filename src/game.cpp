@@ -1,4 +1,5 @@
 
+#include "animation.cpp"
 #include "mesh.cpp"
 #include "entity.cpp"
 #include "draw.cpp"
@@ -122,6 +123,12 @@ FUNCTION void game_init()
     // Set initial default dir light.
     game->num_dir_lights = 1;
     game->dir_lights[0]  = default_dir_light();
+    
+    
+    // @Temporary:
+    // @Temporary:
+    Sampled_Animation anim = {};
+    load_sampled_animation(&anim, S8LIT("C:\\work\\skelly\\data\\animations\\cube_ArmatureAction.sampled_animation"));
 }
 
 FUNCTION void game_update()

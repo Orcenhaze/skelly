@@ -39,38 +39,6 @@ look at vertex_to_skeleton_info_map[] AnimPlayback pt.2 @2:13:36
 
 */
 
-#if 0
-struct SQT
-{
-    Quaternion rotation;    // Q: quaternion
-    V3         translation; // T: translation
-    f32        scale;       // S: scale
-};
-
-struct Skeleton_Pose
-{
-    Skeleton   *skeleton;
-    Array<SQT>  local_poses;  // Relative to joint parent.
-    Array<M4x4> global_poses; // In model space.
-};
-
-
-struct Animation_Sample
-{
-    Array<SQT> joint_poses; // Joint poses at some keyframe in ??? space.
-};
-
-struct Animation_Clip
-{
-    Array<Animation_Sample> samples; // A.k.a keyframes.
-    Skeleton *skeleton;
-    f32 frames_per_second;
-    u32 frame_count;
-    b32 is_looping; // if False -> sample_count is frame_count+1; if True -> sample_count is frame_count
-};
-#endif
-
-
 #define MAX_JOINTS_PER_VERTEX 4
 struct Vertex_Blend_Piece
 {

@@ -36,19 +36,23 @@ version = 2
     // Gives the joint's current pose matrix(4x4) in armature space.
     bpy.data.objects['Armature'].pose.bones["Torso"].matrix
     
+    // To get the joint's current pose matrix relative to the parent, we do the following
+    m_child  = bpy.data.objects['Armature'].pose.bones["Torso"].matrix
+    m_parent = bpy.data.objects['Armature'].pose.bones["Torso"].parent.matrix
+    result   = m_parent.inverted() @ m_child
+    
     // Gives the joint's rest pose matrix in armature space.
     // Both are the same.
     bpy.data.objects['Armature'].pose.bones["Torso"].bone.matrix_local
     bpy.data.objects['Armature'].data.bones["Torso"].matrix_local
     
     // Gives the joint's current pose matrix(4x4) relative to the same joint in rest pose.
-    // Translation part of the matrix is zero (as we can't translate joints in pose mode).
+    // Translation part of the matrix is zero (as we can't translate joints in pose mode?).
     bpy.data.objects['Armature'].pose.bones["Torso"].matrix_basis
     
     // Gives the joint's rest pose matrix(3x3) relative to parent (no translation)
     bpy.data.objects['Armature'].data.bones["Torso"].matrix
-    
-    // TODO: Assert that armature origin is the same as object/mesh/model origin. Throw error otherwise.
+ 
 """
 
 """ IMPORTS
@@ -87,9 +91,9 @@ class Vertex_Blend_Info:
 
 """ GLOBAL VARIABLES
 """
-# Quaternion to transform from Blender's space coordinates to "our" space coordinates.
+# Matrix to transform from Blender's space coordinates to "our" space coordinates.
 # Rotate -90deg around x-axis.
-qBlenderToEngine = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0)).to_matrix().to_4x4()
+BlenderToEngineMatrix = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0)).to_matrix().to_4x4()
 
 # Poor man's enum of Material_Texture_Map_Type:
 MapType_ALBEDO    = 0
@@ -169,7 +173,7 @@ def parse_armature(armature):
     root = root_candidates[0]
     del root_candidates  
 
-    rest_pose_matrix = qBlenderToEngine @ root.matrix_local
+    rest_pose_matrix = BlenderToEngineMatrix @ root.matrix_local
 
     root_id = add_joint(rest_pose_matrix.inverted(), root.name, -1)
     
@@ -178,7 +182,7 @@ def parse_armature(armature):
         recursively_add_joint(child, root_id)
 
 def recursively_add_joint(joint, parent_id):
-    rest_pose_matrix = qBlenderToEngine @ joint.matrix_local
+    rest_pose_matrix = BlenderToEngineMatrix @ joint.matrix_local
     joint_id         = add_joint(rest_pose_matrix.inverted(), joint.name, parent_id)
 
     for child in joint.children:
@@ -294,7 +298,7 @@ def add_unique_vertex_and_append_index(vertex):
 def main():
     """ VARIABLES
     """
-    obj                = None
+    mesh_obj           = None
     mesh_data          = None
     previous_face      = None
     triangle_lists     = []     # len(triangle_lists) is num_triangle_lists
@@ -308,21 +312,21 @@ def main():
     bpy.ops.object.mode_set(mode="OBJECT")
     
     # Get the active/selected object. Make sure it's the correct type.
-    obj = bpy.context.view_layer.objects.active
-    if obj.type != "MESH":
-        raise Exception("Object must be of type MESH, not %s." % obj.type)
-    if not obj.material_slots.values():
+    mesh_obj = bpy.context.view_layer.objects.active
+    if mesh_obj.type != "MESH":
+        raise Exception("Active object must be of type MESH, not %s." % mesh_obj.type)
+    if not mesh_obj.material_slots.values():
         raise Exception("The object must have at least one Material Slot.")
     
     # Get armature if available and set pose position to REST pose.
     armature = None
-    if obj.parent and obj.parent.type == "ARMATURE":
-        armature = obj.parent
-        if obj.matrix_world != armature.matrix_world:
+    if mesh_obj.parent and mesh_obj.parent.type == "ARMATURE":
+        armature = mesh_obj.parent
+        if mesh_obj.matrix_world != armature.matrix_world:
             raise Exception("ARMATURE and MESH origins must match!");
         armature.data.pose_position = 'REST'
     
-    mesh_data      = obj.data
+    mesh_data      = mesh_obj.data
     orig_mesh_data = mesh_data.copy()
     
     # Create bmesh.
@@ -338,8 +342,8 @@ def main():
     
     # Build the Convex Hull as a mesh.
     if make_convex_hull:
-        ch_obj       = obj.copy()
-        ch_obj.name  = "%sConvexHull" % obj.name
+        ch_obj       = mesh_obj.copy()
+        ch_obj.name  = "%sConvexHull" % mesh_obj.name
         ch_mesh_data = ch_obj.data = bpy.data.meshes.new("%sConvexHull" % orig_mesh_data.name)
         
         ch_b_mesh = bmesh.new()
@@ -370,23 +374,23 @@ def main():
             face_normal    = loop.normal
             face_bitangent = loop.bitangent_sign * face_normal.cross(face_tangent)
             
-            face_tangent   = qBlenderToEngine @ face_tangent
-            face_normal    = qBlenderToEngine @ face_normal
-            face_bitangent = qBlenderToEngine @ face_bitangent
+            face_tangent   = BlenderToEngineMatrix @ face_tangent
+            face_normal    = BlenderToEngineMatrix @ face_normal
+            face_bitangent = BlenderToEngineMatrix @ face_bitangent
         
             TBN = face_tangent[:] + face_bitangent[:] + face_normal[:]
             if smooth_shaded:
                 TBN = face_tangent[:] + face_bitangent[:] + mesh_data.vertices[loop.vertex_index].normal[:]
 
             # Construct and add vertex if it's unique.
-            X     = (qBlenderToEngine @ mesh_data.vertices[loop.vertex_index].co)[:]
+            X     = (BlenderToEngineMatrix @ mesh_data.vertices[loop.vertex_index].co)[:]
             UV    = mesh_data.uv_layers.active.data[loop_index].uv[:] if mesh_data.uv_layers.active is not None else [0.0, 1.0]
             UV    = (UV[0], 1.0 - UV[1])    # Flip vertically, to make origin top-left.
             C     = mesh_data.vertex_colors[0].data[loop_index].color[:]
             add_unique_vertex_and_append_index(Vertex_XTBNUC(X, TBN, UV, C))
     
         # Append material used by this face.
-        used_materials.append(obj.material_slots[face.material_index].material)
+        used_materials.append(mesh_obj.material_slots[face.material_index].material)
         
         # Construct triangle list.
         if previous_face == None or face.material_index != previous_face.material_index:
@@ -418,7 +422,7 @@ def main():
     # Prepare and set Skeleton Info
     if armature != None:
         parse_armature(armature)
-        parse_weights(obj, mesh_data)
+        parse_weights(mesh_obj, mesh_data)
         if num_skeleton_joints:
             for joint in skeleton_joints:
                 skeleton_info.extend(joint.inv_rest_pose_matrix)
@@ -460,6 +464,8 @@ def main():
     array.array('I', indices)               .tofile(f)
     array.array('i', triangle_list_info)    .tofile(f)
 
+    # @Cleanup: Pull out code for writing list of multiple types to file..?
+    
     # material_info has different types inside it.
     for e in material_info:
         if isinstance(e, float):

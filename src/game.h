@@ -5,6 +5,7 @@ GLOBAL V3 V3F = {0,  0, -1};
 GLOBAL V3 V3U = {0,  1,  0};
 GLOBAL V3 V3R = {1,  0,  0};
 
+#include "animation.h"
 #include "mesh.h"
 #include "entity.h"
 #include "catalog.h"
