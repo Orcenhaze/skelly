@@ -61,13 +61,16 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
     }
     
     //
-    // Read Skeleton_Info
+    // Read Skeleton
     //
+    mesh->skeleton.exists = FALSE;
     if (header.num_skeleton_joints) {
-        Skeleton_Info *sk_info = &mesh->skeleton_info;
-        array_init_and_resize(&sk_info->joint_info, header.num_skeleton_joints);
+        Skeleton *sk = &mesh->skeleton;
+        sk->exists   = TRUE;
+        array_init_and_resize(&sk->joint_info, header.num_skeleton_joints);
+        
         for (s32 i = 0; i < header.num_skeleton_joints; i++) {
-            Skeleton_Joint_Info *joint = &sk_info->joint_info[i];
+            Skeleton_Joint_Info *joint = &sk->joint_info[i];
             
             // Read 4x4 matrix.
             get(&file, &joint->inverse_rest_pose);
@@ -87,10 +90,10 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
         s32 num_canonical_vertices;
         get(&file, &num_canonical_vertices);
         ASSERT(num_canonical_vertices > 0);
-        array_init_and_resize(&sk_info->vertex_blend_info, num_canonical_vertices);
+        array_init_and_resize(&sk->vertex_blend_info, num_canonical_vertices);
         
         for (s32 i = 0; i < num_canonical_vertices; i++) {
-            Vertex_Blend_Info *blend = &sk_info->vertex_blend_info[i];
+            Vertex_Blend_Info *blend = &sk->vertex_blend_info[i];
             
             get(&file, &blend->num_pieces);
             

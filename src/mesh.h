@@ -59,10 +59,11 @@ struct Skeleton_Joint_Info
     s32     parent_id;
 };
 
-struct Skeleton_Info
+struct Skeleton
 {
     Array<Skeleton_Joint_Info> joint_info;        // num_skeleton_joints of these.
     Array<Vertex_Blend_Info>   vertex_blend_info; // Per canonical vertex;
+    b32 exists;
 };
 
 
@@ -137,8 +138,8 @@ struct Triangle_Mesh
 	Array<Material_Info>      material_info;
     
     // @Note: Maps mesh vertices to indices of unique/canonical vertices as if they were in a separate array.
-    Array<s32>    canonical_vertex_map;
-    Skeleton_Info skeleton_info; // @Todo: Should this be a pointer?
+    Array<s32> canonical_vertex_map;
+    Skeleton   skeleton; // @Todo: Should this be a pointer?
     
     // Bounds of the mesh, computed at mesh load time, in local space.
     Rect3 bounding_box;

@@ -5,19 +5,7 @@ FUNCTION void update_entity_transform(Entity *entity)
     Quaternion ori = entity->orientation;
     V3 scale       = entity->scale;
     
-    M4x4 t = m4x4_identity();
-    t._14  = pos.x;
-    t._24  = pos.y;
-    t._34  = pos.z;
-    
-    M4x4 r = m4x4_from_quaternion(ori);
-    
-    M4x4 s = m4x4_identity();
-    s._11  = scale.x;
-    s._22  = scale.y;
-    s._33  = scale.z;
-    
-    entity->object_to_world_matrix.forward = t * r * s;
+    entity->object_to_world_matrix.forward = m4x4_from_translation_rotation_scale(pos, ori, scale);
     invert(entity->object_to_world_matrix.forward, &entity->object_to_world_matrix.inverse);
 }
 

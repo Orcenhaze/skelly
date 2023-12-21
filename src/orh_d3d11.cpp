@@ -1196,7 +1196,7 @@ FUNCTION void immediate_line_3d(V3 p0, V3 p1, V4 color, f32 thickness = 0.1f)
 
 FUNCTION void immediate_cone(V3 base_center, V3 direction, f32 base_radius, f32 length, V4 color)
 {
-    direction = normalize0(direction);
+    direction = normalize_or_zero(direction);
     V3 tip    = base_center + length * direction;
     
     V3 tangent = {};
@@ -1228,7 +1228,7 @@ FUNCTION void immediate_arrow(V3 start, V3 direction, f32 length, V4 color, f32 
     f32 cone_length = 0.25f * length;
     length         -= cone_length;
     
-    direction = normalize0(direction);
+    direction = normalize_or_zero(direction);
     V3 p0     = start;
     V3 p1     = start + length * direction;
     

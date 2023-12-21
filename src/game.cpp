@@ -65,7 +65,7 @@ FUNCTION void control_camera(Camera *cam)
     
     V3 cam_p = cam->position;
     V3 cam_f = cam->forward;
-    V3 cam_r = normalize0(cross(cam_f, V3U));
+    V3 cam_r = normalize_or_zero(cross(cam_f, V3U));
     
     f32 speed = 2.0f;
     if (key_held(Key_SHIFT))
@@ -127,8 +127,21 @@ FUNCTION void game_init()
     
     // @Temporary:
     // @Temporary:
+    // @Temporary:
+    // @Temporary:
     Sampled_Animation anim = {};
     load_sampled_animation(&anim, S8LIT("C:\\work\\skelly\\data\\animations\\cube_ArmatureAction.sampled_animation"));
+    
+    Animation_Channel channel;
+    set_animation(&channel, &anim, 0);
+    
+    eval(&channel);
+    print_sqts(channel.lerped_joints_relative);
+    
+    advance_time(&channel, 0.2f);
+    
+    eval(&channel);
+    print_sqts(channel.lerped_joints_relative);
 }
 
 FUNCTION void game_update()
@@ -157,7 +170,7 @@ FUNCTION void game_update()
     
 #if DEVELOPER
     
-    Ray camera_ray = {game->camera.position, normalize0(game->mouse_world - game->camera.position)};
+    Ray camera_ray = {game->camera.position, normalize_or_zero(game->mouse_world - game->camera.position)};
     
     // @Note: We have to check if we are interacting with gizmo before doing mouse picking because 
     // we don't want mouse clicks to overlap. Maybe there's a better way to get around this.

@@ -1,4 +1,4 @@
-/* orh.h - v0.77 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.78 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,9 +9,10 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.78 - nlerp() does normalize_or_identity() now. Added m4x4_from_translation_rotation_scale();
 0.77 - added array_add_unique(). Added operator== for V3.
 0.76 - no need to pass scale to get_rotation(). Added invert() to invert M4x4. Fixed SIGN() to include 0.
-0.75 - quaternion_get_axis() uses normalize0 now in case the vector part of the quaternion is zero.
+0.75 - quaternion_get_axis() uses normalize_or_zero now in case the vector part of the quaternion is zero.
 0.74 - fixed F32_MIN and F64_MIN, we had minimum normalized positive floating-point number.
 0.73 - array_add() now returns pointer to newly added item.
 0.72 - fixed bug with string path helper functions.
@@ -568,15 +569,16 @@ FUNCDEF V2 normalize(V2 v);
 FUNCDEF V3 normalize(V3 v);
 FUNCDEF V4 normalize(V4 v);
 
-FUNCDEF V2 normalize0(V2 v);
-FUNCDEF V3 normalize0(V3 v);
-FUNCDEF V4 normalize0(V4 v);
+FUNCDEF V2 normalize_or_zero(V2 v);
+FUNCDEF V3 normalize_or_zero(V3 v);
+FUNCDEF V4 normalize_or_zero(V4 v);
 
 FUNCDEF V3 reflect(V3 incident, V3 normal);
 
 FUNCDEF f32        dot(Quaternion a, Quaternion b);
 FUNCDEF f32        length(Quaternion q);
 FUNCDEF Quaternion normalize(Quaternion q);
+FUNCDEF Quaternion normalize_or_identity(Quaternion q);
 
 FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w);
 FUNCDEF inline Quaternion quaternion(V3 v, f32 w);
@@ -597,6 +599,8 @@ FUNCDEF inline f32 quaternion_get_angle_turns(Quaternion q);
 
 FUNCDEF M4x4 m4x4_identity();
 FUNCDEF M4x4 m4x4_from_quaternion(Quaternion q);
+FUNCDEF M4x4 m4x4_from_translation_rotation_scale(V3 translation, Quaternion rotation, V3 scale);
+
 FUNCDEF M4x4 transpose(M4x4 m);
 FUNCDEF b32  invert(M4x4 m, M4x4 *result);
 FUNCDEF V4   transform(M4x4 m, V4 v);
@@ -2408,17 +2412,17 @@ V4 normalize(V4 v)
     return result;
 }
 
-V2 normalize0(V2 v) 
+V2 normalize_or_zero(V2 v) 
 { 
     f32 len = length(v); 
     return len > 0 ? v/len : v2(0.0f); 
 }
-V3 normalize0(V3 v) 
+V3 normalize_or_zero(V3 v) 
 { 
     f32 len = length(v); 
     return len > 0 ? v/len : v3(0.0f); 
 }
-V4 normalize0(V4 v) 
+V4 normalize_or_zero(V4 v) 
 { 
     f32 len = length(v);
     return len > 0 ? v/len : v4(0.0f); 
@@ -2444,6 +2448,11 @@ Quaternion normalize(Quaternion q)
 {
     Quaternion result = (q * (1.0f / length(q))); 
     return result;
+}
+Quaternion normalize_or_identity(Quaternion q)
+{
+    f32 len = length(q);
+    return len > 0 ? (q * 1.0f/len) : quaternion_identity();
 }
 
 Quaternion quaternion(f32 x, f32 y, f32 z, f32 w) 
@@ -2529,7 +2538,7 @@ Quaternion quaternion_inverse(Quaternion q)
 }
 V3 quaternion_get_axis(Quaternion q)
 {
-    V3 result = normalize0(q.v);
+    V3 result = normalize_or_zero(q.v);
     return result;
 }
 f32 quaternion_get_angle(Quaternion q)
@@ -2584,6 +2593,26 @@ M4x4 m4x4_from_quaternion(Quaternion q)
     
     return result;
 }
+M4x4 m4x4_from_translation_rotation_scale(V3 translation, Quaternion rotation, V3 scale)
+{
+    M4x4 result = m4x4_identity();
+    
+    M4x4 t = m4x4_identity();
+    t._14  = translation.x;
+    t._24  = translation.y;
+    t._34  = translation.z;
+    
+    M4x4 r = m4x4_from_quaternion(rotation);
+    
+    M4x4 s = m4x4_identity();
+    s._11  = scale.x;
+    s._22  = scale.y;
+    s._33  = scale.z;
+    
+    result = t * r * s;
+    return result;
+}
+
 M4x4 transpose(M4x4 m)
 {
     M4x4 result = 
@@ -2796,7 +2825,7 @@ f32 unlerp(Quaternion a, Quaternion q, Quaternion b)
 }
 Quaternion nlerp(Quaternion a, f32 t, Quaternion b)
 {
-    return normalize(lerp(a, t, b));
+    return normalize_or_identity(lerp(a, t, b));
 }
 Quaternion slerp(Quaternion a, f32 t, Quaternion b)
 {

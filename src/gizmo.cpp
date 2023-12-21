@@ -90,7 +90,7 @@ FUNCTION void gizmo_calculate_rendering_params(V3 camera_position, V3 gizmo_orig
 
 FUNCTION void gizmo_calculate_geometry(V3 camera_position, V3 gizmo_origin)
 {
-    V3 origin_to_camera = normalize0(camera_position - gizmo_origin);
+    V3 origin_to_camera = normalize_or_zero(camera_position - gizmo_origin);
     
     geometry.axes[0]    = {gizmo_origin, {1.0f, 0.0f, 0.0f}, F32_MAX};
     geometry.axes[1]    = {gizmo_origin, {0.0f, 1.0f, 0.0f}, F32_MAX};
