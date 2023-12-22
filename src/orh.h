@@ -573,6 +573,8 @@ FUNCDEF V2 normalize_or_zero(V2 v);
 FUNCDEF V3 normalize_or_zero(V3 v);
 FUNCDEF V4 normalize_or_zero(V4 v);
 
+FUNCDEF V3 normalize_or_z_axis(V3 v);
+
 FUNCDEF V3 reflect(V3 incident, V3 normal);
 
 FUNCDEF f32        dot(Quaternion a, Quaternion b);
@@ -2426,6 +2428,12 @@ V4 normalize_or_zero(V4 v)
 { 
     f32 len = length(v);
     return len > 0 ? v/len : v4(0.0f); 
+}
+
+V3 normalize_or_z_axis(V3 v)
+{
+    f32 len = length(v);
+    return len > 0 ? v/len : v3(0.0f, 0.0f, 1.0f); 
 }
 
 V3 reflect(V3 incident, V3 normal)

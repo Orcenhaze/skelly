@@ -88,4 +88,21 @@ b32 blending_out;
 // @Todo: Animation Player
 // @Todo: In set mesh function, decide the blend_mode for the anim player according to Casey's video.
 
+struct Animation_Player
+{
+    Array<M4x4>               skinning_matrices;
+    Array<M4x4>               combined_joints_relative;
+    Array<Animation_Channel*> channels;
+    
+    Triangle_Mesh *mesh;
+    
+    f64 current_time;
+    f64 current_dt;
+    
+    s32 num_changed_channels_last_eval;
+    
+    // @Todo: blend mode (neighborhood with rest pose / invert / direct)
+    // @Todo: remove locomotion
+};
+
 #endif //ANIMATION_H

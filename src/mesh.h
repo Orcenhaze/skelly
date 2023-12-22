@@ -31,7 +31,7 @@ matrix of that joint. ONLY THEN do we multiply with the current pose matrix that
  back to object-space.
 
 @Todo:
-[] Create one struct called Skeleton_Info that contains both Joint_Weight_Info AND Skeleton?
+[] Create one struct called Skeleton that contains both Joint_Weight_Info AND Skeleton?
 [] Joint_Weight_Info is per-vertex, but it should be per-canonical-vertex, not mesh-vertex.
 look at vertex_to_skeleton_info_map[] AnimPlayback pt.2 @2:13:36
 [] Expand mesh exporter to export per-vertex joint_weights and also rest pose skeleton?
@@ -63,7 +63,7 @@ struct Skeleton
 {
     Array<Skeleton_Joint_Info> joint_info;        // num_skeleton_joints of these.
     Array<Vertex_Blend_Info>   vertex_blend_info; // Per canonical vertex;
-    b32 exists;
+    b32 exists; // @Todo: Remove this eventually. Add a flag on the mesh to say if we're animated.
 };
 
 
@@ -137,9 +137,15 @@ struct Triangle_Mesh
     Array<Triangle_List_Info> triangle_list_info;
 	Array<Material_Info>      material_info;
     
+    // @Temporary:
+    // @Temporary:
+    // @Temporary:
+    Array<V3> skinned_vertices;
+    Array<V3> skinned_normals;
+    
     // @Note: Maps mesh vertices to indices of unique/canonical vertices as if they were in a separate array.
     Array<s32> canonical_vertex_map;
-    Skeleton   skeleton; // @Todo: Should this be a pointer?
+    Skeleton   skeleton; // @Todo: Should this be a pointer? I prefer so.
     
     // Bounds of the mesh, computed at mesh load time, in local space.
     Rect3 bounding_box;

@@ -1,6 +1,6 @@
 
-#include "animation.cpp"
 #include "mesh.cpp"
+#include "animation.cpp"
 #include "entity.cpp"
 #include "draw.cpp"
 #include "gizmo.cpp"
@@ -14,7 +14,7 @@ FUNCTION void load_textures(Catalog<String8, Texture> *catalog)
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
     
-    String8 path_wild = sprint(scratch.arena, "%Stextures/*.png", os->data_folder);
+    String8 path_wild = sprint(scratch.arena, "%Stextures/*.*", os->data_folder);
     
     File_Group file_group = os->get_all_files_in_path(scratch.arena, path_wild);
     File_Info *info       = file_group.first_file_info;
@@ -129,19 +129,19 @@ FUNCTION void game_init()
     // @Temporary:
     // @Temporary:
     // @Temporary:
-    Sampled_Animation anim = {};
-    load_sampled_animation(&anim, S8LIT("C:\\work\\skelly\\data\\animations\\cube_ArmatureAction.sampled_animation"));
+    Entity e = create_default_entity();
+    init(&e.animation_player);
+    e.mesh = find(&game->mesh_catalog, S8LIT("wolf"));
     
-    Animation_Channel channel;
-    set_animation(&channel, &anim, 0);
+    Sampled_Animation *anim = PUSH_STRUCT_ZERO(os->permanent_arena, Sampled_Animation);
+    load_sampled_animation(anim, S8LIT("C:\\work\\skelly\\data\\animations\\wolf_03_creep_Armature_0.sampled_animation"));
     
-    eval(&channel);
-    print_sqts(channel.lerped_joints_relative);
+    Animation_Channel *channel = add_animation_channel(&e.animation_player);
+    set_animation(channel, anim, 0.0);
     
-    advance_time(&channel, 0.2f);
+    set_mesh(&e.animation_player, e.mesh);
     
-    eval(&channel);
-    print_sqts(channel.lerped_joints_relative);
+    create_new_entity(&game->entity_manager, e);
 }
 
 FUNCTION void game_update()
@@ -166,6 +166,9 @@ FUNCTION void game_update()
     for (s32 i = 0; i < manager->entities.count; i++) {
         Entity *e = &manager->entities[i];
         update_entity_transform(e);
+        
+        advance_time(&e->animation_player, os->dt);
+        eval(&e->animation_player);
     }
     
 #if DEVELOPER
@@ -266,6 +269,9 @@ FUNCTION void game_render()
     Entity_Manager *manager = &game->entity_manager;
     for (s32 i = 0; i < manager->entities.count; i++) {
         Entity *e = &manager->entities[i];
+        
+        if (e->animation_player.num_changed_channels_last_eval)
+            skin_mesh(&e->animation_player);
         
         draw_entity(e);
     }

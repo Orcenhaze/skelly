@@ -17,6 +17,7 @@ version = 1
     @Cleanup:
 """
 
+from   numpy import allclose
 import os
 import struct
 import array
@@ -68,9 +69,12 @@ def export_joints_meta_data(data, armature):
 
     # Only one node can be eligible
     if len(root_candidates) > 1:
-      raise Exception( 'A single root must exist in the armature.')
+        print('Found multiple root joints, only one is allowed:')
+        for r in root_candidates:
+            print(r.name)
+        raise Exception( 'A single root must exist in the armature.')
     elif len(root_candidates) == 0:
-      raise Exception( 'No root found.')
+        raise Exception( 'No root found.')
 
     # Get the root
     root = root_candidates[0]
@@ -196,9 +200,9 @@ def main():
     armature = None
     if mesh_obj.parent and mesh_obj.parent.type == "ARMATURE":
         armature = mesh_obj.parent
-        if mesh_obj.matrix_world != armature.matrix_world:
+        if not allclose(mesh_obj.matrix_world, armature.matrix_world):
             raise Exception("ARMATURE and MESH origins must match!");
-        #armature.data.pose_position = 'REST'
+        armature.data.pose_position = 'POSE'
 
     if armature == None:
         raise Exception("Couldn't extract ARMATURE from %." % mesh_obj.name);

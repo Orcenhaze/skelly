@@ -12,6 +12,9 @@ struct Entity
     M4x4_Inverse object_to_world_matrix;
     
     Triangle_Mesh *mesh;
+    
+    // @Todo: This should be a pointer?
+    Animation_Player animation_player;
 };
 
 struct Entity_Manager

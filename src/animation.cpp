@@ -8,7 +8,7 @@ FUNCTION void print_sqts(Array<SQT> transforms)
     debug_print("} \n\n");
 }
 
-//~ Sampled Animation stuff
+//~ Sampled Animation
 //
 FUNCTION b32 load_sampled_animation(Sampled_Animation *anim, String8 full_path)
 {
@@ -72,6 +72,7 @@ FUNCTION b32 load_sampled_animation(Sampled_Animation *anim, String8 full_path)
     }
     
     
+    // Read joint matrices.
     for (s32 sample_index = 0; sample_index < anim->num_samples; sample_index++) {
         for (s32 joint_index = 0; joint_index < anim->joints.count; joint_index++) {
             Pose_Joint_Info *joint = &anim->joints[joint_index];
@@ -89,8 +90,12 @@ FUNCTION b32 load_sampled_animation(Sampled_Animation *anim, String8 full_path)
     return true;
 }
 
-//~ Animation Channel stuff
+//~ Animation Channel
 //
+FUNCTION void init(Animation_Channel *channel)
+{
+    array_init(&channel->lerped_joints_relative);
+}
 
 FUNCTION void set_animation(Animation_Channel *channel, Sampled_Animation *anim, f64 t0)
 {
@@ -114,10 +119,10 @@ FUNCTION void set_animation(Animation_Channel *channel, Sampled_Animation *anim,
     channel->completed       = FALSE;
     channel->is_active       = TRUE;
     
-    array_init_and_resize(&channel->lerped_joints_relative, anim->joints.count);
+    array_resize(&channel->lerped_joints_relative, anim->joints.count);
 }
 
-FUNCTION void advance_time(Animation_Channel *channel, f32 dt)
+FUNCTION void advance_time(Animation_Channel *channel, f64 dt)
 {
     // Advance current_time by dt.
     channel->old_time      = channel->current_time;
@@ -136,7 +141,7 @@ FUNCTION void advance_time(Animation_Channel *channel, f32 dt)
     
 }
 
-FUNCTION void get_lerped_joints(Sampled_Animation *anim, f64 time, Array<SQT> *joints_out)
+FUNCTION void get_lerped_joints(Sampled_Animation *anim, f64 time, Array<SQT> joints_out)
 {
     // @Todo: max_index parameter? What is it for? To ignore some joint children?
     
@@ -167,12 +172,12 @@ FUNCTION void get_lerped_joints(Sampled_Animation *anim, f64 time, Array<SQT> *j
     for (s32 i = 0; i < num_joints; i++) {
         Pose_Joint_Info *joint = &anim->joints[i];
         if (DISABLE_LERPS) {
-            joints_out->data[i] = joint->matrices[base_index];
+            joints_out[i] = joint->matrices[base_index];
         } else {
             SQT a = joint->matrices[base_index + 0];
             SQT b = joint->matrices[base_index + 1];
             
-            joints_out->data[i] = lerp(a, (f32)fraction, b);
+            joints_out[i] = lerp(a, (f32)fraction, b);
         }
     }
     
@@ -190,7 +195,199 @@ FUNCTION b32 eval(Animation_Channel *channel)
         return false;
     
     ASSERT(channel->lerped_joints_relative.count == channel->animation->joints.count);
-    get_lerped_joints(channel->animation, channel->current_time, &channel->lerped_joints_relative);
+    get_lerped_joints(channel->animation, channel->current_time, channel->lerped_joints_relative);
     
     return true;
+}
+
+//~ Animation Player
+//
+FUNCTION void init(Animation_Player *player)
+{
+    //table_init(&player->joint_name_to_index_map);
+    array_init(&player->skinning_matrices);
+    array_init(&player->combined_joints_relative);
+    array_init(&player->channels);
+}
+
+FUNCTION void set_mesh(Animation_Player *player, Triangle_Mesh *mesh)
+{
+    if (!mesh) return;
+    
+    //table_reset(&player->joint_name_to_index_map);
+    
+    Skeleton *skeleton = &mesh->skeleton;
+    if (!skeleton->exists) {
+        debug_print("Mesh %S doesn't have a skeleton, can't set it on animation player!\n", mesh->name);
+        return;
+    }
+    
+    array_resize(&player->skinning_matrices, skeleton->joint_info.count);
+    
+    player->mesh = mesh;
+}
+
+FUNCTION Animation_Channel* add_animation_channel(Animation_Player *player)
+{
+    // @Todo: Which arena should we actually use for this?? 
+    // @Todo:
+    
+    Animation_Channel *channel = PUSH_STRUCT_ZERO(os->permanent_arena, Animation_Channel);
+    init(channel);
+    array_add(&player->channels, channel);
+    
+    return channel;
+}
+
+FUNCTION void advance_time(Animation_Player *player, f64 dt)
+{
+    for (s32 i = 0; i < player->channels.count; i++) {
+        advance_time(player->channels[i], dt);
+    }
+    
+    player->current_time += dt;
+    player->current_dt    = dt;
+}
+
+FUNCTION void eval(Animation_Player *player)
+{
+    if (!player->channels.count) return;
+    
+    if (!player->mesh) return;
+    
+    ASSERT(player->mesh->skeleton.exists);
+    
+    Skeleton *skeleton = &player->mesh->skeleton;
+    
+    // @Sanity: @Todo: For now, assume that mesh skeleton joints match joints of every channel in
+    // terms of names and order/indices. Our mesh and animation exporters are synched when writing
+    // the joint data. If anything, we can make sure everything matched at load time.
+    // @Note: Because of this assumption. The animation player and channel doesn't hold any info about
+    // joint names, instead, we can rely on the mesh skeleton to get that info. But since the animation
+    // player allows you to add _any_ channel, and if we want to support some kind of "re-targeting",
+    // it would probably be best if we did store pose joint names somewhere and only apply transforms 
+    // to matching joints from the mesh skeleton.
+    for (s32 i = 0; i < player->channels.count; i++) {
+        ASSERT(player->skinning_matrices.count == player->channels[i]->lerped_joints_relative.count);
+    }
+    
+    // Evaluate all channels
+    player->num_changed_channels_last_eval = 0;
+    for (s32 i = 0; i < player->channels.count; i++) {
+        b32 changed = eval(player->channels[i]);
+        if (changed)
+            player->num_changed_channels_last_eval++;
+    }
+    
+    
+    // @Todo: Animation blending / cross-fade, write results into combined_joints
+    //
+    array_resize(&player->combined_joints_relative, player->channels[0]->lerped_joints_relative.count);
+    for (s32 i = 0; i < player->channels.count; i++) {
+        // @Temporary:
+        // @Temporary:
+        // @Temporary: For now, just copy out the first channel.
+        if (i > 0) continue;
+        
+        Animation_Channel *channel = player->channels[i];
+        for (s32 joint_index = 0; joint_index < channel->lerped_joints_relative.count; joint_index++) {
+            // @Todo: Assuming here the joint_index works for combined_joints_relative
+            M4x4 m = m4x4_from_sqt(channel->lerped_joints_relative[joint_index]);
+            player->combined_joints_relative[joint_index] = m;
+        }
+    }
+    
+    // Calculate global matrices (object/mesh space) from local matrices (joint-space relative to parent).
+    // Could store global matrices in separate array, but we'll store them in skinning matrices for now.
+    for (s32 i = 0; i < player->combined_joints_relative.count; i++) {
+        s32 parent_index = skeleton->joint_info[i].parent_id;
+        
+        M4x4 m;
+        if (parent_index >= 0) {
+            M4x4 parent_matrix = player->skinning_matrices[parent_index];
+            m = parent_matrix * player->combined_joints_relative[i];
+        } else {
+            m = player->combined_joints_relative[i];
+        }
+        
+        player->skinning_matrices[i] = m;
+    }
+    
+    // Calculate skinning matrices by including inverse rest pose from skeleton.
+    for (s32 i = 0; i < player->skinning_matrices.count; i++) {
+        M4x4 inverse_rest_pose       = skeleton->joint_info[i].inverse_rest_pose;
+        player->skinning_matrices[i] = player->skinning_matrices[i] * inverse_rest_pose;
+    }
+    
+    // @Todo: Remove locomotion?
+}
+
+FUNCTION void skin_mesh(Animation_Player *player)
+{
+    if (!player->mesh) return;
+    
+    if (!player->mesh->skeleton.exists) return;
+    
+    Triangle_Mesh *mesh = player->mesh;
+    Skeleton *sk = &mesh->skeleton;
+    for (s32 i = 0; i < mesh->vertices.count; i++) {
+        s32 canonical_vertex_index    = mesh->canonical_vertex_map[i];
+        Vertex_Blend_Info *blend_info = &sk->vertex_blend_info[canonical_vertex_index];
+        
+        V4 p = {};
+        V3 n = {};
+        
+        for (s32 piece_index = 0; piece_index < blend_info->num_pieces; piece_index++) {
+            Vertex_Blend_Piece piece = blend_info->pieces[piece_index];
+            f32 w = piece.weight;
+            
+            M4x4 m = player->skinning_matrices[piece.joint_id];
+            
+            p += w * transform(m, v4(mesh->vertices[i],    1.0f));
+            n += w * transform(m, v4(mesh->tbns[i].normal, 0.0f)).xyz;
+        }
+        
+        if (p.w) {
+            p.xyz /= p.w;
+        }
+        
+        mesh->skinned_vertices[i] = p.xyz;
+        mesh->skinned_normals[i]  = normalize_or_z_axis(n);
+    }
+    
+    //
+    // Upload vertex data to GPU.
+    //
+    s32 num_vertices = (s32)mesh->vertices.count;
+    Arena_Temp scratch = get_scratch(0, 0);
+    Vertex_XTBNUC *vertex_buffer = PUSH_ARRAY_ZERO(scratch.arena, Vertex_XTBNUC, num_vertices);
+    Vertex_XTBNUC *vertex = vertex_buffer;
+    
+    for (s32 vindex = 0; vindex < num_vertices; vindex++, vertex++) {
+        if (mesh->skinned_vertices.count) vertex->position = mesh->skinned_vertices[vindex];
+        else                      vertex->position = {};
+        
+        if (mesh->tbns.count)     vertex->tangent = mesh->tbns[vindex].tangent;
+        else                      vertex->tangent = {1.0f, 0.0f, 0.0f};
+        
+        if (mesh->tbns.count)     vertex->bitangent = mesh->tbns[vindex].bitangent;
+        else                      vertex->bitangent = {0.0f, 1.0f, 0.0f};
+        
+        if (mesh->tbns.count)     vertex->normal = mesh->skinned_normals[vindex];
+        else                      vertex->normal = {0.0f, 0.0f, 1.0f};
+        
+        if (mesh->uvs.count)      vertex->uv = mesh->uvs[vindex];
+        else                      vertex->uv = {};
+        
+        if (mesh->colors.count)   vertex->color = mesh->colors[vindex];
+        else                      vertex->color = {1.0f, 1.0f, 1.0f, 1.0f};
+    }
+    
+    
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    device_context->Map(mesh->vbo, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    MEMORY_COPY(mapped.pData, vertex_buffer, sizeof(Vertex_XTBNUC) * num_vertices);
+    device_context->Unmap(mesh->vbo, 0);
+    
+    free_scratch(scratch);
 }

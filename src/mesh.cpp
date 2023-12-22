@@ -75,6 +75,13 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
             // Read 4x4 matrix.
             get(&file, &joint->inverse_rest_pose);
             
+            /* 
+                        // @Hack:
+                        if (joint->inverse_rest_pose._44 == 0) {
+                            joint->inverse_rest_pose = m4x4_identity();
+                        }
+             */
+            
             // Read name
             // @Todo: Maybe lifetime of these names shouldn't be permanent...
             s32 joint_name_len = 0;
@@ -102,6 +109,14 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
                 get(&file, &blend->pieces[piece_index].weight);
             }
         }
+        
+        
+        // @Temporary:
+        // @Temporary:
+        // @Temporary:
+        // @Temporary:
+        array_init_and_resize(&mesh->skinned_vertices, header.num_vertices);
+        array_init_and_resize(&mesh->skinned_normals, header.num_vertices);
     }
     
     
@@ -180,16 +195,27 @@ FUNCTION void generate_buffers_for_mesh(Triangle_Mesh *mesh)
         else                      vertex->color = {1.0f, 1.0f, 1.0f, 1.0f};
     }
     
+    // @Temporary:
+    // @Temporary:
+    // @Temporary:
+    // @Temporary:
+    b32 animated = mesh->skeleton.exists;
+    
     D3D11_BUFFER_DESC desc = {};
     desc.ByteWidth = (UINT)(sizeof(Vertex_XTBNUC) * num_vertices);
     desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     desc.Usage     = D3D11_USAGE_IMMUTABLE;
+    if (animated) {
+        desc.Usage          = D3D11_USAGE_DYNAMIC;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    }
     D3D11_SUBRESOURCE_DATA vertex_data = { vertex_buffer };
     device->CreateBuffer(&desc, &vertex_data, &mesh->vbo);
     
-    D3D11_BUFFER_DESC desc2 = desc;
+    D3D11_BUFFER_DESC desc2 = {};
     desc2.ByteWidth = (UINT)(sizeof(u32) * mesh->indices.count);
     desc2.BindFlags = D3D11_BIND_INDEX_BUFFER;
+    desc2.Usage     = D3D11_USAGE_IMMUTABLE;
     D3D11_SUBRESOURCE_DATA index_data = { mesh->indices.data };
     device->CreateBuffer(&desc2, &index_data, &mesh->ibo);
     

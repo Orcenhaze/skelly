@@ -2,7 +2,7 @@ mesh_name        = ""
 smooth_shaded    = 0
 make_convex_hull = 0
 
-directory = "C:\\work\\skelly\\data\\"
+directory = "C:\\work\\skelly\\data\\meshes\\"
 extension = ".mesh"
 
 # File format version. Increment when modifying file.
@@ -58,6 +58,7 @@ version = 2
 """ IMPORTS
 """
 from   collections import OrderedDict
+from   numpy import allclose
 import os
 import struct
 import array
@@ -165,9 +166,12 @@ def parse_armature(armature):
 
     # Only one node can be eligible
     if len(root_candidates) > 1:
-      raise Exception( 'A single root must exist in the armature.')
+        print('Found multiple root joints, only one is allowed:')
+        for r in root_candidates:
+            print(r.name)
+        raise Exception( 'A single root must exist in the armature.')
     elif len(root_candidates) == 0:
-      raise Exception( 'No root found.')
+        raise Exception( 'No root found.')
 
     # Get the root
     root = root_candidates[0]
@@ -192,36 +196,50 @@ def parse_weights(mesh_obj, mesh_data):
     #
     # This function will fill the vertex_blends[] list with Vertex_Blend_Info (len(mesh_data.vertices) as many)
     # 
-
-    # Iterate through vertices
-    for vertex in mesh_data.vertices:
-        vertex_blend = Vertex_Blend_Info()
     
-        # Create a list to store ids and weights for the current vertex
-        pieces = []
+    #
+    # We will iterate through vertices in same order we wrote vertex_xtbnuc, i.e. through faces and 
+    # NOT directly through mesh_data.vertices.
+    #
+    
+    # Since we are iterating in this order, we will go over same vertices multiple times. 
+    # This list will help us write Vertex_Blend_Info only for canonical vertices.
+    processed_verts = []
 
-        # Iterate through vertex groups
-        for group in mesh_obj.vertex_groups:
-            # Check if the vertex is assigned to this group
-            for v_group in vertex.groups:
-                if v_group.group == group.index:
-                    pieces.append({'bone_index': group.index, 'weight': v_group.weight})
+    for face in mesh_data.polygons:
+        for loop_index in face.loop_indices:
+            loop = mesh_data.loops[loop_index]
+            
+            if loop.vertex_index not in processed_verts:
+                processed_verts.append(loop.vertex_index)
+                vertex = mesh_data.vertices[loop.vertex_index]
+                vertex_blend = Vertex_Blend_Info()
+            
+                # Create a list to store ids and weights for the current vertex
+                pieces = []
 
-        # Sort the weights by weight value (descending order)
-        pieces.sort(key=lambda x: x['weight'], reverse=True)
+                # Iterate through vertex groups
+                for group in mesh_obj.vertex_groups:
+                    # Check if the vertex is assigned to this group
+                    for v_group in vertex.groups:
+                        if v_group.group == group.index:
+                            pieces.append({'bone_index': group.index, 'weight': v_group.weight})
 
-        # Truncate the list to a maximum of 4 weights per vertex
-        pieces = pieces[:4]
+                # Sort the weights by weight value (descending order)
+                pieces.sort(key=lambda x: x['weight'], reverse=True)
 
-        # If the length of weights is less than 4, append zero-weight entries
-        #while len(pieces) < 4:
-        #    pieces.append({'bone_index': -1, 'weight': 0.0})
+                # Truncate the list to a maximum of 4 weights per vertex
+                pieces = pieces[:4]
 
-        vertex_blend.num_pieces = len(pieces)
-        vertex_blend.pieces     = [value for d in pieces for value in d.values()]
+                # If the length of weights is less than 4, append zero-weight entries
+                #while len(pieces) < 4:
+                #    pieces.append({'bone_index': -1, 'weight': 0.0})
 
-        # Append the vertex weights dictionary to the list
-        vertex_blends.append(vertex_blend)
+                vertex_blend.num_pieces = len(pieces)
+                vertex_blend.pieces     = [value for d in pieces for value in d.values()]
+
+                # Append the vertex weights dictionary to the list
+                vertex_blends.append(vertex_blend)
 
 def append_attribute_default_value_to_material_info(input):
     if input.type == "RGBA":
@@ -322,7 +340,7 @@ def main():
     armature = None
     if mesh_obj.parent and mesh_obj.parent.type == "ARMATURE":
         armature = mesh_obj.parent
-        if mesh_obj.matrix_world != armature.matrix_world:
+        if not allclose(mesh_obj.matrix_world, armature.matrix_world):
             raise Exception("ARMATURE and MESH origins must match!");
         armature.data.pose_position = 'REST'
     
