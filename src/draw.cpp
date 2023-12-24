@@ -179,4 +179,60 @@ FUNCTION void draw_entity_wireframe(Entity *e)
         device_context->DrawIndexed(list->num_indices, list->first_index, 0);
     }
 }
+
+FUNCTION void draw_skeleton(Entity *e)
+{
+    if (!e->animation_player)
+        return;
+    if (!e->mesh->skeleton)
+        return;
+    
+    Animation_Player *player = e->animation_player;
+    Skeleton *skeleton       = e->mesh->skeleton;
+    
+    ASSERT(player->skinning_matrices.count == skeleton->joint_info.count);
+    
+    // Draw skeleton lines.
+    for (s32 i = 0; i < player->skinning_matrices.count; i++) {
+        s32 parent_index = skeleton->joint_info[i].parent_id;
+        
+        if (parent_index >= 0) {
+            // @Note: The skinning matrices contain the global joint matrices + the inverse bind pose.
+            // We want to get rid of the inverse bind pose part, so we'll just multiply with its inverse
+            // to get the identity matrix.
+            // @Note: points are in object space.
+            M4x4 inv;
+            invert(skeleton->joint_info[i].object_to_joint_matrix, &inv);
+            V3 p0 = get_translation(player->skinning_matrices[i] * inv);
+            
+            invert(skeleton->joint_info[parent_index].object_to_joint_matrix, &inv);
+            V3 p1 = get_translation(player->skinning_matrices[parent_index] * inv);
+            
+            immediate_begin();
+            d3d11_clear_depth();
+            set_texture(0);
+            set_object_to_world(e->position, e->orientation, e->scale);
+            immediate_line_3d(p0, p1, v4(1.0f, 0.2f, 0.2f, 1.0f), 0.003f);
+            immediate_end();
+        }
+    }
+    
+    // @Debug: Weird behaviour when zooming in, text shows up in places it shouldn't...
+    // Draw skeleton names.
+    for (s32 i = 0; i < player->skinning_matrices.count; i++) {
+        M4x4 inv;
+        invert(skeleton->joint_info[i].object_to_joint_matrix, &inv);
+        V3 p = get_translation(player->skinning_matrices[i] * inv);
+        
+        V3 p_ndc   = world_to_ndc(e->object_to_world_matrix.forward * p);
+        V2 p_pixel = ndc_to_pixel(p_ndc.xy);
+        String8 joint_name = skeleton->joint_info[i].name;
+        
+        immediate_begin();
+        set_texture(&dfont.atlas);
+        is_using_pixel_coords = TRUE;
+        immediate_text(&dfont, p_pixel, 1, v4(1, 0.8f, 0.8f, 1.0f), "%S", joint_name);
+        immediate_end();
+    }
+}
 #endif

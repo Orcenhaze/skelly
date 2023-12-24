@@ -1,8 +1,9 @@
-/* orh_d3d11.cpp - v0.06 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.07 - C++ D3D11 immediate mode renderer.
 
 #include "orh.h" before this file.
 
 REVISION HISTORY:
+0.07 - added ndc_to_pixel() and 3d version of world_to_ndc().
 0.06 - set_object_to_world() now takes scale and calculates TRS matrix properly.
 0.05 - added d3d11_clear_depth() to clear depth only. Added immediate_rect_3d().
 0.04 - removed ability to pass sRGB bool to load_texture(). Now we always create 4-bpp non-sRGB texture.
@@ -966,16 +967,18 @@ FUNCTION void set_object_to_world(V3 position, Quaternion orientation, V3 scale)
 
 FUNCTION V2 pixel_to_ndc(V2 pixel)
 {
-    // @Note: pixel relative to drawing_rect.
-    //
-    f32 w = get_width(os->drawing_rect);
-    f32 h = get_height(os->drawing_rect);
-    
-    V2 p = hadamard_div(pixel, v2(w, h));
-    p    = p*2 - v2(1);
-    p.y *= -1;
-    
-    return p;
+    // @Note: pixel is relative to drawing_rect, i.e. viewport.
+    V2 ndc = hadamard_div(pixel, v2(viewport.Width, viewport.Height));
+    ndc    = ndc*2.0f - v2(1.0f);
+    ndc.y *= -1;
+    return ndc;
+}
+FUNCTION V2 ndc_to_pixel(V2 ndc)
+{
+    V2 pixel;
+    pixel.x = (ndc.x + 1.0f) * viewport.Width  * 0.5f + viewport.TopLeftX;
+    pixel.y = (1.0f - ndc.y) * viewport.Height * 0.5f + viewport.TopLeftY;
+    return pixel;
 }
 
 FUNCTION V2 world_to_ndc(V2 point)
@@ -983,11 +986,20 @@ FUNCTION V2 world_to_ndc(V2 point)
     // Clip space is same as proj space.
     M4x4 world_to_proj = view_to_proj_matrix.forward * world_to_view_matrix.forward;
     V4 point_clip      = world_to_proj * v4(point.x, point.y, 0, 1);
-    
     V2 result;
     result.x = point_clip.x / point_clip.w;
     result.y = point_clip.y / point_clip.w;
-    
+    return result;
+}
+FUNCTION V3 world_to_ndc(V3 point)
+{
+    // Clip space is same as proj space.
+    M4x4 world_to_proj = view_to_proj_matrix.forward * world_to_view_matrix.forward;
+    V4 point_clip      = world_to_proj * v4(point.x, point.y, point.z, 1);
+    V3 result;
+    result.x = point_clip.x / point_clip.w;
+    result.y = point_clip.y / point_clip.w;
+    result.z = point_clip.z / point_clip.w;
     return result;
 }
 

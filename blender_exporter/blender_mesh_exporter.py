@@ -247,6 +247,7 @@ def parse_weights(mesh_obj, mesh_data):
 
                 # Append the vertex weights dictionary to the list
                 vertex_blends.append(vertex_blend)
+    assert len(processed_verts) == len(mesh_data.vertices)
 
 def append_attribute_default_value_to_material_info(input):
     if input.type == "RGBA":

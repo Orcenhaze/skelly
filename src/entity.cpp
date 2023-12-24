@@ -71,6 +71,8 @@ FUNCTION Animation_Player* create_animation_player_for_entity(Entity *e)
 
 FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b32 loop = TRUE, f64 blend_duration = 0.2)
 {
+    ASSERT(e);
+    
     Animation_Player *player = e->animation_player;
     if (!player) return 0;
     if (!anim)   return 0;
@@ -96,7 +98,7 @@ FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b
     new_channel->blend_duration = blend_duration;
     new_channel->blending_in    = TRUE;
     new_channel->blend_t        = 0;
-    new_channel->should_loop    = loop;
+    new_channel->is_looping     = loop;
     
     return new_channel;
 }

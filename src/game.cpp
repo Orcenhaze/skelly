@@ -308,6 +308,10 @@ FUNCTION void game_render()
     for (s32 i = 0; i < manager->entities.count; i++) {
         Entity *e = manager->entities[i];
         draw_entity(e);
+        
+#if DEVELOPER
+        draw_skeleton(e);
+#endif
     }
     
     

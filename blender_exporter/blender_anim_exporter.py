@@ -10,7 +10,7 @@ version = 1
     About this animation exporter:
     - MESH object must selected before running the script.
     - ARMATURE must be direct parent of the MESH object.
-    
+    - Exports joints' scale value as float NOT Vector3 (we don't support non-uniform scaling).
     
     @Cleanup: The export_joints_meta_data maneuver might be unnecessary, not sure...
     @Cleanup:

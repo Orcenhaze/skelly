@@ -1,5 +1,6 @@
 Cleanup blender exporters and current state of animation system.
-Add ability to cross-fade/blend between animations.
+Do proper blending between animations. Reference casey's video: (neighborhood vs. invert vs. direct).
+Fix cases when we have skeleton, but we are not playing back any animations. skinning_verts would be 0.
 
 TIMESTAMPS:
 Get Quaternion orientation from M4x4: https://www.youtube.com/watch?v=aeDMABSW_KE&list=PLmV5I2fxaiCI9IAdFmGChKbIbenqRMi6Z&index=11 @39:00

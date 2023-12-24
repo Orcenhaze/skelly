@@ -113,9 +113,9 @@ FUNCTION void set_animation(Animation_Channel *channel, Sampled_Animation *anim,
     
     channel->current_time    = t0;
     channel->time_multiplier = 1.0f;
-    channel->should_loop     = TRUE;
-    channel->completed       = FALSE;
-    channel->is_active       = TRUE;
+    channel->is_looping      = TRUE;
+    channel->is_completed    = FALSE;
+    //channel->is_active       = TRUE;
     
     array_resize(&channel->lerped_joints_relative, anim->joints.count);
 }
@@ -127,8 +127,8 @@ FUNCTION void advance_time(Animation_Channel *channel, f64 dt)
     channel->current_time += dt * channel->time_multiplier;
     
     if ((channel->old_time != channel->current_time) && (channel->current_time >= channel->animation_duration)) {
-        if (!channel->should_loop) {
-            channel->completed    = TRUE;
+        if (!channel->is_looping) {
+            channel->is_completed = TRUE;
             channel->current_time = channel->animation_duration;
             
             return;
@@ -189,7 +189,7 @@ FUNCTION b32 eval(Animation_Channel *channel)
     if (!channel->animation)
         return false;
     
-    if (channel->completed)
+    if (channel->is_completed)
         return false;
     
     ASSERT(channel->lerped_joints_relative.count == channel->animation->joints.count);
@@ -204,7 +204,7 @@ FUNCTION void init(Animation_Player *player)
 {
     //table_init(&player->joint_name_to_index_map);
     array_init(&player->skinning_matrices);
-    array_init(&player->combined_joints_relative);
+    array_init(&player->blended_joints_relative);
     array_init(&player->channels);
 }
 
@@ -316,17 +316,17 @@ FUNCTION void eval(Animation_Player *player)
     //
     // Blend with other animation channels (cross-fade).
     //
-    array_resize(&player->combined_joints_relative, player->channels[0]->lerped_joints_relative.count);
+    array_resize(&player->blended_joints_relative, player->channels[0]->lerped_joints_relative.count);
     b32 first = TRUE;
     for (s32 i = 0; i < player->channels.count; i++) {
         Animation_Channel *channel = player->channels[i];
-        ASSERT(channel->lerped_joints_relative.count == player->combined_joints_relative.count);
+        ASSERT(channel->lerped_joints_relative.count == player->blended_joints_relative.count);
         
         for (s32 joint_index = 0; joint_index < channel->lerped_joints_relative.count; joint_index++) {
             SQT joint = channel->lerped_joints_relative[joint_index];
             
             if (first) {
-                player->combined_joints_relative[joint_index] = joint;
+                player->blended_joints_relative[joint_index] = joint;
             }
             else {
                 // @Incomplete:
@@ -338,10 +338,10 @@ FUNCTION void eval(Animation_Player *player)
                 //
                 f64 t = channel->last_blend_factor;
                 if (t != 1) {
-                    SQT lerped = lerp(player->combined_joints_relative[joint_index], (f32)t, joint);
-                    player->combined_joints_relative[joint_index] = lerped;
+                    SQT lerped = lerp(player->blended_joints_relative[joint_index], (f32)t, joint);
+                    player->blended_joints_relative[joint_index] = lerped;
                 } else {
-                    player->combined_joints_relative[joint_index] = joint;
+                    player->blended_joints_relative[joint_index] = joint;
                 }
             }
         }
@@ -353,10 +353,10 @@ FUNCTION void eval(Animation_Player *player)
     // Calculate global matrices (object/mesh space) from local matrices (joint-space relative to parent).
     // Could store global matrices in separate array, but we'll store them in skinning matrices for now.
     //
-    for (s32 i = 0; i < player->combined_joints_relative.count; i++) {
+    for (s32 i = 0; i < player->blended_joints_relative.count; i++) {
         s32 parent_index = skeleton->joint_info[i].parent_id;
         
-        M4x4 m = m4x4_from_sqt(player->combined_joints_relative[i]);
+        M4x4 m = m4x4_from_sqt(player->blended_joints_relative[i]);
         if (parent_index >= 0) {
             M4x4 parent_matrix = player->skinning_matrices[parent_index];
             m = parent_matrix * m;
