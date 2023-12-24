@@ -19,7 +19,9 @@ version = 2
         MESH origin and ARMATURE origin must match!
     
     TODO:
-    We need to merge all vertices by distance before exporting. Not doing so causes issues...
+    - We need to merge all vertices by distance before exporting. Not doing so causes issues...
+    - Sometimes mesh_data.vertices != len(processed_verts) during weight parsing which causes issues. 
+      Probably due to some vertices not being used in any face/polygon or something.
     
     @Cleanup: This file is super messy!
     @Cleanup:
