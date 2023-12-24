@@ -18,10 +18,10 @@ version = 2
     - It exports vertex weights and rest pose skeleton info.
         MESH origin and ARMATURE origin must match!
     
-    @Cleanup: This is super ugly and messy, I need to clean it up!
-    @Cleanup:
-    @Cleanup:
-    @Cleanup:
+    TODO:
+    We need to merge all vertices by distance before exporting. Not doing so causes issues...
+    
+    @Cleanup: This file is super messy!
     @Cleanup:
     @Cleanup:
     
@@ -80,9 +80,10 @@ class Vertex_XTBNUC:
 
 class Joint_Info:
     def __init__(self):
-        self.inv_rest_pose_matrix  = [] # as array
-        self.name                  = ""
-        self.parent_id             = 0  # could be negative (root's parent)
+        self.object_to_joint_matrix      = [] # Matrix4x4 as array
+        self.rest_pose_rotation_relative = [] # Quaternion as array
+        self.name                        = ""
+        self.parent_id                   = 0  # could be negative (root's parent)
 
 
 class Vertex_Blend_Info:
@@ -94,6 +95,7 @@ class Vertex_Blend_Info:
 """
 # Matrix to transform from Blender's space coordinates to "our" space coordinates.
 # Rotate -90deg around x-axis.
+BlenderToEngineQuat   = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0))
 BlenderToEngineMatrix = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0)).to_matrix().to_4x4()
 
 # Poor man's enum of Material_Texture_Map_Type:
@@ -142,11 +144,14 @@ def append_string(the_list, the_string):
 """
 
 
-def add_joint(inv_rest_pose, name, parent_id):
+def add_joint(inv_rest_pose, rest_pose_rotation_rel, name, parent_id):
+    q = rest_pose_rotation_rel
+
     joint = Joint_Info()
-    joint.inv_rest_pose_matrix = [elem for row in inv_rest_pose for elem in row]
-    joint.name                 = name
-    joint.parent_id            = parent_id
+    joint.object_to_joint_matrix      = [elem for row in inv_rest_pose for elem in row]
+    joint.rest_pose_rotation_relative = [q.x, q.y, q.z, q.w]
+    joint.name                        = name
+    joint.parent_id                   = parent_id
     
     skeleton_joints.append(joint)
     global num_skeleton_joints
@@ -177,17 +182,19 @@ def parse_armature(armature):
     root = root_candidates[0]
     del root_candidates  
 
-    rest_pose_matrix = BlenderToEngineMatrix @ root.matrix_local
+    rest_pose_matrix       = BlenderToEngineMatrix @ root.matrix_local
+    rest_pose_rotation_rel = BlenderToEngineQuat   @ root.matrix.to_quaternion()
 
-    root_id = add_joint(rest_pose_matrix.inverted(), root.name, -1)
+    root_id = add_joint(rest_pose_matrix.inverted(), rest_pose_rotation_rel.normalized(), root.name, -1)
     
     # recursively compute others bones data
     for child in root.children:
         recursively_add_joint(child, root_id)
 
 def recursively_add_joint(joint, parent_id):
-    rest_pose_matrix = BlenderToEngineMatrix @ joint.matrix_local
-    joint_id         = add_joint(rest_pose_matrix.inverted(), joint.name, parent_id)
+    rest_pose_matrix       = BlenderToEngineMatrix @ joint.matrix_local
+    rest_pose_rotation_rel = joint.matrix.to_quaternion().normalized()
+    joint_id               = add_joint(rest_pose_matrix.inverted(), rest_pose_rotation_rel, joint.name, parent_id)
 
     for child in joint.children:
       recursively_add_joint(child, joint_id)
@@ -443,7 +450,8 @@ def main():
         parse_weights(mesh_obj, mesh_data)
         if num_skeleton_joints:
             for joint in skeleton_joints:
-                skeleton_info.extend(joint.inv_rest_pose_matrix)
+                skeleton_info.extend(joint.object_to_joint_matrix)
+                skeleton_info.extend(joint.rest_pose_rotation_relative)
                 append_string(skeleton_info, joint.name)
                 skeleton_info.append(joint.parent_id)
             

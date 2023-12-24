@@ -58,6 +58,31 @@ FUNCTION void load_meshes(Catalog<String8, Triangle_Mesh> *catalog)
     }
 }
 
+FUNCTION void load_animations(Catalog<String8, Sampled_Animation> *catalog)
+{
+    Arena_Temp scratch = get_scratch(0, 0);
+    defer(free_scratch(scratch));
+    
+    String8 path_wild = sprint(scratch.arena, "%Sanimations/*.sampled_animation", os->data_folder);
+    
+    File_Group file_group = os->get_all_files_in_path(scratch.arena, path_wild);
+    File_Info *info       = file_group.first_file_info;
+    
+    while (info) {
+        // Use permanent arena for strings to persist.
+        String8 name = str8_copy(os->permanent_arena, info->base_name);
+        String8 path = str8_copy(os->permanent_arena, info->full_path);
+        
+        Sampled_Animation anim = {};
+        anim.name = name;
+        load_sampled_animation(&anim, path);
+        
+        add(catalog, name, anim);
+        
+        info = info->next;
+    }
+}
+
 FUNCTION void control_camera(Camera *cam)
 {
     V3 delta_mouse = game->delta_mouse;
@@ -106,6 +131,7 @@ FUNCTION void game_init()
     
     catalog_init(&game->texture_catalog);
     catalog_init(&game->mesh_catalog);
+    catalog_init(&game->animation_catalog);
     
     entity_manager_init(&game->entity_manager);
     
@@ -119,6 +145,7 @@ FUNCTION void game_init()
     // Load assets. Textures first because meshes reference them.
     load_textures(&game->texture_catalog);
     load_meshes(&game->mesh_catalog);
+    load_animations(&game->animation_catalog);
     
     // Set initial default dir light.
     game->num_dir_lights = 1;
@@ -128,20 +155,13 @@ FUNCTION void game_init()
     // @Temporary:
     // @Temporary:
     // @Temporary:
-    // @Temporary:
     Entity e = create_default_entity();
-    init(&e.animation_player);
-    e.mesh = find(&game->mesh_catalog, S8LIT("wolf"));
+    e.name = S8LIT("wolf");
+    e.mesh   = find(&game->mesh_catalog, S8LIT("wolf"));
+    create_animation_player_for_entity(&e);
     
-    Sampled_Animation *anim = PUSH_STRUCT_ZERO(os->permanent_arena, Sampled_Animation);
-    load_sampled_animation(anim, S8LIT("C:\\work\\skelly\\data\\animations\\wolf_03_creep_Armature_0.sampled_animation"));
-    
-    Animation_Channel *channel = add_animation_channel(&e.animation_player);
-    set_animation(channel, anim, 0.0);
-    
-    set_mesh(&e.animation_player, e.mesh);
-    
-    create_new_entity(&game->entity_manager, e);
+    Entity *wolf = register_new_entity(&game->entity_manager, e);
+    play_animation(wolf, find(&game->animation_catalog, S8LIT("wolf_idle")));
 }
 
 FUNCTION void game_update()
@@ -164,15 +184,29 @@ FUNCTION void game_update()
     //
     Entity_Manager *manager = &game->entity_manager;
     for (s32 i = 0; i < manager->entities.count; i++) {
-        Entity *e = &manager->entities[i];
+        Entity *e = manager->entities[i];
         update_entity_transform(e);
         
-        advance_time(&e->animation_player, os->dt);
-        eval(&e->animation_player);
+        advance_time(e->animation_player, os->dt);
+        eval(e->animation_player);
     }
     
-#if DEVELOPER
+    // @Temporary:
+    // @Temporary:
+    // @Temporary:
+    Entity *wolf = find_entity(&game->entity_manager, S8LIT("wolf"));
+    Sampled_Animation *anim = find(&game->animation_catalog, S8LIT("wolf_idle"));
+    if (key_held(Key_UP)) {
+        if (key_held(Key_SHIFT))
+            anim = find(&game->animation_catalog, S8LIT("wolf_run"));
+        else
+            anim = find(&game->animation_catalog, S8LIT("wolf_walk"));
+    }
+    play_animation(wolf, anim, TRUE, 2.0);
     
+    
+    
+#if DEVELOPER
     Ray camera_ray = {game->camera.position, normalize_or_zero(game->mouse_world - game->camera.position)};
     
     // @Note: We have to check if we are interacting with gizmo before doing mouse picking because 
@@ -206,7 +240,7 @@ FUNCTION void game_update()
         
         // Pick closest entity to camera (iff we intersect with one).
         for (s32 i = 0; i < manager->entities.count; i++) {
-            Entity *e = &manager->entities[i];
+            Entity *e = manager->entities[i];
             Triangle_Mesh *mesh = e->mesh;
             
             /*
@@ -223,7 +257,11 @@ FUNCTION void game_update()
             // camera ray in object space of entity mesh.
             Ray ray_object = {o, normalize(d)};
             
-            b32 is_hit = ray_mesh_intersect(&ray_object, mesh->vertices.count, mesh->vertices.data, mesh->indices.count, mesh->indices.data);
+            V3 *vertices = mesh->vertices.data;
+            if (mesh->flags & MeshFlags_ANIMATED)
+                vertices = mesh->skinned_vertices.data;
+            
+            b32 is_hit = ray_mesh_intersect(&ray_object, mesh->vertices.count, vertices, mesh->indices.count, mesh->indices.data);
             if (is_hit && (ray_object.t < sort_index)) {
                 sort_index  = ray_object.t;
                 best_entity = e;
@@ -268,11 +306,7 @@ FUNCTION void game_render()
     // Render all entities.
     Entity_Manager *manager = &game->entity_manager;
     for (s32 i = 0; i < manager->entities.count; i++) {
-        Entity *e = &manager->entities[i];
-        
-        if (e->animation_player.num_changed_channels_last_eval)
-            skin_mesh(&e->animation_player);
-        
+        Entity *e = manager->entities[i];
         draw_entity(e);
     }
     

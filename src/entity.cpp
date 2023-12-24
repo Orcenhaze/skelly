@@ -25,6 +25,7 @@ FUNCTION Entity create_default_entity()
 FUNCTION void entity_manager_init(Entity_Manager *manager)
 {
     // @Todo: Still need to find a way to avoid reserving 8GB because of default ARENA_MAX_DEFAULT... ugh!
+    table_init(&manager->entity_table);
     array_init(&manager->entities);
     
 #if DEVELOPER
@@ -32,8 +33,70 @@ FUNCTION void entity_manager_init(Entity_Manager *manager)
 #endif
 }
 
-FUNCTION Entity* create_new_entity(Entity_Manager *manager, Entity entity)
+FUNCTION Entity* register_new_entity(Entity_Manager *manager, Entity entity)
 {
-    Entity *new_entity = array_add(&game->entity_manager.entities, entity);
+    // Must set name before calling this.
+    ASSERT(entity.name.data);
+    
+    Entity *new_entity = table_add(&manager->entity_table, entity.name, entity);
+    array_add(&game->entity_manager.entities, new_entity);
     return new_entity;
+}
+
+FUNCTION Entity* find_entity(Entity_Manager *manager, String8 name)
+{
+    Entity *e = table_find_pointer(&manager->entity_table, name);
+    return e;
+}
+
+
+
+
+
+FUNCTION Animation_Player* create_animation_player_for_entity(Entity *e)
+{
+    if (!e->mesh) {
+        debug_print("Entity %S: Can't create animation without mesh.", e->name);
+        return 0;
+    }
+    
+    // @Todo: Shouldn't use permanent_arena here.
+    Animation_Player *new_player = PUSH_STRUCT_ZERO(os->permanent_arena, Animation_Player);
+    init(new_player);
+    set_mesh(new_player, e->mesh);
+    
+    e->animation_player = new_player;
+    return new_player;
+}
+
+FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b32 loop = TRUE, f64 blend_duration = 0.2)
+{
+    Animation_Player *player = e->animation_player;
+    if (!player) return 0;
+    if (!anim)   return 0;
+    
+    for (s32 i = 0; i < player->channels.count; i++) {
+        if (player->channels[i]->animation == anim) {
+            // The passed animation is already playing.
+            //debug_print("Animation %S already playing on Entity %S\n", anim->name, e->name);
+            return 0;
+        }
+    }
+    
+    // Blend out current animations.
+    for (s32 i = 0; i < player->channels.count; i++) {
+        Animation_Channel *channel = player->channels[i];
+        channel->blend_duration = blend_duration;
+        channel->blending_out   = TRUE;
+        channel->blend_t        = 0;
+    }
+    
+    Animation_Channel *new_channel = add_animation_channel(player);
+    set_animation(new_channel, anim, 0);
+    new_channel->blend_duration = blend_duration;
+    new_channel->blending_in    = TRUE;
+    new_channel->blend_t        = 0;
+    new_channel->should_loop    = loop;
+    
+    return new_channel;
 }

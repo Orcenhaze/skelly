@@ -13,13 +13,13 @@ struct Entity
     
     Triangle_Mesh *mesh;
     
-    // @Todo: This should be a pointer?
-    Animation_Player animation_player;
+    Animation_Player *animation_player;
 };
 
 struct Entity_Manager
 {
-    Array<Entity> entities;
+    Table<String8, Entity> entity_table;
+    Array<Entity*> entities;
     
 #if DEVELOPER
     // Editor stuff.

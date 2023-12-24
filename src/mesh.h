@@ -3,9 +3,6 @@
 
 GLOBAL s32 const MESH_FILE_VERSION = 2;
 
-//~ Skeletal Animation
-//
-
 /*
 @Note: Some terms and explainations:
 - The vertices of a triangle mesh are in rest pose and in object space.
@@ -30,13 +27,6 @@ To convert a vertex from object space to space of joint j, we multiply it by the
 matrix of that joint. ONLY THEN do we multiply with the current pose matrix that includes the conversion
  back to object-space.
 
-@Todo:
-[] Create one struct called Skeleton that contains both Joint_Weight_Info AND Skeleton?
-[] Joint_Weight_Info is per-vertex, but it should be per-canonical-vertex, not mesh-vertex.
-look at vertex_to_skeleton_info_map[] AnimPlayback pt.2 @2:13:36
-[] Expand mesh exporter to export per-vertex joint_weights and also rest pose skeleton?
-[] Apply correction matrix that rotates everything -90deg around x-axis (blender space to our space).
-
 */
 
 #define MAX_JOINTS_PER_VERTEX 4
@@ -54,21 +44,25 @@ struct Vertex_Blend_Info
 
 struct Skeleton_Joint_Info
 {
-    M4x4    inverse_rest_pose; // Transforms vertices from object space to joint space.
-    String8 name;
-    s32     parent_id;
+    // People call this "inverse bind pose matrix" or "offset matrix"; it transforms vertices from
+    // object/mesh space to joint space (relative to parent).
+    M4x4       object_to_joint_matrix; 
+    
+    // Joint's rest pose rotation relative to its parent (joint space).
+    // We use this to figure out if we are in the neighborhood of the rest pose when blending animations.
+    // Check Casey Muratori's video "Quaternion Double-cover and the Rest Pose Neighborhood".
+    Quaternion rest_pose_rotation_relative;
+    
+    String8    name;
+    s32        parent_id;
 };
 
 struct Skeleton
 {
     Array<Skeleton_Joint_Info> joint_info;        // num_skeleton_joints of these.
     Array<Vertex_Blend_Info>   vertex_blend_info; // Per canonical vertex;
-    b32 exists; // @Todo: Remove this eventually. Add a flag on the mesh to say if we're animated.
 };
 
-
-//~ Triangle Mesh 
-//
 enum Material_Texture_Map_Type
 {
 	MaterialTextureMapType_ALBEDO,
@@ -118,6 +112,13 @@ struct TBN
     V3 normal;
 };
 
+enum Mesh_Flags
+{
+    MeshFlags_NONE,
+    
+    MeshFlags_ANIMATED
+};
+
 struct Triangle_Mesh
 {
     // @Note: The mesh data is read from `blender_mesh_exporter.py` output.
@@ -137,7 +138,7 @@ struct Triangle_Mesh
     Array<Triangle_List_Info> triangle_list_info;
 	Array<Material_Info>      material_info;
     
-    // @Temporary:
+    // @Temporary: Should skin on the GPU
     // @Temporary:
     // @Temporary:
     Array<V3> skinned_vertices;
@@ -145,7 +146,7 @@ struct Triangle_Mesh
     
     // @Note: Maps mesh vertices to indices of unique/canonical vertices as if they were in a separate array.
     Array<s32> canonical_vertex_map;
-    Skeleton   skeleton; // @Todo: Should this be a pointer? I prefer so.
+    Skeleton   *skeleton;
     
     // Bounds of the mesh, computed at mesh load time, in local space.
     Rect3 bounding_box;
@@ -155,6 +156,8 @@ struct Triangle_Mesh
     // Vertex and index buffers.
     ID3D11Buffer *vbo;
     ID3D11Buffer *ibo;
+    
+    u32 flags;
 };
 
 #endif //MESH_H

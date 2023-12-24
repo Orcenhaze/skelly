@@ -67,31 +67,29 @@ struct Animation_Channel
     f64 animation_duration; // Copied from sampled animation.
     f64 current_time;       // Local clock - will we run into synchronization issues?
     f64 old_time;           // Do we need this?
-    //f64 end_time;
+    
+    // For blending with other channels. We set these from the outside (from some higher level thing) when playing animations.
+    f64 last_blend_factor;
+    f64 blend_duration;
+    f64 blend_t;
+    b32 blending_in;
+    b32 blending_out;
     
     f32 time_multiplier;
     b32 should_loop;
     b32 completed;
-    b32 is_active;         // Animation player sets this? The player holds multiple channels and is responsible for adding and evicting other channels.
-    
-    /* For blending with other channels?
-f64 blend_duration;
-f64 blend_t;
-
-b32 blending_in;
-b32 blending_out;
-*/
+    b32 is_active;  // Animation player sets this? The player holds multiple channels and is responsible for adding and evicting other channels.
 };
 
 #define DISABLE_LERPS FALSE
 
 // @Todo: Animation Player
-// @Todo: In set mesh function, decide the blend_mode for the anim player according to Casey's video.
+// @Todo: In set mesh function, decide the blend_mode for the anim player according to Casey's video?
 
 struct Animation_Player
 {
     Array<M4x4>               skinning_matrices;
-    Array<M4x4>               combined_joints_relative;
+    Array<SQT>               combined_joints_relative;
     Array<Animation_Channel*> channels;
     
     Triangle_Mesh *mesh;

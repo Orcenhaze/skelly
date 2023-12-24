@@ -63,17 +63,18 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
     //
     // Read Skeleton
     //
-    mesh->skeleton.exists = FALSE;
     if (header.num_skeleton_joints) {
-        Skeleton *sk = &mesh->skeleton;
-        sk->exists   = TRUE;
-        array_init_and_resize(&sk->joint_info, header.num_skeleton_joints);
+        // @Todo: Shouldn't use permanent_arena here.
+        mesh->flags |= MeshFlags_ANIMATED;
+        mesh->skeleton = PUSH_STRUCT_ZERO(os->permanent_arena, Skeleton);
         
+        Skeleton *sk = mesh->skeleton;
+        array_init_and_resize(&sk->joint_info, header.num_skeleton_joints);
         for (s32 i = 0; i < header.num_skeleton_joints; i++) {
             Skeleton_Joint_Info *joint = &sk->joint_info[i];
             
             // Read 4x4 matrix.
-            get(&file, &joint->inverse_rest_pose);
+            get(&file, &joint->object_to_joint_matrix);
             
             /* 
                         // @Hack:
@@ -82,8 +83,11 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
                         }
              */
             
+            // Read the joint's rest pose rotation relative to its parent.
+            get(&file, &joint->rest_pose_rotation_relative);
+            
             // Read name
-            // @Todo: Maybe lifetime of these names shouldn't be permanent...
+            // @Todo: Shouldn't use permanent_arena here.
             s32 joint_name_len = 0;
             get(&file, &joint_name_len);
             String8 joint_name = str8(file.data, joint_name_len);
@@ -110,9 +114,7 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
             }
         }
         
-        
-        // @Temporary:
-        // @Temporary:
+        // @Temporary: Should skin on the GPU
         // @Temporary:
         // @Temporary:
         array_init_and_resize(&mesh->skinned_vertices, header.num_vertices);
@@ -195,17 +197,14 @@ FUNCTION void generate_buffers_for_mesh(Triangle_Mesh *mesh)
         else                      vertex->color = {1.0f, 1.0f, 1.0f, 1.0f};
     }
     
-    // @Temporary:
-    // @Temporary:
-    // @Temporary:
-    // @Temporary:
-    b32 animated = mesh->skeleton.exists;
-    
     D3D11_BUFFER_DESC desc = {};
     desc.ByteWidth = (UINT)(sizeof(Vertex_XTBNUC) * num_vertices);
     desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     desc.Usage     = D3D11_USAGE_IMMUTABLE;
-    if (animated) {
+    // @Temporary: Should skin on the GPU
+    // @Temporary:
+    // @Temporary:
+    if (mesh->flags & MeshFlags_ANIMATED) {
         desc.Usage          = D3D11_USAGE_DYNAMIC;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     }

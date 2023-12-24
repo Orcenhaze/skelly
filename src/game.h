@@ -42,8 +42,9 @@ FUNCTION inline Directional_Light default_dir_light()
 
 struct Game_State
 {
-    Catalog<String8, Texture>       texture_catalog;
-    Catalog<String8, Triangle_Mesh> mesh_catalog;
+    Catalog<String8, Texture>           texture_catalog;
+    Catalog<String8, Triangle_Mesh>     mesh_catalog;
+    Catalog<String8, Sampled_Animation> animation_catalog;
     
     Entity_Manager entity_manager;
     

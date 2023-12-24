@@ -19,7 +19,7 @@ FUNCTION void draw_main_editor_window()
             
             if (ImGui::Button("Create")) {
                 Entity entity = create_default_entity();
-                create_new_entity(manager, entity);
+                register_new_entity(manager, entity);
             }
             
             ImGui::Separator();

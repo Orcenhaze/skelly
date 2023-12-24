@@ -8,6 +8,14 @@ FUNCTION void draw_entity(Entity *e)
         return;
     }
     
+    // @Temporary: Should skin on the GPU
+    // @Temporary:
+    // @Temporary:
+    if ((mesh->flags & MeshFlags_ANIMATED) && mesh->skeleton) {
+        if (e->animation_player->num_changed_channels_last_eval)
+            skin_mesh(e->animation_player);
+    }
+    
     // Bind Input Assembler.
     device_context->IASetInputLayout(pbr_input_layout);
     device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

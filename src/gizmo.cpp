@@ -4,6 +4,9 @@
     
 // @Incomplete: Add scale gizmo!
 
+// @Debug: First frame drawing with last rendering params state? 
+// We should probably get rid of rendering params when we deselect.
+
 */ 
 
 enum Gizmo_Mode
