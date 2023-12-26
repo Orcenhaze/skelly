@@ -950,19 +950,7 @@ FUNCTION void set_object_to_world(V3 position, Quaternion orientation, V3 scale)
     // that the quad object is in it's own local space and it will be transformed to the world in the
     // vertex shader.
     
-    M4x4 t = m4x4_identity();
-    t._14  = position.x;
-    t._24  = position.y;
-    t._34  = position.z;
-    
-    M4x4 r = m4x4_from_quaternion(orientation);
-    
-    M4x4 s = m4x4_identity();
-    s._11  = scale.x;
-    s._22  = scale.y;
-    s._33  = scale.z;
-    
-    object_to_world_matrix = t * r * s;
+    object_to_world_matrix = m4x4_from_translation_rotation_scale(position, orientation, scale);
 }
 
 FUNCTION V2 pixel_to_ndc(V2 pixel)
@@ -986,9 +974,7 @@ FUNCTION V2 world_to_ndc(V2 point)
     // Clip space is same as proj space.
     M4x4 world_to_proj = view_to_proj_matrix.forward * world_to_view_matrix.forward;
     V4 point_clip      = world_to_proj * v4(point.x, point.y, 0, 1);
-    V2 result;
-    result.x = point_clip.x / point_clip.w;
-    result.y = point_clip.y / point_clip.w;
+    V2 result          = point_clip.xy / point_clip.w;
     return result;
 }
 FUNCTION V3 world_to_ndc(V3 point)
@@ -996,10 +982,7 @@ FUNCTION V3 world_to_ndc(V3 point)
     // Clip space is same as proj space.
     M4x4 world_to_proj = view_to_proj_matrix.forward * world_to_view_matrix.forward;
     V4 point_clip      = world_to_proj * v4(point.x, point.y, point.z, 1);
-    V3 result;
-    result.x = point_clip.x / point_clip.w;
-    result.y = point_clip.y / point_clip.w;
-    result.z = point_clip.z / point_clip.w;
+    V3 result          = point_clip.xyz / point_clip.w;
     return result;
 }
 
@@ -1130,6 +1113,25 @@ FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V4 color)
     V3 p3 = center - tangent*half_scale + bitangent*half_scale;
     
     immediate_quad(p0, p1, p2, p3, color);
+}
+
+FUNCTION void immediate_gradient_3d(V3 center, V3 normal, f32 half_scale, V4 c0, V4 c1, V4 c2, V4 c3)
+{
+    V3 tangent, bitangent;
+    calculate_tangents(normal, &tangent, &bitangent);
+    
+    V3 p0 = center - tangent*half_scale - bitangent*half_scale;
+    V3 p1 = center + tangent*half_scale - bitangent*half_scale;
+    V3 p2 = center + tangent*half_scale + bitangent*half_scale;
+    V3 p3 = center - tangent*half_scale + bitangent*half_scale;
+    
+    immediate_vertex(p0, c0);
+    immediate_vertex(p1, c1);
+    immediate_vertex(p2, c2);
+    
+    immediate_vertex(p0, c0);
+    immediate_vertex(p2, c2);
+    immediate_vertex(p3, c3);
 }
 
 FUNCTION void immediate_hexahedron(V3 p0, V3 p1, V3 p2, V3 p3,

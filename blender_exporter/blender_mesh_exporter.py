@@ -356,7 +356,7 @@ def main():
     
     mesh_data      = mesh_obj.data
     orig_mesh_data = mesh_data.copy()
-    
+
     # Create bmesh.
     b_mesh = bmesh.new()
     b_mesh.from_mesh(mesh_data)
@@ -385,6 +385,10 @@ def main():
         ch_b_mesh.free()
         bpy.context.scene.collection.objects.link(ch_obj)
     
+    # Make sure we have a uv map.
+    if len(mesh_data.uv_layers) == 0:
+        bpy.ops.mesh.uv_texture_add()
+        
     # Make sure we have one vertex color index.
     if not mesh_data.vertex_colors.active:
         mesh_data.vertex_colors.new()

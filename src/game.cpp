@@ -156,12 +156,12 @@ FUNCTION void game_init()
     // @Temporary:
     // @Temporary:
     Entity e = create_default_entity();
-    e.name = S8LIT("wolf");
-    e.mesh   = find(&game->mesh_catalog, S8LIT("wolf"));
+    e.name = S8LIT("guy");
+    e.mesh   = find(&game->mesh_catalog, S8LIT("guy"));
     create_animation_player_for_entity(&e);
     
-    Entity *wolf = register_new_entity(&game->entity_manager, e);
-    play_animation(wolf, find(&game->animation_catalog, S8LIT("wolf_idle")));
+    Entity *guy = register_new_entity(&game->entity_manager, e);
+    play_animation(guy, find(&game->animation_catalog, S8LIT("guy_idle")));
 }
 
 FUNCTION void game_update()
@@ -194,15 +194,21 @@ FUNCTION void game_update()
     // @Temporary:
     // @Temporary:
     // @Temporary:
-    Entity *wolf = find_entity(&game->entity_manager, S8LIT("wolf"));
-    Sampled_Animation *anim = find(&game->animation_catalog, S8LIT("wolf_idle"));
+    Entity *guy = find_entity(&game->entity_manager, S8LIT("guy"));
+    Sampled_Animation *anim;
     if (key_held(Key_UP)) {
-        if (key_held(Key_SHIFT))
-            anim = find(&game->animation_catalog, S8LIT("wolf_run"));
-        else
-            anim = find(&game->animation_catalog, S8LIT("wolf_walk"));
+        if (key_held(Key_SHIFT)) {
+            anim = find(&game->animation_catalog, S8LIT("guy_run"));
+            play_animation(guy, anim, TRUE, 0.2);
+        }
+        else {
+            anim = find(&game->animation_catalog, S8LIT("guy_walk"));
+            play_animation(guy, anim, TRUE, 0.5);
+        }
+    } else {
+        anim = find(&game->animation_catalog, S8LIT("guy_idle"));
+        play_animation(guy, anim, TRUE, 0.3);
     }
-    play_animation(wolf, anim, TRUE, 2.0);
     
     
     
@@ -299,8 +305,19 @@ FUNCTION void game_render()
     // Draw simple wireframe quad instead of viewport grid for now.
     immediate_begin(TRUE);
     set_texture(0);
-    immediate_rect_3d({}, V3U, 200.0f, {.8f, .8f, .8f, 0.1f});
+    V4 c0 = {0.7f, 0.7f, 0.1f, 1.0f};
+    V4 c1 = v4(1);
+    V4 c2 = {0.3f, 0.7f, 0.3f, 1.0f};
+    V4 c3 = v4(1);
+    immediate_gradient_3d({}, V3U, 200.0f, c0, c1, c2, c3);
     immediate_end();
+    
+    /* 
+        immediate_begin();
+        set_texture(0);
+        immediate_rect_3d({0.0f, -50.0f, 0.0f}, V3U, 200.0f, {0.4f, 0.45f, 0.45f, 1.0f});
+        immediate_end();
+     */
 #endif
     
     // Render all entities.
@@ -308,18 +325,14 @@ FUNCTION void game_render()
     for (s32 i = 0; i < manager->entities.count; i++) {
         Entity *e = manager->entities[i];
         draw_entity(e);
-        
-#if DEVELOPER
-        draw_skeleton(e);
-#endif
     }
     
     
 #if DEVELOPER
     draw_editor_ui();
     
+    // Draw visual debugging stuff for selected entities.
     if (manager->selected_entity) {
-        // Draw wireframe for selected entities.
         for (s32 i = 0; i < manager->selected_entities.count; i++) {
             Entity *e = manager->selected_entities[i];
             draw_entity_wireframe(e);
@@ -327,6 +340,12 @@ FUNCTION void game_render()
         
         // Render gizmos.
         gizmo_render();
+    }
+    
+    // Draw skeleton lines and joint names
+    for (s32 i = 0; i < manager->entities.count; i++) {
+        Entity *e = manager->entities[i];
+        draw_skeleton(e);
     }
 #endif
 }

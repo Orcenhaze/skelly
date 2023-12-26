@@ -4,7 +4,7 @@ FUNCTION void draw_main_editor_window()
     const char *modes[] = {"Entity Mode", "Point Light Mode", "Directional Light Mode"};
     LOCAL_PERSIST s32 current_mode = 0;
     
-    ImGui::Begin("Light info", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin("Main Editor", NULL, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::Combo("Choose mode", &current_mode, modes, ARRAY_COUNT(modes));
     
     ImGui::Separator();
@@ -15,8 +15,19 @@ FUNCTION void draw_main_editor_window()
             // Entity Mode
             //
             
+            //
+            // DEBUGGING
+            //
+            ImGui::Checkbox("Draw Joint Lines", (bool*) &DRAW_JOINT_LINES);
+            ImGui::Checkbox("Draw Joint Names", (bool*) &DRAW_JOINT_NAMES);
+            
+            ImGui::Separator();
+            
             Entity_Manager *manager = &game->entity_manager;
             
+            //
+            // @Todo: Naming newly created entities.
+            //
             if (ImGui::Button("Create")) {
                 Entity entity = create_default_entity();
                 register_new_entity(manager, entity);
@@ -24,16 +35,11 @@ FUNCTION void draw_main_editor_window()
             
             ImGui::Separator();
             
-            LOCAL_PERSIST char name[128] = {};
             if (manager->selected_entity) {
                 Entity *e = manager->selected_entity;
                 
-                MEMORY_ZERO_ARRAY(name);
-                ASSERT(ARRAY_COUNT(name) > e->name.count + 1);
-                MEMORY_COPY(name, e->name.data, e->name.count);
-                
-                // For now only display info.
-                ImGui::Text("%s (%u)", name, e->idx);
+                // For now only display info. Allow editing of name later?
+                ImGui::Text("%s ID: %u", e->name.data, e->idx);
                 
                 ImGui::Separator();
                 
@@ -66,28 +72,69 @@ FUNCTION void draw_main_editor_window()
                 //
                 // Mesh
                 //
-                LOCAL_PERSIST s32 item_current_idx = 0;
-                if (!str8_empty(manager->selected_entity->mesh->name)) {
-                    const u8* combo_preview_value = manager->selected_entity->mesh->name.data;
-                    if (ImGui::BeginCombo("Mesh", (const char*)combo_preview_value)) {
-                        for (s32 n = 0; n < game->mesh_catalog.items.count; n++) {
-                            const bool is_selected = (item_current_idx == n);
-                            if (ImGui::Selectable((const char*) game->mesh_catalog.items[n]->name.data, is_selected)) {
-                                item_current_idx = n;
+                {
+                    LOCAL_PERSIST s32 item_current_idx = 0;
+                    if (!str8_empty(e->mesh->name)) {
+                        const u8* combo_preview_value = e->mesh->name.data;
+                        if (ImGui::BeginCombo("Mesh", (const char*)combo_preview_value)) {
+                            for (s32 n = 0; n < game->mesh_catalog.items.count; n++) {
+                                const bool is_selected = (item_current_idx == n);
+                                if (ImGui::Selectable((const char*) game->mesh_catalog.items[n]->name.data, is_selected)) {
+                                    item_current_idx = n;
+                                    
+                                    e->mesh = game->mesh_catalog.items[n];
+                                    if (e->animation_player) {
+                                        set_mesh(e->animation_player, e->mesh);
+                                    }
+                                }
                                 
-                                e->mesh = game->mesh_catalog.items[n];
+                                // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                                if (is_selected)
+                                    ImGui::SetItemDefaultFocus();
                             }
-                            
-                            // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
-                            if (is_selected)
-                                ImGui::SetItemDefaultFocus();
+                            ImGui::EndCombo();
                         }
-                        ImGui::EndCombo();
                     }
                 }
                 
+                
+#if 0
+                // @Temporary
+                // @Temporary
+                // @Temporary
+                // @Remove
+                // @Remove
+                // @Remove
+                // Animation
+                //
+                {
+                    LOCAL_PERSIST s32 item_current_idx = 0;
+                    if (e->animation_player && e->mesh->skeleton) {
+                        if (e->animation_player->channels.count) {
+                            const u8* combo_preview_value = e->animation_player->channels[0]->animation->name.data;
+                            if (ImGui::BeginCombo("Animation", (const char*)combo_preview_value)) {
+                                for (s32 n = 0; n < game->animation_catalog.items.count; n++) {
+                                    const bool is_selected = (item_current_idx == n);
+                                    if (ImGui::Selectable((const char*) game->animation_catalog.items[n]->name.data, is_selected)) {
+                                        item_current_idx = n;
+                                        
+                                        set_animation(e->animation_player->channels[0], game->animation_catalog.items[n], 0);
+                                    }
+                                    
+                                    // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                                    if (is_selected)
+                                        ImGui::SetItemDefaultFocus();
+                                }
+                                ImGui::EndCombo();
+                            }
+                        } else {
+                            add_animation_channel(e->animation_player);
+                        }
+                    }
+                }
+#endif
+                
             }
-            
         } break;
         case 1: {
             //

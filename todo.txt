@@ -1,6 +1,8 @@
-Cleanup blender exporters and current state of animation system.
-Do proper blending between animations. Reference casey's video: (neighborhood vs. invert vs. direct).
-Fix cases when we have skeleton, but we are not playing back any animations. skinning_verts would be 0.
+[] Cleanup blender exporters and current state of animation system.
+[] Do proper blending between animations. Reference casey's video: (neighborhood vs. invert vs. direct).
+[] Fix cases when we have skeleton, but we are not playing back any animations. skinning_vertices would be 0. Causes issues with mouse picking and stuff.
+[] Fix gizmo retaining old state when we unselect and reselect something.
+[] Skin on the GPU
 
 TIMESTAMPS:
 Get Quaternion orientation from M4x4: https://www.youtube.com/watch?v=aeDMABSW_KE&list=PLmV5I2fxaiCI9IAdFmGChKbIbenqRMi6Z&index=11 @39:00

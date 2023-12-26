@@ -122,6 +122,8 @@ FUNCTION void set_animation(Animation_Channel *channel, Sampled_Animation *anim,
 
 FUNCTION void advance_time(Animation_Channel *channel, f64 dt)
 {
+    if (!channel) return;
+    
     // Advance current_time by dt.
     channel->old_time      = channel->current_time;
     channel->current_time += dt * channel->time_multiplier;
@@ -237,6 +239,8 @@ FUNCTION Animation_Channel* add_animation_channel(Animation_Player *player)
 
 FUNCTION void advance_time(Animation_Player *player, f64 dt)
 {
+    if (!player) return;
+    
     // @MemoryLeak: We are only removing pointers to channel and not freeing anything.
     
     for (s32 i = 0; i < player->channels.count; i++) {
@@ -262,7 +266,7 @@ FUNCTION void advance_time(Animation_Player *player, f64 dt)
 
 FUNCTION void eval(Animation_Player *player)
 {
-    if (!player->channels.count) return;
+    if (!player || !player->channels.count) return;
     
     if (!player->mesh) return;
     
@@ -378,6 +382,9 @@ FUNCTION void eval(Animation_Player *player)
 
 FUNCTION void skin_mesh(Animation_Player *player)
 {
+    // @Speed: Skin on the GPU.
+    // @Speed:
+    
     if (!player->mesh) return;
     
     if (!player->mesh->skeleton) return;

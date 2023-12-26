@@ -9,6 +9,22 @@ FUNCTION void update_entity_transform(Entity *entity)
     invert(entity->object_to_world_matrix.forward, &entity->object_to_world_matrix.inverse);
 }
 
+FUNCTION Animation_Player* create_animation_player_for_entity(Entity *e)
+{
+    if (!e->mesh) {
+        debug_print("Entity %S: Can't create animation without mesh.", e->name);
+        return 0;
+    }
+    
+    // @Todo: Shouldn't use permanent_arena here.
+    Animation_Player *new_player = PUSH_STRUCT_ZERO(os->permanent_arena, Animation_Player);
+    init(new_player);
+    set_mesh(new_player, e->mesh);
+    
+    e->animation_player = new_player;
+    return new_player;
+}
+
 FUNCTION Entity create_default_entity()
 {
     Entity result = {};
@@ -35,8 +51,13 @@ FUNCTION void entity_manager_init(Entity_Manager *manager)
 
 FUNCTION Entity* register_new_entity(Entity_Manager *manager, Entity entity)
 {
-    // Must set name before calling this.
-    ASSERT(entity.name.data);
+    entity.idx = (u32)manager->entities.count;
+    
+    // @Todo: Shouldn't use permanent_arena here...
+    if (!entity.name.data) {
+        String8 name = entity.mesh? entity.mesh->name : S8LIT("unnamed");
+        entity.name  = sprint(os->permanent_arena, "%S (%u)", name, entity.idx);
+    }
     
     Entity *new_entity = table_add(&manager->entity_table, entity.name, entity);
     array_add(&game->entity_manager.entities, new_entity);
@@ -47,26 +68,6 @@ FUNCTION Entity* find_entity(Entity_Manager *manager, String8 name)
 {
     Entity *e = table_find_pointer(&manager->entity_table, name);
     return e;
-}
-
-
-
-
-
-FUNCTION Animation_Player* create_animation_player_for_entity(Entity *e)
-{
-    if (!e->mesh) {
-        debug_print("Entity %S: Can't create animation without mesh.", e->name);
-        return 0;
-    }
-    
-    // @Todo: Shouldn't use permanent_arena here.
-    Animation_Player *new_player = PUSH_STRUCT_ZERO(os->permanent_arena, Animation_Player);
-    init(new_player);
-    set_mesh(new_player, e->mesh);
-    
-    e->animation_player = new_player;
-    return new_player;
 }
 
 FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b32 loop = TRUE, f64 blend_duration = 0.2)
@@ -93,6 +94,7 @@ FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b
         channel->blend_t        = 0;
     }
     
+    // Blend in new animation.
     Animation_Channel *new_channel = add_animation_channel(player);
     set_animation(new_channel, anim, 0);
     new_channel->blend_duration = blend_duration;

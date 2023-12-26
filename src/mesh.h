@@ -10,13 +10,13 @@ GLOBAL s32 const MESH_FILE_VERSION = 2;
 - Joints in Blender or Maya represent a transform. Basically a matrix that holds translation,
  rotation and scale information. These transforms can either be in "local space" (relative to 
 the joint's parent) or in "global space" (relative to the object/model).
-To represent a joint transform that's in local-space to global-space, we multiply up the hierarchy, i.e.,
-we keep multiplying the matrix of the current joint with the parent joint's transform until we reach the
- root joint. The root joint has no parent, so its local-space and global-space transforms are the same. 
+To represent a joint transform that's in local-space to global-space, we multiply down the hierarchy, i.e.,
+we keep multiplying the matrix of the current joint with the parent joint's global transform until we are done with every joint.
+   The root joint has no parent, so its local-space and global-space transforms are the same. 
 
 - When animating some skeleton with keyframes and such, the joint matrices would represent the current
  pose in local-space (each joint relative to its parent). But our mesh vertices are in objects space, so
-we need to convert local-space joint matrices to object space (global-space), i.e., multiply up the 
+we need to convert local-space joint matrices to object space (global-space), i.e., multiply down the 
 hierarchy. The result is the current pose matrices in object space (for each joint).
 We can't use the current pose matrices for skinning our mesh vertices straight away, and here's why:
  multiplying matrices combines the effects; the current pose matrices contain the following:

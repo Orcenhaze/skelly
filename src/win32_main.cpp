@@ -66,7 +66,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         last_counter                  = end_counter;
         accumulator                  += seconds_elapsed_for_frame;
         accumulator                   = CLAMP_UPPER(0.1, accumulator);
-        //print("FPS: %d\n", (s32)(1.0/seconds_elapsed_for_frame));
+        //debug_print("FPS: %d\n", (s32)(1.0/seconds_elapsed_for_frame));
         
         win32_update_drawing_region(window);
         win32_process_inputs(window);

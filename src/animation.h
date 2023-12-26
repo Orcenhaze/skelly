@@ -18,7 +18,8 @@ inline SQT lerp(SQT a, f32 t, SQT b)
 {
     SQT r = {};
     
-    // @Note: If the dot product of two quaternions is negative, it will take the long route around the sphere. To fix this, negate one of the quaternions.
+    // @Note: Neighborhood operator: if the dot product of two quaternions is negative, it will take the long route around the sphere. So we negate one of them.
+    // Should note that if we're using this to blend between animations, it might still give unwanted results. Check out Casey's video about quaternion double-cover and the rest pose neighborhood.
     if (dot(a.rotation, b.rotation) < 0)
         r.rotation = nlerp(a.rotation, t, -b.rotation);
     else
