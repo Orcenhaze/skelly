@@ -1,9 +1,10 @@
-/* orh_d3d11.cpp - v0.07 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.08 - C++ D3D11 immediate mode renderer.
 
 #include "orh.h" before this file.
 
 REVISION HISTORY:
-0.07 - added ndc_to_pixel() and 3d version of world_to_ndc().
+    0.08 - fixed pixel_to_ndc(); now accounts for viewport TopLeftX & TopLeftY and added V3 version for z-depth.
+    0.07 - added ndc_to_pixel() and V3 version of world_to_ndc() for z-depth.
 0.06 - set_object_to_world() now takes scale and calculates TRS matrix properly.
 0.05 - added d3d11_clear_depth() to clear depth only. Added immediate_rect_3d().
 0.04 - removed ability to pass sRGB bool to load_texture(). Now we always create 4-bpp non-sRGB texture.
@@ -676,6 +677,7 @@ FUNCTION void d3d11_init(HWND window)
         desc.CullMode              = D3D11_CULL_NONE;
         //desc.FrontCounterClockwise = TRUE;
         desc.MultisampleEnable     = TRUE;
+        desc.DepthClipEnable       = TRUE;
         device->CreateRasterizerState(&desc, &rasterizer_state_solid);
     }
     {
@@ -684,6 +686,7 @@ FUNCTION void d3d11_init(HWND window)
         desc.CullMode              = D3D11_CULL_NONE;
         //desc.FrontCounterClockwise = TRUE;
         desc.MultisampleEnable     = TRUE;
+        desc.DepthClipEnable       = TRUE;
         device->CreateRasterizerState(&desc, &rasterizer_state_wireframe);
     }
     rasterizer_state = rasterizer_state_solid;
@@ -956,16 +959,34 @@ FUNCTION void set_object_to_world(V3 position, Quaternion orientation, V3 scale)
 FUNCTION V2 pixel_to_ndc(V2 pixel)
 {
     // @Note: pixel is relative to drawing_rect, i.e. viewport.
-    V2 ndc = hadamard_div(pixel, v2(viewport.Width, viewport.Height));
-    ndc    = ndc*2.0f - v2(1.0f);
-    ndc.y *= -1;
+    V2 ndc;
+    ndc.x = (2.0f * (pixel.x - viewport.TopLeftX) / viewport.Width) - 1.0f;
+    ndc.y = 1.0f - 2.0f * (pixel.y - viewport.TopLeftY) / viewport.Height;
     return ndc;
 }
+FUNCTION V3 pixel_to_ndc(V3 pixel)
+{
+    // @Note: pixel is relative to drawing_rect, i.e. viewport.
+    V3 ndc;
+    ndc.x = (2.0f * (pixel.x - viewport.TopLeftX) / viewport.Width) - 1.0f;
+    ndc.y = 1.0f - 2.0f * (pixel.y - viewport.TopLeftY) / viewport.Height;
+    ndc.z = (pixel.z - viewport.MinDepth) / (viewport.MaxDepth - viewport.MinDepth);
+    return ndc;
+}
+
 FUNCTION V2 ndc_to_pixel(V2 ndc)
 {
     V2 pixel;
-    pixel.x = (ndc.x + 1.0f) * viewport.Width  * 0.5f + viewport.TopLeftX;
-    pixel.y = (1.0f - ndc.y) * viewport.Height * 0.5f + viewport.TopLeftY;
+    pixel.x = ((ndc.x + 1.0f)  * 0.5f * viewport.Width)  + viewport.TopLeftX;
+    pixel.y = ((1.0f  - ndc.y) * 0.5f * viewport.Height) + viewport.TopLeftY;
+    return pixel;
+}
+FUNCTION V3 ndc_to_pixel(V3 ndc)
+{
+    V3 pixel;
+    pixel.x = ((ndc.x + 1.0f)  * 0.5f * viewport.Width)  + viewport.TopLeftX;
+    pixel.y = ((1.0f  - ndc.y) * 0.5f * viewport.Height) + viewport.TopLeftY;
+    pixel.z = viewport.MinDepth + ndc.z * (viewport.MaxDepth - viewport.MinDepth);
     return pixel;
 }
 
@@ -1113,25 +1134,6 @@ FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V4 color)
     V3 p3 = center - tangent*half_scale + bitangent*half_scale;
     
     immediate_quad(p0, p1, p2, p3, color);
-}
-
-FUNCTION void immediate_gradient_3d(V3 center, V3 normal, f32 half_scale, V4 c0, V4 c1, V4 c2, V4 c3)
-{
-    V3 tangent, bitangent;
-    calculate_tangents(normal, &tangent, &bitangent);
-    
-    V3 p0 = center - tangent*half_scale - bitangent*half_scale;
-    V3 p1 = center + tangent*half_scale - bitangent*half_scale;
-    V3 p2 = center + tangent*half_scale + bitangent*half_scale;
-    V3 p3 = center - tangent*half_scale + bitangent*half_scale;
-    
-    immediate_vertex(p0, c0);
-    immediate_vertex(p1, c1);
-    immediate_vertex(p2, c2);
-    
-    immediate_vertex(p0, c0);
-    immediate_vertex(p2, c2);
-    immediate_vertex(p3, c3);
 }
 
 FUNCTION void immediate_hexahedron(V3 p0, V3 p1, V3 p2, V3 p3,
@@ -1338,6 +1340,24 @@ FUNCTION void immediate_vertex(V2 position, V2 uv, V4 color)
     
     num_immediate_vertices += 1;
 }
+FUNCTION void immediate_vertex(V3 position, V2 uv, V4 color)
+{
+    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end();
+    
+    if (is_using_pixel_coords)
+        position = pixel_to_ndc(position);
+    
+    // @Note: Go linear; using SRGB framebuffer.
+    color.rgb = pow(color.rgb, 2.2);
+    
+    Vertex_XCNU *v = immediate_vertex_ptr(num_immediate_vertices);
+    v->position    = position;
+    v->color       = color;
+    v->normal      = v3(0, 0, 1);
+    v->uv          = uv;
+    
+    num_immediate_vertices += 1;
+}
 
 FUNCTION void immediate_triangle(V2 p0, V2 p1, V2 p2, V4 color)
 {
@@ -1359,6 +1379,22 @@ FUNCTION void immediate_quad(V2 p0, V2 p1, V2 p2, V2 p3, V4 color)
 }
 
 FUNCTION void immediate_quad(V2 p0, V2 p1, V2 p2, V2 p3, 
+                             V2 uv0, V2 uv1, V2 uv2, V2 uv3, 
+                             V4 color)
+{
+    // CCW starting bottom-left.
+    
+    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end();
+    
+    immediate_vertex(p0, uv0, color);
+    immediate_vertex(p1, uv1, color);
+    immediate_vertex(p2, uv2, color);
+    
+    immediate_vertex(p0, uv0, color);
+    immediate_vertex(p2, uv2, color);
+    immediate_vertex(p3, uv3, color);
+}
+FUNCTION void immediate_quad(V3 p0, V3 p1, V3 p2, V3 p3, 
                              V2 uv0, V2 uv1, V2 uv2, V2 uv3, 
                              V4 color)
 {
@@ -1419,6 +1455,22 @@ FUNCTION void immediate_rect_tl(V2 top_left, V2 size, V4 color)
     
     immediate_quad(p0, p1, p2, p3, color);
 }
+FUNCTION void immediate_rect_tl(V3 top_left, V2 size, V4 color)
+{
+    // @Note: Includes Z-component for depth.
+    
+    // @Note: We provide top left position, so we need to be careful with winding order.
+    ASSERT(is_using_pixel_coords == TRUE);
+    
+    // CCW starting bottom-left.
+    
+    V3 p3 = top_left;
+    V3 p1 = top_left + v3(size, 0.0f);
+    V3 p0 = v3(p3.x, p1.y, top_left.z);
+    V3 p2 = v3(p1.x, p3.y, top_left.z);
+    
+    immediate_quad(p0, p1, p2, p3, color);
+}
 
 FUNCTION void immediate_rect_tl(V2 top_left, V2 size, V2 uv_min, V2 uv_max, V4 color)
 {
@@ -1440,9 +1492,33 @@ FUNCTION void immediate_rect_tl(V2 top_left, V2 size, V2 uv_min, V2 uv_max, V4 c
     
     immediate_quad(p0, p1, p2, p3, uv0, uv1, uv2, uv3, color);
 }
-
-FUNCTION void immediate_text(Font *font, V2 baseline, s32 vh, V4 color, char *format, va_list arg_list)
+FUNCTION void immediate_rect_tl(V3 top_left, V2 size, V2 uv_min, V2 uv_max, V4 color)
 {
+    // @Note: Includes Z-component for depth.
+    
+    // @Note: We provide top left position, so we need to be careful with winding order.
+    ASSERT(is_using_pixel_coords == TRUE);
+    
+    // CCW starting bottom-left.
+    
+    V3 p3 = top_left;
+    V3 p1 = top_left + v3(size, 0.0f);
+    V3 p0 = v3(p3.x, p1.y, top_left.z);
+    V3 p2 = v3(p1.x, p3.y, top_left.z);
+    
+    // @Note: UV coordinates origin is top-left corner.
+    V2 uv3 = uv_min;
+    V2 uv1 = uv_max;
+    V2 uv0 = v2(uv3.x, uv1.y);
+    V2 uv2 = v2(uv1.x, uv3.y);
+    
+    immediate_quad(p0, p1, p2, p3, uv0, uv1, uv2, uv3, color);
+}
+
+FUNCTION void immediate_text(Font *font, V3 baseline, s32 vh, V4 color, char *format, va_list arg_list)
+{
+    // @Note: baseline in pixel/drawing_rect/viewport space. Z-component for depth (use 0 if you don't care).
+    //
     // @Note: vh is percentage [0-100] relative to drawing_rect height.
     
     char text[256];
@@ -1460,14 +1536,14 @@ FUNCTION void immediate_text(Font *font, V2 baseline, s32 vh, V4 color, char *fo
         V2 uv_min = hadamard_div(v2((f32)d.x0, (f32)d.y0), v2((f32)font->w, (f32)font->h));
         V2 uv_max = hadamard_div(v2((f32)d.x1, (f32)d.y1), v2((f32)font->w, (f32)font->h));
         V2 s      = v2((f32)(d.x1 - d.x0), (f32)(d.y1 - d.y0));
-        V2 p      = v2(x + d.xoff, y + d.yoff);
+        V3 p      = v3(x + d.xoff, y + d.yoff, baseline.z);
         
         immediate_rect_tl(p, s, uv_min, uv_max, color);
         
         x += d.xadvance;
     }
 }
-FUNCTION void immediate_text(Font *font, V2 baseline, s32 vh, V4 color, char *format, ...)
+FUNCTION void immediate_text(Font *font, V3 baseline, s32 vh, V4 color, char *format, ...)
 {
     va_list arg_list;
     va_start(arg_list, format);

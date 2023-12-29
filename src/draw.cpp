@@ -231,7 +231,6 @@ FUNCTION void draw_skeleton(Entity *e)
     }
     
     if (DRAW_JOINT_NAMES) {
-        // @Debug: Weird behaviour when zooming in, text shows up in places it shouldn't...
         // Draw skeleton names.
         for (s32 i = 0; i < player->skinning_matrices.count; i++) {
             M4x4 inv;
@@ -239,10 +238,11 @@ FUNCTION void draw_skeleton(Entity *e)
             V3 p = get_translation(player->skinning_matrices[i] * inv);
             
             V3 p_ndc   = world_to_ndc(e->object_to_world_matrix.forward * p);
-            V2 p_pixel = ndc_to_pixel(p_ndc.xy);
+            V3 p_pixel = ndc_to_pixel(p_ndc);
             String8 joint_name = skeleton->joint_info[i].name;
             
             immediate_begin();
+            d3d11_clear_depth();
             set_texture(&dfont.atlas);
             is_using_pixel_coords = TRUE;
             immediate_text(&dfont, p_pixel, 2, v4(0.8f, 0.8f, 0.8f, 1.0f), "%S", joint_name);
