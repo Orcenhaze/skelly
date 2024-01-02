@@ -13,32 +13,40 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
     // @Memory @Todo: Each array will have its own arena. This will end up wasting ALOT of virtual memory.
     // Maybe find a way to force array arena to only reserve specific amount?
     //
-    array_init_and_resize(&mesh->vertices, header.num_vertices);
-    array_init_and_resize(&mesh->tbns,     header.num_tbns);
-    array_init_and_resize(&mesh->uvs,      header.num_uvs);
-    array_init_and_resize(&mesh->colors,   header.num_colors);
-    array_init_and_resize(&mesh->indices,  header.num_indices);
     
-    for (s32 i = 0; i < mesh->vertices.count; i++)
+    // Vertex data (exported in XTBNUC form)
+    array_init_and_resize(&mesh->vertices, header.num_vertices);
+    array_init_and_resize(&mesh->tbns,     header.num_vertices);
+    array_init_and_resize(&mesh->uvs,      header.num_vertices);
+    array_init_and_resize(&mesh->colors,   header.num_vertices);
+    for (s32 i = 0; i < header.num_vertices; i++) {
         get(&file, &mesh->vertices[i]);
-    for (s32 i = 0; i < mesh->tbns.count; i++)
         get(&file, &mesh->tbns[i]);
-    for (s32 i = 0; i < mesh->uvs.count; i++)
         get(&file, &mesh->uvs[i]);
-    for (s32 i = 0; i < mesh->colors.count; i++)
         get(&file, &mesh->colors[i]);
-    for (s32 i = 0; i < mesh->indices.count; i++)
+    }
+    
+    // Canonical vertex map.
+    array_init_and_resize(&mesh->canonical_vertex_map, header.num_vertices);
+    for (s32 i = 0; i < header.num_vertices; i++) {
+        get(&file, &mesh->canonical_vertex_map[i]);
+    }
+    
+    // Indices
+    array_init_and_resize(&mesh->indices,  header.num_indices);
+    for (s32 i = 0; i < header.num_indices; i++)
         get(&file, &mesh->indices[i]);
     
+    // Triangle list info
     array_init_and_resize(&mesh->triangle_list_info, header.num_triangle_lists);
-    array_init_and_resize(&mesh->material_info,      header.num_materials);
-    
     for (s32 i = 0; i < mesh->triangle_list_info.count; i++) {
         get(&file, &mesh->triangle_list_info[i].material_index);
         get(&file, &mesh->triangle_list_info[i].num_indices);
         get(&file, &mesh->triangle_list_info[i].first_index);
     }
     
+    // Material info
+    array_init_and_resize(&mesh->material_info, header.num_materials);
     for (s32 i = 0; i < mesh->material_info.count; i++) {
         // Get default values of material attributes.
         get(&file, &mesh->material_info[i].base_color);
@@ -60,28 +68,20 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
         }
     }
     
-    //
-    // Read Skeleton
-    //
+    // Skeleton
     if (header.num_skeleton_joints) {
         // @Todo: Shouldn't use permanent_arena here.
-        mesh->flags |= MeshFlags_ANIMATED;
+        mesh->flags   |= MeshFlags_ANIMATED;
         mesh->skeleton = PUSH_STRUCT_ZERO(os->permanent_arena, Skeleton);
         
-        Skeleton *sk = mesh->skeleton;
-        array_init_and_resize(&sk->joint_info, header.num_skeleton_joints);
+        // Joint info
+        Skeleton *skeleton = mesh->skeleton;
+        array_init_and_resize(&skeleton->joint_info, header.num_skeleton_joints);
         for (s32 i = 0; i < header.num_skeleton_joints; i++) {
-            Skeleton_Joint_Info *joint = &sk->joint_info[i];
+            Skeleton_Joint_Info *joint = &skeleton->joint_info[i];
             
             // Read 4x4 matrix.
             get(&file, &joint->object_to_joint_matrix);
-            
-            /* 
-                        // @Hack:
-                        if (joint->inverse_rest_pose._44 == 0) {
-                            joint->inverse_rest_pose = m4x4_identity();
-                        }
-             */
             
             // Read the joint's rest pose rotation relative to its parent.
             get(&file, &joint->rest_pose_rotation_relative);
@@ -98,13 +98,13 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
             get(&file, &joint->parent_id);
         }
         
+        // Blend info
         s32 num_canonical_vertices;
         get(&file, &num_canonical_vertices);
         ASSERT(num_canonical_vertices > 0);
-        array_init_and_resize(&sk->vertex_blend_info, num_canonical_vertices);
-        
+        array_init_and_resize(&skeleton->vertex_blend_info, num_canonical_vertices);
         for (s32 i = 0; i < num_canonical_vertices; i++) {
-            Vertex_Blend_Info *blend = &sk->vertex_blend_info[i];
+            Vertex_Blend_Info *blend = &skeleton->vertex_blend_info[i];
             
             get(&file, &blend->num_pieces);
             
@@ -121,27 +121,7 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
         array_init_and_resize(&mesh->skinned_normals, header.num_vertices);
     }
     
-    
     ASSERT(file.count == 0);
-    
-    // @Todo: @Speed: Not sure if there's a faster way to construct this... maybe when reading vertex_blends?
-    //
-    // Construct canonical_vertex_map.
-    {
-        Array<V3> canonical_vertices;
-        defer(array_free(&canonical_vertices));
-        array_init_and_reserve(&canonical_vertices, mesh->vertices.count);
-        for (s32 i = 0; i < mesh->vertices.count; i++)
-            array_add_unique(&canonical_vertices, mesh->vertices[i]);
-        
-        array_init_and_resize(&mesh->canonical_vertex_map, mesh->vertices.count);
-        for (s32 i = 0; i < mesh->vertices.count; i++) {
-            s32 find_index = array_find_index(&canonical_vertices, mesh->vertices[i]);
-            ASSERT(find_index >= 0);
-            
-            mesh->canonical_vertex_map[i] = find_index;
-        }
-    }
 }
 
 FUNCTION void load_mesh_textures(Triangle_Mesh *mesh)

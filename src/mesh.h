@@ -60,7 +60,7 @@ struct Skeleton_Joint_Info
 struct Skeleton
 {
     Array<Skeleton_Joint_Info> joint_info;        // num_skeleton_joints of these.
-    Array<Vertex_Blend_Info>   vertex_blend_info; // Per canonical vertex;
+    Array<Vertex_Blend_Info>   vertex_blend_info; // Per canonical vertex; Use canonical_vertex_map
 };
 
 enum Material_Texture_Map_Type
@@ -74,17 +74,11 @@ enum Material_Texture_Map_Type
 	MaterialTextureMapType_COUNT
 };
 
-// @Todo: Remove num_tbns, num_uvs and num_colors; these must match num_vertices anyway...
 struct Triangle_Mesh_Header {
-    s32 num_vertices;            // Mul by sizeof(Vector3) to get bytes
-    s32 num_tbns;                // Mul by sizeof(TBN)     to get bytes
-    s32 num_uvs;                 // Mul by sizeof(Vector2) to get bytes
-    s32 num_colors;              // Mul by sizeof(Vector4) to get bytes
-    s32 num_indices;             // Mul by sizeof(u32)     to get bytes
-    
+    s32 num_vertices;
+    s32 num_indices;             // Mul by sizeof(u32) to get bytes
     s32 num_triangle_lists;      // Mul by sizeof(Triangle_List_Info) to get bytes
     s32 num_materials;      
-    
     s32 num_skeleton_joints;     // Mul by sizeof(Skeleton_Joint_Info) to get bytes
 };
 
@@ -122,19 +116,17 @@ enum Mesh_Flags
 struct Triangle_Mesh
 {
     // @Note: The mesh data is read from `blender_mesh_exporter.py` output.
-    // Bounding_Volume data is read from `blender_meshbv_exporter.py`
-    
-    String8 name;
-    String8 full_path;
     
     Array<V3>  vertices;
     Array<TBN> tbns;
     Array<V2>  uvs;
     Array<V4>  colors;
     
+    // Maps mesh vertices to unique/canonical vertices (needed for indexing blend info).
+    Array<s32> canonical_vertex_map;
+    
     Array<u32> indices;
     
-    // Ideally, num_triangle_lists == num_materials. 
     Array<Triangle_List_Info> triangle_list_info;
 	Array<Material_Info>      material_info;
     
@@ -144,14 +136,13 @@ struct Triangle_Mesh
     Array<V3> skinned_vertices;
     Array<V3> skinned_normals;
     
-    // @Note: Maps mesh vertices to indices of unique/canonical vertices as if they were in a separate array.
-    Array<s32> canonical_vertex_map;
-    Skeleton   *skeleton;
-    
     // Bounds of the mesh, computed at mesh load time, in local space.
     Rect3 bounding_box;
     
-    //Bounding_Volume bounding_volume; // Loaded from a .MESHBV file.
+    String8 name;
+    String8 full_path;
+    
+    Skeleton *skeleton;
     
     // Vertex and index buffers.
     ID3D11Buffer *vbo;

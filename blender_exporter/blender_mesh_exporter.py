@@ -19,9 +19,7 @@ version = 2
         MESH origin and ARMATURE origin must match!
     
     TODO:
-    - We need to merge all vertices by distance before exporting. Not doing so causes issues...
-    - Sometimes mesh_data.vertices != len(processed_verts) during weight parsing which causes issues. 
-      Probably due to some vertices not being used in any face/polygon or something.
+    - We need to merge all vertices by distance before exporting. Not doing so may cause issues...
     
     @Cleanup: This file is super messy!
     @Cleanup:
@@ -114,14 +112,12 @@ xtbnuc_vertices     = []
 skeleton_joints     = []   # list of all (Joint_Info) count=num_skeleton_joints
 num_skeleton_joints = 0
 
-vertex_blends        = []  # list of all (Vertex_Blend_Info) count= len(mesh_data.vertices)
+vertex_blends       = []  # list of all (Vertex_Blend_Info) count= len(mesh_data.vertices)
 
 # Data to write:
 triangle_mesh_header  = []
-vertices 			  = []
-tbns                  = []
-uvs 				  = []
-colors 			      = []
+vertex_data           = []
+canonical_vertex_map  = [] # Maps mesh vertices to unique/canonical vertices (needed for indexing blend info).
 indices 		      = []
 triangle_list_info    = []
 material_info         = []
@@ -206,50 +202,35 @@ def parse_weights(mesh_obj, mesh_data):
     # This function will fill the vertex_blends[] list with Vertex_Blend_Info (len(mesh_data.vertices) as many)
     # 
     
-    #
-    # We will iterate through vertices in same order we wrote vertex_xtbnuc, i.e. through faces and 
-    # NOT directly through mesh_data.vertices.
-    #
+    # Iterate the canonical vertices
+    for vertex in mesh_data.vertices:
+        vertex_blend = Vertex_Blend_Info()
     
-    # Since we are iterating in this order, we will go over same vertices multiple times. 
-    # This list will help us write Vertex_Blend_Info only for canonical vertices.
-    processed_verts = []
+        # Create a list to store ids and weights for the current vertex
+        pieces = []
 
-    for face in mesh_data.polygons:
-        for loop_index in face.loop_indices:
-            loop = mesh_data.loops[loop_index]
-            
-            if loop.vertex_index not in processed_verts:
-                processed_verts.append(loop.vertex_index)
-                vertex = mesh_data.vertices[loop.vertex_index]
-                vertex_blend = Vertex_Blend_Info()
-            
-                # Create a list to store ids and weights for the current vertex
-                pieces = []
+        # Iterate through vertex groups
+        for group in mesh_obj.vertex_groups:
+            # Check if the vertex is assigned to this group
+            for v_group in vertex.groups:
+                if v_group.group == group.index:
+                    pieces.append({'bone_index': group.index, 'weight': v_group.weight})
 
-                # Iterate through vertex groups
-                for group in mesh_obj.vertex_groups:
-                    # Check if the vertex is assigned to this group
-                    for v_group in vertex.groups:
-                        if v_group.group == group.index:
-                            pieces.append({'bone_index': group.index, 'weight': v_group.weight})
+        # Sort the weights by weight value (descending order)
+        pieces.sort(key=lambda x: x['weight'], reverse=True)
 
-                # Sort the weights by weight value (descending order)
-                pieces.sort(key=lambda x: x['weight'], reverse=True)
+        # Truncate the list to a maximum of 4 weights per vertex
+        pieces = pieces[:4]
 
-                # Truncate the list to a maximum of 4 weights per vertex
-                pieces = pieces[:4]
+        # If the length of weights is less than 4, append zero-weight entries
+        #while len(pieces) < 4:
+        #    pieces.append({'bone_index': -1, 'weight': 0.0})
 
-                # If the length of weights is less than 4, append zero-weight entries
-                #while len(pieces) < 4:
-                #    pieces.append({'bone_index': -1, 'weight': 0.0})
+        vertex_blend.num_pieces = len(pieces)
+        vertex_blend.pieces     = [value for d in pieces for value in d.values()]
 
-                vertex_blend.num_pieces = len(pieces)
-                vertex_blend.pieces     = [value for d in pieces for value in d.values()]
-
-                # Append the vertex weights dictionary to the list
-                vertex_blends.append(vertex_blend)
-    assert len(processed_verts) == len(mesh_data.vertices)
+        # Append the vertex weights dictionary to the list
+        vertex_blends.append(vertex_blend)
 
 def append_attribute_default_value_to_material_info(input):
     if input.type == "RGBA":
@@ -316,11 +297,12 @@ def set_materials(materials):
             file_name = texture_map_names[s]
             append_string(material_info, file_name)
 
-def add_unique_vertex_and_append_index(vertex):
+def add_unique_vertex_and_append_index(vertex, canonical_vertex_index):
     h = hash(vertex)
     if (h not in vertex_to_index_map):
         vertex_to_index_map[h] = len(xtbnuc_vertices)
         xtbnuc_vertices.append(vertex)
+        canonical_vertex_map.append(canonical_vertex_index)
     indices.append(vertex_to_index_map[h])
 
 def main():
@@ -399,7 +381,6 @@ def main():
     for face in mesh_data.polygons:
         
         for loop_index in face.loop_indices:
-            
             loop = mesh_data.loops[loop_index]
             
             face_tangent   = loop.tangent
@@ -412,14 +393,15 @@ def main():
         
             TBN = face_tangent[:] + face_bitangent[:] + face_normal[:]
             if smooth_shaded:
-                TBN = face_tangent[:] + face_bitangent[:] + mesh_data.vertices[loop.vertex_index].normal[:]
+                v_normal = BlenderToEngineMatrix @ mesh_data.vertices[loop.vertex_index].normal
+                TBN      = face_tangent[:] + face_bitangent[:] + v_normal[:]
 
             # Construct and add vertex if it's unique.
             X     = (BlenderToEngineMatrix @ mesh_data.vertices[loop.vertex_index].co)[:]
             UV    = mesh_data.uv_layers.active.data[loop_index].uv[:] if mesh_data.uv_layers.active is not None else [0.0, 1.0]
             UV    = (UV[0], 1.0 - UV[1])    # Flip vertically, to make origin top-left.
             C     = mesh_data.vertex_colors[0].data[loop_index].color[:]
-            add_unique_vertex_and_append_index(Vertex_XTBNUC(X, TBN, UV, C))
+            add_unique_vertex_and_append_index(Vertex_XTBNUC(X, TBN, UV, C), loop.vertex_index)
     
         # Append material used by this face.
         used_materials.append(mesh_obj.material_slots[face.material_index].material)
@@ -446,10 +428,10 @@ def main():
     
     # Set vertex attributes to export.
     for v in xtbnuc_vertices:
-        vertices.extend(v.position)
-        tbns    .extend(v.tbn)
-        uvs     .extend(v.uv)
-        colors  .extend(v.color)
+        vertex_data.extend(v.position)
+        vertex_data.extend(v.tbn)
+        vertex_data.extend(v.uv)
+        vertex_data.extend(v.color)
 
     # Prepare and set Skeleton Info
     if armature != None:
@@ -462,18 +444,15 @@ def main():
                 append_string(skeleton_info, joint.name)
                 skeleton_info.append(joint.parent_id)
             
-            skeleton_info.append(len(mesh_data.vertices)) # num_canonical_vertices
+            # len(vertex_blends) == len(mesh_data.vertices) == num_canonical_vertices
+            skeleton_info.append(len(vertex_blends))
             for blend in vertex_blends:
                 skeleton_info.append(blend.num_pieces)
                 skeleton_info.extend(blend.pieces)
 
-
     """ TRIANGLE_MESH_HEADER
     """
-    triangle_mesh_header.append(len(vertices)//3)		# num_vertices
-    triangle_mesh_header.append(len(tbns)//9)	        # num_tbns
-    triangle_mesh_header.append(len(uvs)//2)			# num_uvs
-    triangle_mesh_header.append(len(colors)//4)		    # num_colors
+    triangle_mesh_header.append(len(xtbnuc_vertices))   # num_vertices
     triangle_mesh_header.append(len(indices))           # num_indices
     triangle_mesh_header.append(len(triangle_lists))    # num_triangle_lists
     triangle_mesh_header.append(len(materials))		    # num_materials
@@ -487,13 +466,11 @@ def main():
     if os.path.exists(filepath):
       os.remove(filepath)
     f = open(filepath, "wb")
-
+    
     f.write(struct.pack("<i", version))
     array.array('i', triangle_mesh_header)  .tofile(f)
-    array.array('f', vertices)              .tofile(f)
-    array.array('f', tbns)                  .tofile(f)
-    array.array('f', uvs)                   .tofile(f)
-    array.array('f', colors)                .tofile(f)
+    array.array('f', vertex_data)           .tofile(f)
+    array.array('i', canonical_vertex_map)  .tofile(f)
     array.array('I', indices)               .tofile(f)
     array.array('i', triangle_list_info)    .tofile(f)
 
