@@ -96,44 +96,6 @@ FUNCTION void draw_main_editor_window()
                         }
                     }
                 }
-                
-                
-#if 0
-                // @Temporary
-                // @Temporary
-                // @Temporary
-                // @Remove
-                // @Remove
-                // @Remove
-                // Animation
-                //
-                {
-                    LOCAL_PERSIST s32 item_current_idx = 0;
-                    if (e->animation_player && e->mesh->skeleton) {
-                        if (e->animation_player->channels.count) {
-                            const u8* combo_preview_value = e->animation_player->channels[0]->animation->name.data;
-                            if (ImGui::BeginCombo("Animation", (const char*)combo_preview_value)) {
-                                for (s32 n = 0; n < game->animation_catalog.items.count; n++) {
-                                    const bool is_selected = (item_current_idx == n);
-                                    if (ImGui::Selectable((const char*) game->animation_catalog.items[n]->name.data, is_selected)) {
-                                        item_current_idx = n;
-                                        
-                                        set_animation(e->animation_player->channels[0], game->animation_catalog.items[n], 0);
-                                    }
-                                    
-                                    // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
-                                    if (is_selected)
-                                        ImGui::SetItemDefaultFocus();
-                                }
-                                ImGui::EndCombo();
-                            }
-                        } else {
-                            add_animation_channel(e->animation_player);
-                        }
-                    }
-                }
-#endif
-                
             }
         } break;
         case 1: {
