@@ -96,6 +96,7 @@ CONVENTIONS:
 * When storing paths, if string name has "folder" in it, then it ends with '/' or '\\'.
 
 TODO:
+[] calculate_tangents() needs to be fixed...
 [] Instrumentation macros.
 [] Per-frame and per-tick key state arrays.
 [] Dynamically growing arenas (maybe make a list instead of asserting when we go past arena->max).
