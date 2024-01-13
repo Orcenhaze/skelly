@@ -13,7 +13,7 @@ REVISION HISTORY:
 
 CONVENTIONS:
 * CCW winding order for front faces.
-* Right-handed coordinate system. +Y is up.
+* Right-handed coordinate system: +X is right // +Y is up // -Z is forward.
 * Matrices are row-major with column vectors.
 * First pixel pointed to is top-left-most pixel in image.
 * UV-coords origin is at top-left corner (DOESN'T match with vertex coordinates).
@@ -1104,6 +1104,25 @@ FUNCTION void immediate_vertex(V3 position, V4 color)
     num_immediate_vertices += 1;
 }
 
+FUNCTION void immediate_vertex(V3 position, V2 uv, V4 color)
+{
+    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end();
+    
+    if (is_using_pixel_coords)
+        position = pixel_to_ndc(position);
+    
+    // @Note: Go linear; using SRGB framebuffer.
+    color.rgb = pow(color.rgb, 2.2);
+    
+    Vertex_XCNU *v = immediate_vertex_ptr(num_immediate_vertices);
+    v->position    = position;
+    v->color       = color;
+    v->normal      = v3(0, 0, 1);
+    v->uv          = uv;
+    
+    num_immediate_vertices += 1;
+}
+
 FUNCTION void immediate_triangle(V3 p0, V3 p1, V3 p2, V4 color)
 {
     if ((num_immediate_vertices + 3) > MAX_IMMEDIATE_VERTICES) immediate_end();
@@ -1123,6 +1142,23 @@ FUNCTION void immediate_quad(V3 p0, V3 p1, V3 p2, V3 p3, V4 color)
     immediate_triangle(p0, p2, p3, color);
 }
 
+FUNCTION void immediate_quad(V3 p0, V3 p1, V3 p2, V3 p3, 
+                             V2 uv0, V2 uv1, V2 uv2, V2 uv3, 
+                             V4 color)
+{
+    // CCW starting bottom-left.
+    
+    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end();
+    
+    immediate_vertex(p0, uv0, color);
+    immediate_vertex(p1, uv1, color);
+    immediate_vertex(p2, uv2, color);
+    
+    immediate_vertex(p0, uv0, color);
+    immediate_vertex(p2, uv2, color);
+    immediate_vertex(p3, uv3, color);
+}
+
 FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V4 color)
 {
     V3 tangent, bitangent;
@@ -1134,6 +1170,25 @@ FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V4 color)
     V3 p3 = center - tangent*half_scale + bitangent*half_scale;
     
     immediate_quad(p0, p1, p2, p3, color);
+}
+
+FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V2 uv_min, V2 uv_max, V4 color)
+{
+    V3 tangent, bitangent;
+    calculate_tangents(normal, &tangent, &bitangent);
+    
+    V3 p0 = center - tangent*half_scale - bitangent*half_scale;
+    V3 p1 = center + tangent*half_scale - bitangent*half_scale;
+    V3 p2 = center + tangent*half_scale + bitangent*half_scale;
+    V3 p3 = center - tangent*half_scale + bitangent*half_scale;
+    
+    // @Note: UV coordinates origin is top-left corner.
+    V2 uv3 = uv_min;
+    V2 uv1 = uv_max;
+    V2 uv0 = v2(uv3.x, uv1.y);
+    V2 uv2 = v2(uv1.x, uv3.y);
+    
+    immediate_quad(p0, p1, p2, p3, uv0, uv1, uv2, uv3, color);
 }
 
 FUNCTION void immediate_hexahedron(V3 p0, V3 p1, V3 p2, V3 p3,
@@ -1340,24 +1395,6 @@ FUNCTION void immediate_vertex(V2 position, V2 uv, V4 color)
     
     num_immediate_vertices += 1;
 }
-FUNCTION void immediate_vertex(V3 position, V2 uv, V4 color)
-{
-    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end();
-    
-    if (is_using_pixel_coords)
-        position = pixel_to_ndc(position);
-    
-    // @Note: Go linear; using SRGB framebuffer.
-    color.rgb = pow(color.rgb, 2.2);
-    
-    Vertex_XCNU *v = immediate_vertex_ptr(num_immediate_vertices);
-    v->position    = position;
-    v->color       = color;
-    v->normal      = v3(0, 0, 1);
-    v->uv          = uv;
-    
-    num_immediate_vertices += 1;
-}
 
 FUNCTION void immediate_triangle(V2 p0, V2 p1, V2 p2, V4 color)
 {
@@ -1379,22 +1416,6 @@ FUNCTION void immediate_quad(V2 p0, V2 p1, V2 p2, V2 p3, V4 color)
 }
 
 FUNCTION void immediate_quad(V2 p0, V2 p1, V2 p2, V2 p3, 
-                             V2 uv0, V2 uv1, V2 uv2, V2 uv3, 
-                             V4 color)
-{
-    // CCW starting bottom-left.
-    
-    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end();
-    
-    immediate_vertex(p0, uv0, color);
-    immediate_vertex(p1, uv1, color);
-    immediate_vertex(p2, uv2, color);
-    
-    immediate_vertex(p0, uv0, color);
-    immediate_vertex(p2, uv2, color);
-    immediate_vertex(p3, uv3, color);
-}
-FUNCTION void immediate_quad(V3 p0, V3 p1, V3 p2, V3 p3, 
                              V2 uv0, V2 uv1, V2 uv2, V2 uv3, 
                              V4 color)
 {

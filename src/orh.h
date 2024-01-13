@@ -1,4 +1,4 @@
-/* orh.h - v0.78 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.79 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.79 - fixed calculate_tangents().
 0.78 - nlerp() does normalize_or_identity() now. Added m4x4_from_translation_rotation_scale();
 0.77 - added array_add_unique(). Added operator== for V3.
 0.76 - no need to pass scale to get_rotation(). Added invert() to invert M4x4. Fixed SIGN() to include 0.
@@ -89,14 +90,13 @@ REVISION HISTORY:
 
 CONVENTIONS:
 * CCW winding order for front faces.
-* Right-handed coordinate system. +Y is up.
+* Right-handed coordinate system: +X is right // +Y is up // -Z is forward.
 * Matrices are row-major with column vectors.
 * First pixel pointed to is top-left-most pixel in image.
 * UV-coords origin is at top-left corner (DOESN'T match with vertex coordinates).
 * When storing paths, if string name has "folder" in it, then it ends with '/' or '\\'.
 
 TODO:
-[] calculate_tangents() needs to be fixed...
 [] Instrumentation macros.
 [] Per-frame and per-tick key state arrays.
 [] Dynamically growing arenas (maybe make a list instead of asserting when we go past arena->max).
@@ -406,6 +406,12 @@ union V3
     struct { f32 r, g, b; };
     f32 I[3];
 };
+extern const V3 V3_X_AXIS;
+extern const V3 V3_Y_AXIS;
+extern const V3 V3_Z_AXIS;
+extern const V3 V3_RIGHT;
+extern const V3 V3_UP;
+extern const V3 V3_FORWARD;
 
 union V4
 {
@@ -1877,6 +1883,13 @@ FUNCDEF V3    unproject(V3 camera_position, f32 Zworld_distance_from_camera, V3 
 #    pragma clang diagnostic ignored "-Wmissing-braces"
 #endif
 
+const V3 V3_X_AXIS  = {1.0f, 0.0f, 0.0f};
+const V3 V3_Y_AXIS  = {0.0f, 1.0f, 0.0f};
+const V3 V3_Z_AXIS  = {0.0f, 0.0f, 1.0f};
+const V3 V3_RIGHT   = {1.0f, 0.0f, 0.0f};
+const V3 V3_UP      = {0.0f, 1.0f, 0.0f};
+const V3 V3_FORWARD = {0.0f, 0.0f, -1.0f};
+
 #if !defined(ORH_NO_STD_MATH) || COMPILER_CL
 #include <math.h>
 f32 _pow(f32 x, f32 y)     
@@ -3233,13 +3246,16 @@ M4x4_Inverse orthographic_2d(f32 left, f32 right, f32 bottom, f32 top)
 
 void calculate_tangents(V3 normal, V3 *tangent_out, V3 *bitangent_out)
 {
-    V3 a = cross(normal, v3(1.0f, 0.0f, 0.0f));
-    V3 b = cross(normal, v3(0.0f, 1.0f, 0.0f));
+    // @Note: This is specific to our coordinate system, of course.
     
-    if (length2(a) > length2(b)) *tangent_out = normalize(a);
-    else                         *tangent_out = normalize(b);
+    V3 t = cross(V3_Y_AXIS, normal);
+    if (length(t) <= 0.001f)
+        t = cross(normal, V3_Z_AXIS);
     
-    *bitangent_out = normalize(cross(*tangent_out, normal));
+    V3 b = cross(normal, t);
+    
+    *tangent_out   = normalize(t);
+    *bitangent_out = normalize(b);
 }
 
 #if COMPILER_GCC
