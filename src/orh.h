@@ -1,4 +1,4 @@
-/* orh.h - v0.79 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.80 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.80 - added initial instrumentation.
 0.79 - fixed calculate_tangents().
 0.78 - nlerp() does normalize_or_identity() now. Added m4x4_from_translation_rotation_scale();
 0.77 - added array_add_unique(). Added operator== for V3.
@@ -97,7 +98,6 @@ CONVENTIONS:
 * When storing paths, if string name has "folder" in it, then it ends with '/' or '\\'.
 
 TODO:
-[] Instrumentation macros.
 [] Per-frame and per-tick key state arrays.
 [] Dynamically growing arenas (maybe make a list instead of asserting when we go past arena->max).
 [] Helper functions that return forward/right/up vectors from passed transform matrix.
@@ -220,10 +220,17 @@ MISC:
 //~
 // Types
 //
-#ifndef ORH_NO_STD_MATH
-#    include <math.h> 
-#else
+#if OS_WINDOWS
 #    include <intrin.h>
+#    define WIN32_LEAN_AND_MEAN
+#    include <windows.h>
+#else
+#    include <x86intrin.h>
+#    include <sys/time.h>
+#endif
+
+#ifndef ORH_NO_STD_MATH
+#include <math.h> 
 #endif
 
 #ifndef FUNCDEF
@@ -1801,6 +1808,9 @@ struct OS_State
     String8 exe_parent_folder;
     String8 data_folder;
     
+    // Timing Stuff.
+    u64 time_frequency;
+    
     // Arenas.
     Arena *permanent_arena;
     
@@ -1860,6 +1870,40 @@ FUNCDEF void  clear_key_states();
 FUNCDEF void  clear_key_states_all();
 FUNCDEF Rect2 aspect_ratio_fit(V2u render_dim, V2u window_dim);
 FUNCDEF V3    unproject(V3 camera_position, f32 Zworld_distance_from_camera, V3 mouse_ndc, M4x4_Inverse world_to_view, M4x4_Inverse view_to_proj);
+
+/////////////////////////////////////////
+//~
+// Instrumentation
+//
+FUNCDEF u64 estimate_cpu_frequency();
+FUNCDEF u64 read_cpu_timer();
+FUNCDEF u64 read_os_timer();
+FUNCDEF u64 get_cycles_elapsed(u64 cpu_start, u64 cpu_end);
+FUNCDEF f64 get_seconds_elapsed(u64 os_start, u64 os_end);
+
+struct Timed_Block
+{
+    const char *label;
+    u64   cpu_time_start;
+    u64   os_time_start;
+    
+    Timed_Block(const char *label_)
+    {
+        label          = label_;
+        cpu_time_start = read_cpu_timer();
+        os_time_start  = read_os_timer();
+    }
+    
+    ~Timed_Block()
+    {
+        f64 seconds_elapsed = get_seconds_elapsed(os_time_start, read_os_timer());
+        debug_print("%s: %.4fms\n", label, 1000.0f*seconds_elapsed);
+    }
+};
+
+#define TIME_SCOPE(name) Timed_Block GLUE(__block_, __LINE__)(name)
+#define TIME_FUNCTION TIME_SCOPE(__func__)
+
 #endif //ORH_H
 
 
@@ -3804,6 +3848,11 @@ u64 string_format_list(char *dest_start, u64 dest_count, const char *format, va_
                     u64_to_ascii(&dest_buffer, value, 10, decimal_digits);
                 } break;
                 
+                case 'U': {
+                    u64 value = va_arg(arg_list, u64);
+                    u64_to_ascii(&dest_buffer, value, 10, decimal_digits);
+                } break;
+                
                 case 'm': {
                     umm value = va_arg(arg_list, umm);
                     const char *suffix = "B";
@@ -4167,6 +4216,75 @@ V3 unproject(V3 camera_position, f32 Zworld_distance_from_camera,
     V3 result     = (world_to_view.inverse*view_to_proj.inverse*mouse_clip).xyz;
     
     return result;
+}
+
+/////////////////////////////////////////
+//~
+// Instrumentation Implementation
+//
+u64 estimate_cpu_frequency()
+{
+    ASSERT(os->time_frequency);
+    
+    // @Note: From Casey Muratori, Computer Enhance.
+    
+    //
+    // @Todo: Why don't we query the frequency using __cpuid()? Should we avoid
+    // QPC when timing functions?
+    //
+    
+    u64 ms_to_wait = 100;
+	u64 os_freq    = os->time_frequency;
+    
+	u64 cpu_start    = read_cpu_timer();
+	u64 os_start     = read_os_timer();
+	u64 os_end       = 0;
+	u64 os_elapsed   = 0;
+	u64 os_wait_time = os_freq * ms_to_wait / 1000;
+	while(os_elapsed < os_wait_time) {
+		os_end     = read_os_timer();
+		os_elapsed = os_end - os_start;
+	}
+	
+	u64 cpu_end     = read_cpu_timer();
+	u64 cpu_elapsed = cpu_end - cpu_start;
+	
+	u64 cpu_freq = 0;
+	if(os_elapsed) {
+		cpu_freq = os_freq * cpu_elapsed / os_elapsed;
+	}
+	
+	return cpu_freq;
+}
+inline u64 read_cpu_timer()
+{
+#if ARCH_X64 || ARCH_X86
+    return __rdtsc();
+#else
+    ASSERT(!"Not Implemented!");
+#endif
+}
+u64 read_os_timer()
+{
+#if OS_WINDOWS
+    LARGE_INTEGER time;
+    QueryPerformanceCounter(&time);
+    return time.QuadPart;
+#else
+    struct timeval t;
+	gettimeofday(&t, 0);
+	u64 time = os->time_frequency*(u64)t.tv_sec + (u64)t.tv_usec;
+	return time;
+#endif
+}
+inline u64 get_cycles_elapsed(u64 cpu_start, u64 cpu_end)
+{
+    return cpu_end - cpu_start;
+}
+inline f64 get_seconds_elapsed(u64 os_start, u64 os_end)
+{
+    ASSERT(os->time_frequency);
+    return (f64)(os_end - os_start) / (f64)os->time_frequency;
 }
 
 #endif // ORH_IMPLEMENTATION
