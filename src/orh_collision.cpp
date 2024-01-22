@@ -1,4 +1,4 @@
-/* orh_collision.h - v0.00 - C++ collision routines.
+/* orh_collision.cpp - v0.00 - C++ collision routines.
 
 REVISION HISTORY:
 

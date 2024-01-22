@@ -19,7 +19,7 @@
 #define ORH_IMPLEMENTATION
 #include "orh.h"
 #include "orh_d3d11.cpp"
-#include "orh_collision.h"
+#include "orh_collision.cpp"
 
 #include "game.h"
 #include "game.cpp"
