@@ -1,4 +1,4 @@
-/* orh.h - v0.80 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.81 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.81 - improved move_towards() api. 
 0.80 - added initial instrumentation.
 0.79 - fixed calculate_tangents().
 0.78 - nlerp() does normalize_or_identity() now. Added m4x4_from_translation_rotation_scale();
@@ -98,6 +99,7 @@ CONVENTIONS:
 * When storing paths, if string name has "folder" in it, then it ends with '/' or '\\'.
 
 TODO:
+[] Remove instrumentation section and create orh_profiler.h instead.
 [] Per-frame and per-tick key state arrays.
 [] Dynamically growing arenas (maybe make a list instead of asserting when we go past arena->max).
 [] Helper functions that return forward/right/up vectors from passed transform matrix.
@@ -653,9 +655,9 @@ FUNCDEF Quaternion  slerp(Quaternion a, f32 t, Quaternion b);
 FUNCDEF inline f32 smooth_step  (f32 edge0, f32 x, f32 edge1); // Output in range [0, 1]
 FUNCDEF inline f32 smoother_step(f32 edge0, f32 x, f32 edge1); // Output in range [0, 1]
 
-FUNCDEF f32 move_towards(f32 current, f32 target, f32 max_distance);
-FUNCDEF V2  move_towards(V2 current, V2 target, f32 max_distance);
-FUNCDEF V3  move_towards(V3 current, V3 target, f32 max_distance);
+FUNCDEF f32 move_towards(f32 current, f32 target, f32 delta_time, f32 speed);
+FUNCDEF V2  move_towards(V2 current, V2 target, f32 delta_time, f32 speed);
+FUNCDEF V3  move_towards(V3 current, V3 target, f32 delta_time, f32 speed);
 FUNCDEF V2  rotate_point_around_pivot(V2 point, V2 pivot, Quaternion q);
 FUNCDEF V3  rotate_point_around_pivot(V3 point, V3 pivot, Quaternion q);
 
@@ -2933,18 +2935,20 @@ f32 smoother_step(f32 edge0, f32 x, f32 edge1)
     return x;
 }
 
-f32 move_towards(f32 current, f32 target, f32 max_distance)
+f32 move_towards(f32 current, f32 target, f32 delta_time, f32 speed)
 {
-    f32 delta = target - current;
+    f32 max_distance = delta_time * speed;
+    f32 delta        = target - current;
     if (ABS(delta) <= max_distance)
         return target;
     
     return current + SIGN(delta) * max_distance;
 }
-V2 move_towards(V2 current, V2 target, f32 max_distance)
+V2 move_towards(V2 current, V2 target, f32 delta_time, f32 speed)
 {
-    V2 delta = target - current;
-    f32 distance2 = length2(delta);
+    f32 max_distance = delta_time * speed;
+    V2 delta         = target - current;
+    f32 distance2    = length2(delta);
     
     if (distance2 <= SQUARE(max_distance)) 
         return target;
@@ -2952,10 +2956,11 @@ V2 move_towards(V2 current, V2 target, f32 max_distance)
     f32 ratio = max_distance / _sqrt(distance2);
     return current + (delta * ratio);
 }
-V3 move_towards(V3 current, V3 target, f32 max_distance)
+V3 move_towards(V3 current, V3 target, f32 delta_time, f32 speed)
 {
-    V3 delta = target - current;
-    f32 distance2 = length2(delta);
+    f32 max_distance = delta_time * speed;
+    V3 delta         = target - current;
+    f32 distance2    = length2(delta);
     
     if (distance2 <= SQUARE(max_distance)) 
         return target;
