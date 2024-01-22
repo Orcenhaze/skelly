@@ -4,9 +4,6 @@ REVISION HISTORY:
 
 */
 
-#ifndef ORH_COLLISION_H
-#define ORH_COLLISION_H
-
 #include "orh.h"
 
 union Ray
@@ -188,6 +185,3 @@ FUNCTION f32 closest_distance_ray_ray(Ray *r0, Ray *r1)
     
     return result;
 }
-
-
-#endif //ORH_COLLISION_H

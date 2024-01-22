@@ -2,14 +2,10 @@
 
 REVISION HISTORY:
 
+
+@Note: Study Computer Enhance Performance-Aware Programming Series!
+
 */
-
-//
-// @Note: Study Computer Enhance Performance-Aware Programming Series!
-//
-
-#ifndef ORH_PROFILER_H
-#define ORH_PROFILER_H
 
 #include "orh.h"
 
@@ -112,5 +108,3 @@ struct Timed_Block
 
 #define TIME_SCOPE(name, frequency) Timed_Block GLUE(__block_, __LINE__)(name, frequency)
 #define TIME_FUNCTION(frequency) TIME_SCOPE(__func__, frequency)
-
-#endif //ORH_PROFILER_H
