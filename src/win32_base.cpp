@@ -640,9 +640,6 @@ void win32_os_state_init(HWND window)
     global_os.exe_parent_folder = str8_cstring(global_exe_parent_folder);
     global_os.data_folder       = str8_cstring(global_data_folder);
     
-    // Timing Stuff.
-    global_os.time_frequency    = global_performance_frequency;
-    
     // Options.
 #if DEVELOPER
     global_os.fullscreen        = FALSE;

@@ -1,13 +1,13 @@
-#ifndef ORH_COLLISION_H
-#define ORH_COLLISION_H
-
-/* orh_collision.h - v0.01 - C++ collision routines.
-
-#include "orh.h" before this file.
+/* orh_collision.h - v0.00 - C++ collision routines.
 
 REVISION HISTORY:
 
 */
+
+#ifndef ORH_COLLISION_H
+#define ORH_COLLISION_H
+
+#include "orh.h"
 
 union Ray
 {

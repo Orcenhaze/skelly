@@ -1,7 +1,5 @@
 /* orh_d3d11.cpp - v0.08 - C++ D3D11 immediate mode renderer.
 
-#include "orh.h" before this file.
-
 REVISION HISTORY:
     0.08 - fixed pixel_to_ndc(); now accounts for viewport TopLeftX & TopLeftY and added V3 version for z-depth.
     0.07 - added ndc_to_pixel() and V3 version of world_to_ndc() for z-depth.
@@ -31,6 +29,8 @@ linear --> sRGB:    pow(color, 1.0/2.2)    make numbers bigger     (RenderTarget
 
 ////////////////////////////////
 //~ Includes
+#include "orh.h"
+
 #include <d3d11.h>       // D3D interface
 #include <dxgi1_3.h>     // DirectX driver interface
 #include <d3dcompiler.h> // Shader compiler
