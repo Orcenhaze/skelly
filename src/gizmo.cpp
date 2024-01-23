@@ -297,7 +297,7 @@ FUNCTION void gizmo_execute(Ray camera_ray, V3 gizmo_origin,
     //
     // Decide if gizmo_is_active or not.
     //
-    if (is_close && key_pressed(Key_MLEFT)) {
+    if (is_close && key_pressed(&os->tick_input, Key_MLEFT)) {
         gizmo_is_active = TRUE;
         
         click_point  = current_point;
@@ -306,7 +306,7 @@ FUNCTION void gizmo_execute(Ray camera_ray, V3 gizmo_origin,
         // Initially the same to avoid errors.
         previous_point = current_point;
     }
-    if (!key_held(Key_MLEFT)) {
+    if (!key_held(&os->tick_input, Key_MLEFT)) {
         gizmo_is_active = FALSE;
         gizmo_element   = is_close? gizmo_element : GizmoElement_NONE;
     }

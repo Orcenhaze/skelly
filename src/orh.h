@@ -1,4 +1,4 @@
-/* orh.h - v0.81 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.82 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.82 - added per-tick and per-frame inputs for keys.
 0.81 - improved move_towards() api. Removed instrumentation and created orh_profiler.cpp instead.
 0.80 - added initial instrumentation.
 0.79 - fixed calculate_tangents().
@@ -99,7 +100,7 @@ CONVENTIONS:
 * When storing paths, if string name has "folder" in it, then it ends with '/' or '\\'.
 
 TODO:
-[] Per-frame and per-tick key state arrays.
+[] Per-frame and per-tick input for gamepads!
 [] Dynamically growing arenas (maybe make a list instead of asserting when we go past arena->max).
 [] Helper functions that return forward/right/up vectors from passed transform matrix.
 [] arenas never decommit memory. Find a good way to add that.
@@ -1729,6 +1730,13 @@ enum Key
     Key_COUNT,
 };
 
+struct Key_States
+{
+    b32 pressed [Key_COUNT];
+    b32 held    [Key_COUNT];
+    b32 released[Key_COUNT];
+};
+
 struct Queued_Input
 {
     s32 key;
@@ -1770,6 +1778,7 @@ struct Gamepad
     f32 left_trigger;
     f32 right_trigger;
     
+    // @Todo: Per-tick and per-frame input for gameoad buttons!
     b32 pressed [GamepadButton_COUNT];
     b32 held    [GamepadButton_COUNT];
     b32 released[GamepadButton_COUNT];
@@ -1805,12 +1814,10 @@ struct OS_State
     
     // User Input.
     // Keyboard and mouse stuff.
-    // @Todo: Make another copy of input arrays for per-frame usage (as opposed to only per-tick).
     Array<Queued_Input> inputs_to_process;
-    b32 pressed [Key_COUNT];
-    b32 held    [Key_COUNT];
-    b32 released[Key_COUNT];
-    V3  mouse_ndc;           // In [-1, 1] interval - relative to drawing_rect.
+    Key_States          tick_input;   // Per-tick key states.
+    Key_States          frame_input;  // Per-frame key states.
+    V3  mouse_ndc;                    // In [-1, 1] interval - relative to drawing_rect.
     V2  mouse_scroll;
     //
     // Gamepad/controller stuff. Can only care about gamepads[0] for singleplayer.
@@ -1852,11 +1859,13 @@ struct OS_State
 };
 extern OS_State *os;
 
-FUNCDEF b32   key_pressed(s32 key, b32 capture = FALSE);
-FUNCDEF b32   key_held(s32 key, b32 capture = FALSE);
-FUNCDEF b32   key_released(s32 key, b32 capture = FALSE);
-FUNCDEF void  clear_key_states();
-FUNCDEF void  clear_key_states_all();
+// Input helper functions. 
+FUNCDEF b32   key_pressed     (Key_States *states, s32 key, b32 capture = FALSE);
+FUNCDEF b32   key_held        (Key_States *states, s32 key, b32 capture = FALSE);
+FUNCDEF b32   key_released    (Key_States *states, s32 key, b32 capture = FALSE);
+FUNCDEF void  reset_key_states(Key_States *states);
+FUNCDEF void  clear_key_states(Key_States *states);
+
 FUNCDEF Rect2 aspect_ratio_fit(V2u render_dim, V2u window_dim);
 FUNCDEF V3    unproject(V3 camera_position, f32 Zworld_distance_from_camera, V3 mouse_ndc, M4x4_Inverse world_to_view, M4x4_Inverse view_to_proj);
 
@@ -4053,47 +4062,39 @@ void sound_mix(Sound *sound, f32 volume, f32 *samples_out, u32 samples_to_write)
 //
 OS_State *os = 0;
 
-b32 key_pressed(s32 key, b32 capture /* = FALSE */)
+b32 key_pressed(Key_States *states, s32 key, b32 capture /* = FALSE */)
 {
-    b32 result = os->pressed[key];
+    b32 result = states->pressed[key];
     if (result && capture)
-        os->pressed[key] = FALSE;
+        states->pressed[key] = FALSE;
     return result;
 }
-b32 key_held(s32 key, b32 capture /* = FALSE */)
+b32 key_held(Key_States *states, s32 key, b32 capture /* = FALSE */)
 {
-    b32 result = os->held[key];
+    b32 result = states->held[key];
     if (result && capture)
-        os->pressed[key] = FALSE;
+        states->pressed[key] = FALSE;
     return result;
 }
-b32 key_released(s32 key, b32 capture /* = FALSE */)
+b32 key_released(Key_States *states, s32 key, b32 capture /* = FALSE */)
 {
-    b32 result = os->released[key];
+    b32 result = states->released[key];
     if (result && capture)
-        os->released[key] = FALSE;
+        states->released[key] = FALSE;
     return result;
 }
-void clear_key_states()
+void reset_key_states(Key_States *states)
 {
-    // @Note: Call this in the accum loop after we update/simulate the game.
+    // @Note: Call this after input usage code (frame end or end of accum loop).
     
     // Clear mouse-wheel scroll.
     os->mouse_scroll = {};
     
     // Clear pressed and released states of keyboard+mouse.
-    MEMORY_ZERO_ARRAY(os->pressed);
-    MEMORY_ZERO_ARRAY(os->released);
-    
-    for (s32 i = 0; i < GAMEPADS_MAX; i++) {
-        Gamepad *pad = &os->gamepads[i];
-        
-        // Clear pressed and released states of gamepad.
-        MEMORY_ZERO_ARRAY(pad->pressed);
-        MEMORY_ZERO_ARRAY(pad->released);
-    }
+    MEMORY_ZERO_ARRAY(states->pressed);
+    MEMORY_ZERO_ARRAY(states->released);
 }
-void clear_key_states_all()
+void clear_key_states(Key_States *states)
 {
     // @Note: Call this when app changes focus (like WM_ACTIVATE and WM_ACTIVATEAPP on windows)
     
@@ -4101,19 +4102,11 @@ void clear_key_states_all()
     os->mouse_scroll = {};
     
     // Clear all states of keyboard+mouse.
-    MEMORY_ZERO_ARRAY(os->pressed);
-    MEMORY_ZERO_ARRAY(os->held);
-    MEMORY_ZERO_ARRAY(os->released);
-    
-    for (s32 i = 0; i < GAMEPADS_MAX; i++) {
-        Gamepad *pad = &os->gamepads[i];
-        
-        // Clear all states of gamepad.
-        MEMORY_ZERO_ARRAY(pad->pressed);
-        MEMORY_ZERO_ARRAY(pad->held);
-        MEMORY_ZERO_ARRAY(pad->released);
-    }
+    MEMORY_ZERO_ARRAY(states->pressed);
+    MEMORY_ZERO_ARRAY(states->held);
+    MEMORY_ZERO_ARRAY(states->released);
 }
+
 Rect2 aspect_ratio_fit(V2u render_dim, V2u window_dim)
 {
     // @Note: From Handmade Hero E.322.

@@ -93,23 +93,23 @@ FUNCTION void control_camera(Camera *cam)
     V3 cam_r = normalize_or_zero(cross(cam_f, V3U));
     
     f32 speed = 2.0f;
-    if (key_held(Key_SHIFT))
+    if (key_held(&os->tick_input, Key_SHIFT))
         speed *= 3.0f;
     
-    if (key_held(Key_W)) 
+    if (key_held(&os->tick_input, Key_W)) 
         cam_p +=  cam_f * speed * dt;
-    if (key_held(Key_S))
+    if (key_held(&os->tick_input, Key_S))
         cam_p += -cam_f * speed * dt;
-    if (key_held(Key_D))
+    if (key_held(&os->tick_input, Key_D))
         cam_p +=  cam_r * speed * dt;
-    if (key_held(Key_A))
+    if (key_held(&os->tick_input, Key_A))
         cam_p += -cam_r * speed * dt;
-    if (key_held(Key_E))
+    if (key_held(&os->tick_input, Key_E))
         cam_p +=  V3U * speed * dt;
-    if (key_held(Key_Q))
+    if (key_held(&os->tick_input, Key_Q))
         cam_p += -V3U * speed * dt;
     
-    if (key_held(Key_MMIDDLE)) {
+    if (key_held(&os->tick_input, Key_MMIDDLE)) {
         Quaternion yaw = quaternion_from_axis_angle(V3U, -speed*delta_mouse.x);
         cam_f = yaw * cam_f;
         
@@ -196,8 +196,8 @@ FUNCTION void game_update()
     // @Temporary:
     Entity *guy = find_entity(&game->entity_manager, S8LIT("guy"));
     Sampled_Animation *anim;
-    if (key_held(Key_UP)) {
-        if (key_held(Key_SHIFT)) {
+    if (key_held(&os->tick_input, Key_UP)) {
+        if (key_held(&os->tick_input, Key_SHIFT)) {
             anim = find(&game->animation_catalog, S8LIT("guy_run"));
             play_animation(guy, anim, TRUE, 0.2);
         }
@@ -221,9 +221,9 @@ FUNCTION void game_update()
     // Process Gizmos
     //
     if (manager->selected_entity) {
-        if (key_pressed(Key_F1)) gizmo_mode = GizmoMode_TRANSLATION;
-        if (key_pressed(Key_F2)) gizmo_mode = GizmoMode_ROTATION;
-        if (key_pressed(Key_F3)) gizmo_mode = GizmoMode_SCALE;
+        if (key_pressed(&os->tick_input, Key_F1)) gizmo_mode = GizmoMode_TRANSLATION;
+        if (key_pressed(&os->tick_input, Key_F2)) gizmo_mode = GizmoMode_ROTATION;
+        if (key_pressed(&os->tick_input, Key_F3)) gizmo_mode = GizmoMode_SCALE;
         V3 delta_pos;
         Quaternion delta_rot;
         V3 delta_scale;
@@ -239,10 +239,10 @@ FUNCTION void game_update()
     //
     // Mouse picking
     //
-    if (key_pressed(Key_MLEFT) && !gizmo_is_active) {
+    if (key_pressed(&os->tick_input, Key_MLEFT) && !gizmo_is_active) {
         f32 sort_index      = F32_MAX;
         Entity *best_entity = 0;
-        b32 multi_select    = key_held(Key_SHIFT);
+        b32 multi_select    = key_held(&os->tick_input, Key_SHIFT);
         
         // Pick closest entity to camera (iff we intersect with one).
         for (s32 i = 0; i < manager->entities.count; i++) {

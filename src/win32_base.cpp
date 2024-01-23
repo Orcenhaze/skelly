@@ -377,7 +377,8 @@ FUNCTION LRESULT CALLBACK win32_wndproc(HWND window, UINT message, WPARAM wparam
     switch (message) {
         case WM_ACTIVATE:
         case WM_ACTIVATEAPP: {
-            clear_key_states_all();
+            clear_key_states(&os->tick_input);
+            clear_key_states(&os->frame_input);
         } break;
         
         case WM_CLOSE: 
@@ -415,7 +416,8 @@ FUNCTION void win32_process_inputs(HWND window)
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     //debug_print("Want keyboard? %b     Want mouse? %b \n", io.WantCaptureKeyboard, io.WantCaptureMouse);
     if (io.WantCaptureKeyboard || io.WantCaptureMouse) {
-        clear_key_states_all();
+        clear_key_states(&os->tick_input);
+        clear_key_states(&os->frame_input);
         
         MSG message;
         while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
@@ -436,30 +438,44 @@ FUNCTION void win32_process_inputs(HWND window)
     for (s32 i = 0; i < global_os.inputs_to_process.count; i++) {
         Queued_Input input = global_os.inputs_to_process[i];
         if (input.down) {
+            //
+            // @Todo: This order preserving stuff could be wrong when we introduced per-frame input.
+            //
+            
             // Defer DOWN event because UP was TRUE, break to preserve order.
-            if (global_os.released[input.key])
+            if (global_os.tick_input.released[input.key] && global_os.frame_input.released[input.key])
                 break;
             // Defer DOWN event because DOWN is already TRUE, break to preserve order.
-            else if (global_os.pressed[input.key])
+            else if (global_os.tick_input.pressed[input.key] && global_os.frame_input.pressed[input.key])
                 break;
             else {
-                if (!global_os.held[input.key])
-                    global_os.pressed[input.key] = TRUE;
+                if (!global_os.tick_input.held[input.key])
+                    global_os.tick_input.pressed[input.key] = TRUE;
                 
-                global_os.held[input.key] = TRUE;
+                global_os.tick_input.held[input.key] = TRUE;
+                
+                if (!global_os.frame_input.held[input.key])
+                    global_os.frame_input.pressed[input.key] = TRUE;
+                
+                global_os.frame_input.held[input.key] = TRUE;
+                
                 array_ordered_remove_by_index(&global_os.inputs_to_process, i);
                 i--;
             }
         } else {
             // Defer UP event because DOWN was TRUE, break to preserve order.
-            if (global_os.pressed[input.key])
+            if (global_os.tick_input.pressed[input.key] && global_os.frame_input.pressed[input.key])
                 break;
             // Defer UP event because UP is already TRUE, break to preserve order.
-            else if (global_os.released[input.key])
+            else if (global_os.tick_input.released[input.key] && global_os.frame_input.released[input.key])
                 break;
             else {
-                global_os.released[input.key] = TRUE;
-                global_os.held[input.key] = FALSE;
+                global_os.tick_input.released[input.key] = TRUE;
+                global_os.tick_input.held[input.key] = FALSE;
+                
+                global_os.frame_input.released[input.key] = TRUE;
+                global_os.frame_input.held[input.key] = FALSE;
+                
                 array_ordered_remove_by_index(&global_os.inputs_to_process, i);
                 i--;
             }

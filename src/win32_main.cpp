@@ -80,7 +80,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             accumulator -= os->dt;
             os->time    += os->dt;
             
-            clear_key_states();
+            reset_key_states(&os->tick_input);
         }
         
 #if DEVELOPER
@@ -109,7 +109,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 #endif
             d3d11_present(global_os.vsync);
+            
+            reset_key_states(&os->frame_input);
         }
+        
         
         win32_limit_framerate(last_counter);
     }
