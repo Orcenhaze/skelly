@@ -1,7 +1,6 @@
 [] Cleanup blender exporters and current state of animation system.
 [] Do proper blending between animations. Reference casey's video: (neighborhood vs. invert vs. direct).
 [] Fix cases when we have skeleton, but we are not playing back any animations. skinning_vertices would be 0. Causes issues with mouse picking and stuff.
-[] Fix gizmo retaining old state when we unselect and reselect something.
 [] Skin on the GPU
 
 TIMESTAMPS:

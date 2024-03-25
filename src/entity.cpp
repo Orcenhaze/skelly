@@ -33,7 +33,7 @@ FUNCTION Entity create_default_entity()
     update_entity_transform(&result);
     
     // @Cleanup: First mesh in catalog is default for now...
-    result.mesh = game->mesh_catalog.items[0];
+    result.mesh = find_from_index(&game->mesh_catalog, 0);
     
     return result;
 }
@@ -42,31 +42,32 @@ FUNCTION void entity_manager_init(Entity_Manager *manager)
 {
     // @Todo: Still need to find a way to avoid reserving 8GB because of default ARENA_MAX_DEFAULT... ugh!
     table_init(&manager->entity_table);
-    array_init(&manager->entities);
+    array_init(&manager->all_entities);
     
 #if DEVELOPER
     array_init(&manager->selected_entities);
+    manager->selected_entity = 0;
 #endif
 }
 
-FUNCTION Entity* register_new_entity(Entity_Manager *manager, Entity entity)
+FUNCTION u32 register_new_entity(Entity_Manager *manager, Entity entity)
 {
-    entity.idx = (u32)manager->entities.count;
+    entity.id = entity_id_counter++;
     
     // @Todo: Shouldn't use permanent_arena here...
-    if (!entity.name.data) {
-        String8 name = entity.mesh? entity.mesh->name : S8LIT("unnamed");
-        entity.name  = sprint(os->permanent_arena, "%S (%u)", name, entity.idx);
-    }
+    // @Cleanup: Make sure newly created entity always has a unique name.
+    String8 name = entity.mesh? entity.mesh->name : S8LIT("unnamed");
+    entity.name  = sprint(os->permanent_arena, "%S_%u", name, entity.id);
     
-    Entity *new_entity = table_add(&manager->entity_table, entity.name, entity);
-    array_add(&game->entity_manager.entities, new_entity);
-    return new_entity;
+    table_add(&manager->entity_table, entity.id, entity);
+    array_add(&game->entity_manager.all_entities, entity.id);
+    
+    return entity.id;
 }
 
-FUNCTION Entity* find_entity(Entity_Manager *manager, String8 name)
+FUNCTION Entity* find_entity(Entity_Manager *manager, u32 entity_id)
 {
-    Entity *e = table_find_pointer(&manager->entity_table, name);
+    Entity *e = table_find_pointer(&manager->entity_table, entity_id);
     return e;
 }
 
@@ -104,3 +105,30 @@ FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b
     
     return new_channel;
 }
+
+#if DEVELOPER
+FUNCTION void select_single_entity(Entity_Manager *manager, u32 entity_id)
+{
+    array_reset(&manager->selected_entities);
+    array_add(&manager->selected_entities, entity_id);
+    manager->selected_entity = find_entity(manager, entity_id);
+}
+
+FUNCTION void add_entity_selection(Entity_Manager *manager, u32 entity_id)
+{
+    s32 find_index = array_find_index(&manager->selected_entities, entity_id);
+    if (find_index == -1)
+        array_add(&manager->selected_entities, entity_id);
+    else
+        array_unordered_remove_by_index(&manager->selected_entities, find_index);
+    
+    u32 last_entity = manager->selected_entities[manager->selected_entities.count-1];
+    manager->selected_entity = find_entity(manager, last_entity);
+}
+
+FUNCTION void clear_entity_selection(Entity_Manager *manager)
+{
+    array_reset(&manager->selected_entities);
+    manager->selected_entity = 0;
+}
+#endif

@@ -1,4 +1,4 @@
-/* orh.h - v0.82 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.83 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.83 - fixed array_remove_range() assert. Added "found" parameter to table_find().
 0.82 - added per-tick and per-frame inputs for keys.
 0.81 - improved move_towards() api. Removed instrumentation and created orh_profiler.cpp instead.
 0.80 - added initial instrumentation.
@@ -1367,7 +1368,10 @@ T* array_add(Array<T> *array, T item)
 template<typename T>
 void array_remove_range(Array<T> *array, s32 start_index, s32 end_index)
 {
-    ASSERT((start_index >= 0) && (end_index < array->count) && (start_index < end_index));
+    if (array->count <= 0)
+        return;
+    
+    ASSERT((start_index >= 0) && (end_index < array->count) && (start_index <= end_index));
     
     s32 num_elements = end_index - start_index + 1;
     for (s32 i = start_index; i < end_index+1; i++)
@@ -1561,12 +1565,14 @@ V* table_add(Table<K, V> *table, K key, V value)
 }
 
 template<typename K, typename V>
-V table_find(Table<K, V> *table, K key)
+V table_find(Table<K, V> *table, K key, b32 *found = 0)
 {
     // @Todo: Return b32 and pass return value as parameter?
     
     if (!table->capacity) {
         V dummy = {};
+        if (found)
+            *found = FALSE;
         return dummy;
     }
     
@@ -1584,6 +1590,8 @@ V table_find(Table<K, V> *table, K key)
         // @Note: Key_Types need to to have valid operator==().
         //
         if ((table->hashes[index] == hash) &&  (table->keys[index] == key)) {
+            if (found)
+                *found = TRUE;
             return table->values[index];
         }
         
@@ -1592,15 +1600,19 @@ V table_find(Table<K, V> *table, K key)
     }
     
     V dummy = {};
+    if (found)
+        *found = FALSE;
     return dummy;
 }
 
 template<typename K, typename V>
-V* table_find_pointer(Table<K, V> *table, K key)
+V* table_find_pointer(Table<K, V> *table, K key, b32 *found = 0)
 {
     // @Note: Almost same as table_find, except it returns pointer to value in the table.
     
     if (!table->capacity) {
+        if (found)
+            *found = FALSE;
         return 0;
     }
     
@@ -1618,6 +1630,8 @@ V* table_find_pointer(Table<K, V> *table, K key)
         // @Note: Key_Types need to to have valid operator==().
         //
         if ((table->hashes[index] == hash) &&  (table->keys[index] == key)) {
+            if (found)
+                *found = TRUE;
             return &table->values[index];
         }
         
@@ -1625,6 +1639,8 @@ V* table_find_pointer(Table<K, V> *table, K key)
         if (index >= table->capacity) index = 0;
     }
     
+    if (found)
+        *found = FALSE;
     return 0;
 }
 

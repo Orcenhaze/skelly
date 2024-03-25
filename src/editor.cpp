@@ -39,7 +39,7 @@ FUNCTION void draw_main_editor_window()
                 Entity *e = manager->selected_entity;
                 
                 // For now only display info. Allow editing of name later?
-                ImGui::Text("%s ID: %u", e->name.data, e->idx);
+                ImGui::Text("%s ID: %u", e->name.data, e->id);
                 
                 ImGui::Separator();
                 
@@ -79,10 +79,14 @@ FUNCTION void draw_main_editor_window()
                         if (ImGui::BeginCombo("Mesh", (const char*)combo_preview_value)) {
                             for (s32 n = 0; n < game->mesh_catalog.items.count; n++) {
                                 const bool is_selected = (item_current_idx == n);
-                                if (ImGui::Selectable((const char*) game->mesh_catalog.items[n]->name.data, is_selected)) {
+                                Triangle_Mesh* mesh = find_from_index(&game->mesh_catalog, n);
+                                if (!mesh)
+                                    continue;
+                                
+                                if (ImGui::Selectable((const char*) mesh->name.data, is_selected)) {
                                     item_current_idx = n;
                                     
-                                    e->mesh = game->mesh_catalog.items[n];
+                                    e->mesh = mesh;
                                     if (e->animation_player) {
                                         set_mesh(e->animation_player, e->mesh);
                                     }

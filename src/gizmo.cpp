@@ -81,6 +81,12 @@ GLOBAL V3                     click_offset;   // The vector from gizmo_origin to
 
 GLOBAL V4 gizmo_active_color = {1.0f, 1.0f, 1.0f, 1.0f};
 
+FUNCTION void gizmo_clear()
+{
+    params   = {};
+    geometry = {};
+}
+
 FUNCTION void gizmo_calculate_rendering_params(V3 camera_position, V3 gizmo_origin)
 {
     f32 distance_to_camera    = length(camera_position - gizmo_origin);

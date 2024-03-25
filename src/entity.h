@@ -1,10 +1,13 @@
 #ifndef ENTITY_H
 #define ENTITY_H
 
+// @Todo: We are using poor man's id generation.
+GLOBAL u32 entity_id_counter;
+
 struct Entity
 {
     String8 name;
-    u32 idx;
+    u32 id;
     
     V3           position;
     Quaternion   orientation;
@@ -18,12 +21,17 @@ struct Entity
 
 struct Entity_Manager
 {
-    Table<String8, Entity> entity_table;
-    Array<Entity*> entities;
+    // Maps entity ID to entity data.
+    Table<u32, Entity> entity_table;
+    
+    // Stores IDs of entities.
+    Array<u32> all_entities;
     
 #if DEVELOPER
     // Editor stuff.
-    Array<Entity*> selected_entities;
+    
+    // Stores IDs.
+    Array<u32> selected_entities;
     Entity *selected_entity; // Last one we seleceted: selected_entities[selected_entities.count-1]
 #endif
 };

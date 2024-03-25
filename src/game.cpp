@@ -9,7 +9,7 @@
 #include "editor.cpp"
 #endif
 
-FUNCTION void load_textures(Catalog<String8, Texture> *catalog)
+FUNCTION void load_textures(Catalog<Texture> *catalog)
 {
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
@@ -33,7 +33,7 @@ FUNCTION void load_textures(Catalog<String8, Texture> *catalog)
     }
 }
 
-FUNCTION void load_meshes(Catalog<String8, Triangle_Mesh> *catalog)
+FUNCTION void load_meshes(Catalog<Triangle_Mesh> *catalog)
 {
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
@@ -58,7 +58,7 @@ FUNCTION void load_meshes(Catalog<String8, Triangle_Mesh> *catalog)
     }
 }
 
-FUNCTION void load_animations(Catalog<String8, Sampled_Animation> *catalog)
+FUNCTION void load_animations(Catalog<Sampled_Animation> *catalog)
 {
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
@@ -150,18 +150,6 @@ FUNCTION void game_init()
     // Set initial default dir light.
     game->num_dir_lights = 1;
     game->dir_lights[0]  = default_dir_light();
-    
-    
-    // @Temporary:
-    // @Temporary:
-    // @Temporary:
-    Entity e = create_default_entity();
-    e.name = S8LIT("guy");
-    e.mesh   = find(&game->mesh_catalog, S8LIT("guy"));
-    create_animation_player_for_entity(&e);
-    
-    Entity *guy = register_new_entity(&game->entity_manager, e);
-    play_animation(guy, find(&game->animation_catalog, S8LIT("guy_idle")));
 }
 
 FUNCTION void game_update()
@@ -170,47 +158,26 @@ FUNCTION void game_update()
     game->delta_mouse = os->mouse_ndc - old_ndc;
     old_ndc           = os->mouse_ndc;
     
+    control_camera(&game->camera);
+    set_world_to_view(game->camera.matrix);
+    
     game->mouse_world = unproject(game->camera.position, 
                                   1.0f, 
                                   os->mouse_ndc, 
                                   world_to_view_matrix, 
                                   view_to_proj_matrix);
     
-    control_camera(&game->camera);
-    set_world_to_view(game->camera.matrix);
-    
     //
     // Update all entities.
     //
     Entity_Manager *manager = &game->entity_manager;
-    for (s32 i = 0; i < manager->entities.count; i++) {
-        Entity *e = manager->entities[i];
+    for (s32 i = 0; i < manager->all_entities.count; i++) {
+        Entity *e = find_entity(manager, manager->all_entities[i]);
         update_entity_transform(e);
         
         advance_time(e->animation_player, os->dt);
         eval(e->animation_player);
     }
-    
-    // @Temporary:
-    // @Temporary:
-    // @Temporary:
-    Entity *guy = find_entity(&game->entity_manager, S8LIT("guy"));
-    Sampled_Animation *anim;
-    if (key_held(&os->tick_input, Key_UP)) {
-        if (key_held(&os->tick_input, Key_SHIFT)) {
-            anim = find(&game->animation_catalog, S8LIT("guy_run"));
-            play_animation(guy, anim, TRUE, 0.2);
-        }
-        else {
-            anim = find(&game->animation_catalog, S8LIT("guy_walk"));
-            play_animation(guy, anim, TRUE, 0.5);
-        }
-    } else {
-        anim = find(&game->animation_catalog, S8LIT("guy_idle"));
-        play_animation(guy, anim, TRUE, 0.3);
-    }
-    
-    
     
 #if DEVELOPER
     Ray camera_ray = {game->camera.position, normalize_or_zero(game->mouse_world - game->camera.position)};
@@ -224,16 +191,37 @@ FUNCTION void game_update()
         if (key_pressed(&os->tick_input, Key_F1)) gizmo_mode = GizmoMode_TRANSLATION;
         if (key_pressed(&os->tick_input, Key_F2)) gizmo_mode = GizmoMode_ROTATION;
         if (key_pressed(&os->tick_input, Key_F3)) gizmo_mode = GizmoMode_SCALE;
+        
         V3 delta_pos;
         Quaternion delta_rot;
         V3 delta_scale;
         gizmo_execute(camera_ray, manager->selected_entity->position, &delta_pos, &delta_rot, &delta_scale);
+        
+        // Transform all selected entities.
         for (s32 i = 0; i < manager->selected_entities.count; i++) {
-            Entity *e = manager->selected_entities[i];
+            Entity *e = find_entity(manager, manager->selected_entities[i]);
             e->position   += delta_pos;
             e->orientation = delta_rot * e->orientation;
             e->scale      += delta_scale;
         }
+        
+        // Duplicate selected entities.
+        if (gizmo_is_active) {
+            if (key_held(&os->tick_input, Key_ALT) && key_pressed(&os->tick_input, Key_MLEFT)) {
+                s32 end_index = (s32)manager->selected_entities.count - 1;
+                for (s32 i = 0; i < (end_index + 1); i++) {
+                    Entity e = *find_entity(manager, manager->selected_entities[i]);
+                    u32 new_entity_id = register_new_entity(&game->entity_manager, e);
+                    add_entity_selection(manager, new_entity_id);
+                }
+                
+                array_remove_range(&manager->selected_entities, 0, end_index);
+            }
+        }
+        
+        // Move camera with gizmo
+        if (key_held(&os->tick_input, Key_SHIFT))
+            game->camera.position += delta_pos;
     }
     
     //
@@ -241,12 +229,12 @@ FUNCTION void game_update()
     //
     if (key_pressed(&os->tick_input, Key_MLEFT) && !gizmo_is_active) {
         f32 sort_index      = F32_MAX;
-        Entity *best_entity = 0;
-        b32 multi_select    = key_held(&os->tick_input, Key_SHIFT);
+        s32 best_entity_id  = -1;
+        b32 multi_select    = key_held(&os->tick_input, Key_CONTROL);
         
         // Pick closest entity to camera (iff we intersect with one).
-        for (s32 i = 0; i < manager->entities.count; i++) {
-            Entity *e = manager->entities[i];
+        for (s32 i = 0; i < manager->all_entities.count; i++) {
+            Entity *e = find_entity(manager, manager->all_entities[i]);
             Triangle_Mesh *mesh = e->mesh;
             
             /*
@@ -270,30 +258,18 @@ FUNCTION void game_update()
             b32 is_hit = ray_mesh_intersect(&ray_object, mesh->vertices.count, vertices, mesh->indices.count, mesh->indices.data);
             if (is_hit && (ray_object.t < sort_index)) {
                 sort_index  = ray_object.t;
-                best_entity = e;
+                best_entity_id = manager->all_entities[i];
             }
         }
         
-        if (best_entity) {
-            if (multi_select) {
-                s32 find_index = array_find_index(&manager->selected_entities, best_entity);
-                if (find_index == -1)
-                    array_add(&manager->selected_entities, best_entity);
-                else
-                    array_unordered_remove_by_index(&manager->selected_entities, find_index);
-            } else {
-                array_reset(&manager->selected_entities);
-                array_add(&manager->selected_entities, best_entity);
-            }
+        if (best_entity_id != -1) {
+            if (multi_select)
+                add_entity_selection(manager, best_entity_id);
+            else
+                select_single_entity(manager, best_entity_id);
         } else {
-            if (!multi_select)
-                array_reset(&manager->selected_entities);
-        }
-        
-        if (manager->selected_entities.count) {
-            manager->selected_entity = manager->selected_entities[manager->selected_entities.count-1];
-        } else {
-            manager->selected_entity = 0;
+            clear_entity_selection(manager);
+            gizmo_clear();
         }
     }
 #endif
@@ -311,8 +287,8 @@ FUNCTION void game_render()
     
     // Render all entities.
     Entity_Manager *manager = &game->entity_manager;
-    for (s32 i = 0; i < manager->entities.count; i++) {
-        Entity *e = manager->entities[i];
+    for (s32 i = 0; i < manager->all_entities.count; i++) {
+        Entity *e = find_entity(manager, manager->all_entities[i]);
         draw_entity(e);
     }
     
@@ -323,7 +299,7 @@ FUNCTION void game_render()
     // Draw visual debugging stuff for selected entities.
     if (manager->selected_entity) {
         for (s32 i = 0; i < manager->selected_entities.count; i++) {
-            Entity *e = manager->selected_entities[i];
+            Entity *e = find_entity(manager, manager->selected_entities[i]);
             draw_entity_wireframe(e);
         }
         
@@ -332,8 +308,8 @@ FUNCTION void game_render()
     }
     
     // Draw skeleton lines and joint names
-    for (s32 i = 0; i < manager->entities.count; i++) {
-        Entity *e = manager->entities[i];
+    for (s32 i = 0; i < manager->all_entities.count; i++) {
+        Entity *e = find_entity(manager, manager->all_entities[i]);
         draw_skeleton(e);
     }
 #endif
