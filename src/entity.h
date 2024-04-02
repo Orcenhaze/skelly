@@ -16,11 +16,13 @@ struct Entity
     
     Triangle_Mesh *mesh;
     
+    // @Note: Every entity with an animated mesh must have an animation player.
     Animation_Player *animation_player;
 };
 
 struct Entity_Manager
 {
+    // @Note: In this program, entities are always "alive" in memory, stored in this table. 
     // Maps entity ID to entity data.
     Table<u32, Entity> entity_table;
     

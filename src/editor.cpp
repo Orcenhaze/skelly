@@ -29,8 +29,7 @@ FUNCTION void draw_main_editor_window()
             // @Todo: Naming newly created entities.
             //
             if (ImGui::Button("Create")) {
-                Entity entity = create_default_entity();
-                register_new_entity(manager, entity);
+                register_new_entity(manager, find_from_index(&game->mesh_catalog, 0));
             }
             
             ImGui::Separator();
@@ -86,10 +85,7 @@ FUNCTION void draw_main_editor_window()
                                 if (ImGui::Selectable((const char*) mesh->name.data, is_selected)) {
                                     item_current_idx = n;
                                     
-                                    e->mesh = mesh;
-                                    if (e->animation_player) {
-                                        set_mesh(e->animation_player, e->mesh);
-                                    }
+                                    set_mesh_on_entity(e, mesh);
                                 }
                                 
                                 // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)

@@ -1,9 +1,11 @@
 #ifndef GAME_H
 #define GAME_H
 
-GLOBAL V3 V3F = {0,  0, -1};
-GLOBAL V3 V3U = {0,  1,  0};
-GLOBAL V3 V3R = {1,  0,  0};
+// World base vectors.
+GLOBAL V3 V3ZERO = V3_ZERO;
+GLOBAL V3 V3F    = V3_FORWARD;
+GLOBAL V3 V3U    = V3_UP;
+GLOBAL V3 V3R    = V3_RIGHT;
 
 #include "mesh.h"
 #include "animation.h"
@@ -14,11 +16,19 @@ GLOBAL V3 V3R = {1,  0,  0};
 #include "editor.h"
 #endif
 
+enum Camera_Mode
+{
+    CameraMode_GAME,
+    CameraMode_DEBUG,
+};
+
 struct Camera
 {
-    V3 position;
-    V3 forward;
-    M4x4_Inverse matrix; // look_at matrix.
+    V3         position;
+    Quaternion orientation;
+    M4x4       object_to_world;
+    
+    s32 mode;
 };
 
 FUNCTION inline Point_Light default_point_light()

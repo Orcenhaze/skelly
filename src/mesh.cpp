@@ -70,9 +70,8 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
     
     // Skeleton
     if (header.num_skeleton_joints) {
-        // @Todo: Shouldn't use permanent_arena here.
         mesh->flags   |= MeshFlags_ANIMATED;
-        mesh->skeleton = PUSH_STRUCT_ZERO(os->permanent_arena, Skeleton);
+        mesh->skeleton = PUSH_STRUCT_ZERO(arena, Skeleton);
         
         // Joint info
         Skeleton *skeleton = mesh->skeleton;
@@ -87,12 +86,11 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
             get(&file, &joint->rest_pose_rotation_relative);
             
             // Read name
-            // @Todo: Shouldn't use permanent_arena here.
             s32 joint_name_len = 0;
             get(&file, &joint_name_len);
             String8 joint_name = str8(file.data, joint_name_len);
             advance(&file, joint_name_len);
-            joint->name = str8_copy(os->permanent_arena, joint_name);
+            joint->name = str8_copy(arena, joint_name);
             
             // Read parent id.
             get(&file, &joint->parent_id);
@@ -114,11 +112,11 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
             }
         }
         
-        // @Temporary: Should skin on the GPU
-        // @Temporary:
-        // @Temporary:
+#if DEVELOPER
+        // @Note: We keep those for mouse-picking.
         array_init_and_resize(&mesh->skinned_vertices, header.num_vertices);
-        array_init_and_resize(&mesh->skinned_normals, header.num_vertices);
+        array_copy(&mesh->skinned_vertices, mesh->vertices);
+#endif
     }
     
     ASSERT(file.count == 0);
@@ -154,8 +152,8 @@ FUNCTION void generate_buffers_for_mesh(Triangle_Mesh *mesh)
     s64 num_vertices = mesh->vertices.count;
     
     Arena_Temp scratch = get_scratch(0, 0);
-    Vertex_XTBNUC *vertex_buffer = PUSH_ARRAY_ZERO(scratch.arena, Vertex_XTBNUC, num_vertices);
-    Vertex_XTBNUC *vertex = vertex_buffer;
+    Vertex_XTBNUCJW *vertex_buffer = PUSH_ARRAY_ZERO(scratch.arena, Vertex_XTBNUCJW, num_vertices);
+    Vertex_XTBNUCJW *vertex = vertex_buffer;
     
     for (s32 vindex = 0; vindex < num_vertices; vindex++, vertex++) {
         if (mesh->vertices.count) vertex->position = mesh->vertices[vindex];
@@ -175,19 +173,23 @@ FUNCTION void generate_buffers_for_mesh(Triangle_Mesh *mesh)
         
         if (mesh->colors.count)   vertex->color = mesh->colors[vindex];
         else                      vertex->color = {1.0f, 1.0f, 1.0f, 1.0f};
+        
+        vertex->joint_ids = v4s(-1);
+        vertex->weights   = {};
+        if (mesh->skeleton) {
+            s32 canonical_vertex_index    = mesh->canonical_vertex_map[vindex];
+            Vertex_Blend_Info *blend_info = &mesh->skeleton->vertex_blend_info[canonical_vertex_index];
+            for (s32 piece_index = 0; piece_index < blend_info->num_pieces; piece_index++) {
+                vertex->joint_ids.I[piece_index] = blend_info->pieces[piece_index].joint_id;
+                vertex->weights.I  [piece_index] = blend_info->pieces[piece_index].weight;
+            }
+        }
     }
     
     D3D11_BUFFER_DESC desc = {};
-    desc.ByteWidth = (UINT)(sizeof(Vertex_XTBNUC) * num_vertices);
+    desc.ByteWidth = (UINT)(sizeof(Vertex_XTBNUCJW) * num_vertices);
     desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     desc.Usage     = D3D11_USAGE_IMMUTABLE;
-    // @Temporary: Should skin on the GPU
-    // @Temporary:
-    // @Temporary:
-    if (mesh->flags & MeshFlags_ANIMATED) {
-        desc.Usage          = D3D11_USAGE_DYNAMIC;
-        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    }
     D3D11_SUBRESOURCE_DATA vertex_data = { vertex_buffer };
     device->CreateBuffer(&desc, &vertex_data, &mesh->vbo);
     
@@ -222,7 +224,7 @@ FUNCTION void generate_bounding_box_for_mesh(Triangle_Mesh *mesh)
     mesh->bounding_box = {min, max};
 }
 
-FUNCTION void load_triangle_mesh(Triangle_Mesh *mesh, String8 full_path)
+FUNCTION void load_triangle_mesh(Arena *arena, Triangle_Mesh *mesh, String8 full_path)
 {
     mesh->full_path = full_path;
     
@@ -233,13 +235,11 @@ FUNCTION void load_triangle_mesh(Triangle_Mesh *mesh, String8 full_path)
     }
     
     String8 orig_file  = file;
-    Arena_Temp scratch = get_scratch(0, 0);
     
-    load_mesh_data(scratch.arena, mesh, file);
+    load_mesh_data(arena, mesh, file);
     load_mesh_textures(mesh);
     generate_buffers_for_mesh(mesh);
     generate_bounding_box_for_mesh(mesh);
     
-    free_scratch(scratch);
     os->free_file_memory(orig_file.data);
 }

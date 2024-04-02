@@ -4,13 +4,21 @@ directory = "C:\\work\\skelly\\data\\animations\\"
 extension = ".sampled_animation"
 
 
+# File format version. Increment when modifying file format.
 version = 1
 
 """
+    IMPORTANT:
+    !! Make sure to always use front-view (Numpad1) when modeling the front side of the object; we automatically apply a matrix transform to make the object comply with our engine coordinates. !!
+    
+    I'm using "joint" and "bone" synonymously.
+
     About this animation exporter:
     - MESH object must selected before running the script.
     - ARMATURE must be direct parent of the MESH object.
-    - Exports joints' scale value as float NOT Vector3 (we don't support non-uniform scaling).
+    - Only ONE deformation root bone must exist.
+    - DOES NOT support non-uniform scaling (the scale value for joints are exported as float NOT Vector3).
+    - DOES NOT support rigify rigs; metarigs hierarchy seems fine, but as soon as you generate the rig, the bone hierarchy gets messed up.
     
     @Cleanup: The export_joints_meta_data maneuver might be unnecessary, not sure...
     @Cleanup:
@@ -26,10 +34,12 @@ import mathutils
 
 """ GLOBAL VARIABLES
 """
-# Matrix to transform from Blender's space coordinates to "our" space coordinates.
-# Rotate -90deg around x-axis.
-BlenderToEngineQuat   = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0))
-BlenderToEngineMatrix = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0)).to_matrix().to_4x4()
+PI = 3.141592653589793
+
+# Matrix to transform from Blender's space coordinates to "our" space coordinates... -90.deg around x, and 180.deg around y.
+BlenderToEngineEuler  = mathutils.Euler((-PI * 0.5, PI, 0), 'XYZ')
+BlenderToEngineQuat   = BlenderToEngineEuler.to_quaternion()
+BlenderToEngineMatrix = BlenderToEngineEuler.to_matrix().to_4x4()
 
 """ UTILS
 """
@@ -62,9 +72,9 @@ def export_joints_meta_data(data, armature):
     # We'll return this to remember our order when exporting matrices for each sample.
     joint_names = [] 
     
-    # Search for root candidates
+    # Search for root candidates (deform joints that have no parents)
     bones = armature.pose.bones
-    root_candidates = [b for b in bones if not b.parent]
+    root_candidates = [b for b in bones if not b.parent and b.bone.use_deform == True]
     # root_candidates = [b for b in bones if not b.parent and b.name[:4].lower() == 'root']
 
     # Only one node can be eligible
@@ -90,6 +100,9 @@ def export_joints_meta_data(data, armature):
     return joint_names
 
 def recursively_export_joints_meta_data(data, joint_names, joint, parent_id):
+    if joint.bone.use_deform == False:
+        return
+
     joint_id = export_joint(data, joint.name, parent_id)
     joint_names.append(joint.name)
 
@@ -196,17 +209,18 @@ def main():
     if mesh_obj.type != "MESH":
         raise Exception("Active object must be of type MESH, not %s." % mesh_obj.type)
     
-    # Get armature if available and set pose position to REST pose.
+    # Get armature if available.
     armature = None
     if mesh_obj.parent and mesh_obj.parent.type == "ARMATURE":
         armature = mesh_obj.parent
-        if not allclose(mesh_obj.matrix_world, armature.matrix_world):
-            raise Exception("ARMATURE and MESH origins must match!");
-        armature.data.pose_position = 'POSE'
-
+    
     if armature == None:
         raise Exception("Couldn't extract ARMATURE from %." % mesh_obj.name);
+        
+    if not allclose(mesh_obj.matrix_world, armature.matrix_world):
+        raise Exception("ARMATURE and MESH origins must match!");
     
+    armature.data.pose_position = 'POSE'
     export_all_animations(armature)
 
 if __name__ == "__main__":

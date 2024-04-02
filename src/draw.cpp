@@ -8,20 +8,10 @@ FUNCTION void draw_entity(Entity *e)
         return;
     }
     
-    // @Temporary: Should skin on the GPU
-    // @Temporary:
-    // @Temporary:
-    if (e->animation_player) {
-        if ((mesh->flags & MeshFlags_ANIMATED) && mesh->skeleton) {
-            if (e->animation_player->num_changed_channels_last_eval)
-                skin_mesh(e->animation_player);
-        }
-    }
-    
     // Bind Input Assembler.
     device_context->IASetInputLayout(pbr_input_layout);
     device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    UINT stride = sizeof(Vertex_XTBNUC);
+    UINT stride = sizeof(Vertex_XTBNUCJW);
     UINT offset = 0;
     device_context->IASetVertexBuffers(0, 1, &mesh->vbo, &stride, &offset);
     device_context->IASetIndexBuffer(mesh->ibo, DXGI_FORMAT_R32_UINT, 0);
@@ -31,6 +21,14 @@ FUNCTION void draw_entity(Entity *e)
     PBR_VS_Constants vs_constants = {};
     vs_constants.object_to_proj_matrix  = view_to_proj_matrix.forward * world_to_view_matrix.forward * e->object_to_world_matrix.forward;
     vs_constants.object_to_world_matrix = e->object_to_world_matrix.forward;
+    if (e->animation_player && (e->mesh->flags & MeshFlags_ANIMATED)) {
+        u64 matrix_count = e->animation_player->skinning_matrices.count;
+        ASSERT(matrix_count <= MAX_JOINTS);
+        
+        vs_constants.flags |= VSConstantsFlags_SHOULD_SKIN;
+        
+        MEMORY_COPY(vs_constants.skinning_matrices, e->animation_player->skinning_matrices.data, matrix_count * sizeof(M4x4));
+    }
     
     D3D11_MAPPED_SUBRESOURCE mapped;
     device_context->Map(pbr_vs_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
@@ -124,7 +122,7 @@ FUNCTION void draw_entity_wireframe(Entity *e)
     // Bind Input Assembler.
     device_context->IASetInputLayout(pbr_input_layout);
     device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    UINT stride = sizeof(Vertex_XTBNUC);
+    UINT stride = sizeof(Vertex_XTBNUCJW);
     UINT offset = 0;
     device_context->IASetVertexBuffers(0, 1, &mesh->vbo, &stride, &offset);
     device_context->IASetIndexBuffer(mesh->ibo, DXGI_FORMAT_R32_UINT, 0);
@@ -134,6 +132,14 @@ FUNCTION void draw_entity_wireframe(Entity *e)
     PBR_VS_Constants vs_constants = {};
     vs_constants.object_to_proj_matrix  = view_to_proj_matrix.forward * world_to_view_matrix.forward * e->object_to_world_matrix.forward;
     vs_constants.object_to_world_matrix = e->object_to_world_matrix.forward;
+    if (e->animation_player && (e->mesh->flags & MeshFlags_ANIMATED)) {
+        u64 matrix_count = e->animation_player->skinning_matrices.count;
+        ASSERT(matrix_count <= MAX_JOINTS);
+        
+        vs_constants.flags |= VSConstantsFlags_SHOULD_SKIN;
+        
+        MEMORY_COPY(vs_constants.skinning_matrices, e->animation_player->skinning_matrices.data, matrix_count * sizeof(M4x4));
+    }
     
     D3D11_MAPPED_SUBRESOURCE mapped;
     device_context->Map(pbr_vs_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
@@ -237,7 +243,7 @@ FUNCTION void draw_skeleton(Entity *e)
             invert(skeleton->joint_info[i].object_to_joint_matrix, &inv);
             V3 p = get_translation(player->skinning_matrices[i] * inv);
             
-            V3 p_ndc   = world_to_ndc(e->object_to_world_matrix.forward * p);
+            V3 p_ndc   = world_to_ndc(transform_point(e->object_to_world_matrix.forward, p));
             V3 p_pixel = ndc_to_pixel(p_ndc);
             String8 joint_name = skeleton->joint_info[i].name;
             

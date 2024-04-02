@@ -51,6 +51,7 @@ struct Skeleton_Joint_Info
     // Joint's rest pose rotation relative to its parent (joint space).
     // We use this to figure out if we are in the neighborhood of the rest pose when blending animations.
     // Check Casey Muratori's video "Quaternion Double-cover and the Rest Pose Neighborhood".
+    // @Todo: Not using this yet...
     Quaternion rest_pose_rotation_relative;
     
     String8    name;
@@ -130,11 +131,10 @@ struct Triangle_Mesh
     Array<Triangle_List_Info> triangle_list_info;
 	Array<Material_Info>      material_info;
     
-    // @Temporary: Should skin on the GPU
-    // @Temporary:
-    // @Temporary:
+#if DEVELOPER
+    // @Note: Used for mouse picking.
     Array<V3> skinned_vertices;
-    Array<V3> skinned_normals;
+#endif
     
     // Bounds of the mesh, computed at mesh load time, in local space.
     Rect3 bounding_box;

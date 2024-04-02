@@ -52,10 +52,14 @@ linear --> sRGB:    pow(color, 1.0/2.2)    make numbers bigger     (RenderTarget
 GLOBAL DWORD current_window_width;
 GLOBAL DWORD current_window_height;
 
-// Projection matrices.
+// Projection matrices:
+// This is an affine transform. Some call it the "model matrix".
 GLOBAL M4x4         object_to_world_matrix = m4x4_identity();
+// This is the "view matrix"; it is the inverse of the camera's "model matrix". look_at() also makes one.
 GLOBAL M4x4_Inverse world_to_view_matrix   = {m4x4_identity(), m4x4_identity()};
-GLOBAL M4x4_Inverse view_to_proj_matrix    = {m4x4_identity(), m4x4_identity()};;
+// This matrix defines the clip space: perspective, orthographic, etc.
+GLOBAL M4x4_Inverse view_to_proj_matrix    = {m4x4_identity(), m4x4_identity()};
+// Our final matrix that transforms things from object space to clip space.
 GLOBAL M4x4         object_to_proj_matrix  = m4x4_identity();
 
 // D3D11 objects.
@@ -148,7 +152,7 @@ GLOBAL b32 is_using_pixel_coords;
 //
 //~ PBR renderer info
 //
-struct Vertex_XTBNUC
+struct Vertex_XTBNUCJW
 {
     V3 position;
     V3 tangent;
@@ -156,11 +160,20 @@ struct Vertex_XTBNUC
     V3 normal;
     V2 uv;
     V4 color;
+    
+    // V4 because MAX_JOINTS_PER_VERTEX is 4.
+    V4s joint_ids;
+    V4  weights;
 };
+
+#define MAX_JOINTS 64
+#define VSConstantsFlags_SHOULD_SKIN 0x1
 struct PBR_VS_Constants
 {
+    M4x4 skinning_matrices[MAX_JOINTS];
     M4x4 object_to_proj_matrix;
     M4x4 object_to_world_matrix;
+    u32  flags;
 };
 #define MAX_POINT_LIGHTS 5
 #define MAX_DIR_LIGHTS   2
@@ -553,12 +566,14 @@ FUNCTION void create_pbr_shader()
     // Input layout.
     D3D11_INPUT_ELEMENT_DESC layout_desc[] = 
     {
-        {"POSITION",  0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUC, position),  D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"TANGENT",   0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUC, tangent),   D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"BITANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUC, bitangent), D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"NORMAL",    0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUC, normal),    D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"TEXCOORD",  0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(Vertex_XTBNUC, uv),        D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"COLOR",     0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(Vertex_XTBNUC, color),     D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"POSITION",  0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUCJW, position),  D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TANGENT",   0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUCJW, tangent),   D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"BITANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUCJW, bitangent), D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"NORMAL",    0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUCJW, normal),    D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD",  0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(Vertex_XTBNUCJW, uv),        D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"COLOR",     0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(Vertex_XTBNUCJW, color),     D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"JOINT_IDS", 0, DXGI_FORMAT_R32G32B32A32_SINT,  0, offsetof(Vertex_XTBNUCJW, joint_ids),     D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"WEIGHTS",   0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(Vertex_XTBNUCJW, weights),     D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
     
     //
@@ -925,6 +940,12 @@ FUNCTION void set_view_to_proj()
 FUNCTION void set_world_to_view(M4x4_Inverse matrix)
 {
     world_to_view_matrix = matrix;
+}
+
+FUNCTION void set_world_to_view_from_camera(M4x4 camera_object_to_word)
+{
+    invert(camera_object_to_word, &world_to_view_matrix.forward);
+    world_to_view_matrix.inverse = camera_object_to_word;
 }
 
 FUNCTION void set_object_to_world(V3 position, Quaternion orientation, V3 scale)

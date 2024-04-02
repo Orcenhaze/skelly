@@ -8,6 +8,10 @@ struct VS_Input
 	float3 normal    : NORMAL;
 	float2 uv        : TEXCOORD;
 	float4 color     : COLOR;
+
+	// V4 because MAX_JOINTS_PER_VERTEX is 4.
+    int4   joint_ids : JOINT_IDS;
+    float4 weights   : WEIGHTS;
 };
 
 struct PS_Input
@@ -19,10 +23,15 @@ struct PS_Input
 	float3   pos_world  : POS_WORLD;
 };
 
+#define MAX_JOINTS_PER_VERTEX 4
+#define MAX_JOINTS 64
+#define VSConstantsFlags_SHOULD_SKIN 0x1
 cbuffer VS_Constants : register(b0)
 {
+	float4x4 skinning_matrices[MAX_JOINTS];
 	float4x4 object_to_proj_matrix;
 	float4x4 object_to_world_matrix;
+	uint flags;
 }
 
 static const float PI = 3.14159265f;
@@ -69,15 +78,50 @@ Texture2D<float4> ao_map         : register(t4);
 
 PS_Input vs(VS_Input input)
 {
-	float3 pos_world = mul(object_to_world_matrix, float4(input.position, 1.0f)).xyz;
+	//
+	// Skin the input vertex and normal if required.
+	//
+	float4 pos;
+	float4 nor;
+	if (flags & VSConstantsFlags_SHOULD_SKIN) {
+		pos = float4(0,0,0,0);
+		nor = float4(0,0,0,0);
+		
+		for (int piece_index = 0; piece_index < MAX_JOINTS_PER_VERTEX; piece_index++) {
+			int joint_id = input.joint_ids[piece_index];
+			if (joint_id == -1) continue;
+			if (joint_id >= MAX_JOINTS) {
+				pos = float4(input.position, 1.0f);
+				nor = float4(input.normal,   0.0f);
+				break;
+			}
+			
+			float4x4 m = skinning_matrices[joint_id];
+			pos       += mul(m, float4(input.position, 1.0f)) * input.weights[piece_index];
+			nor       += mul(m, float4(input.normal,   0.0f)) * input.weights[piece_index];
+		}
 
+		if (pos.w)
+			pos.xyz /= pos.w;
+
+		pos.w = 1.0f;
+		nor.w = 0.0f;
+	} else {
+		pos = float4(input.position, 1.0f);
+		nor = float4(input.normal,   0.0f);
+	}
+
+	//
 	// Convert to world space.
+	//
+	float3 pos_world = mul(object_to_world_matrix, pos).xyz;
+
 	float3 t = normalize(mul(object_to_world_matrix, float4(input.tangent,   0.0f)).xyz);
 	float3 b = normalize(mul(object_to_world_matrix, float4(input.bitangent, 0.0f)).xyz);
-	float3 n = normalize(mul(object_to_world_matrix, float4(input.normal,    0.0f)).xyz);
+	float3 n = normalize(mul(object_to_world_matrix, nor                          ).xyz);
 
 	PS_Input output;
-	output.position   = mul(object_to_proj_matrix, float4(input.position, 1.0f));
+	output.position   = mul(object_to_proj_matrix, pos);
 	output.tbn        = float3x3(t, b, n);
 	output.uv         = input.uv;
 	output.color      = input.color;

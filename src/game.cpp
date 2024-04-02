@@ -9,7 +9,7 @@
 #include "editor.cpp"
 #endif
 
-FUNCTION void load_textures(Catalog<Texture> *catalog)
+FUNCTION void load_textures(Arena *arena, Catalog<Texture> *catalog)
 {
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
@@ -20,9 +20,8 @@ FUNCTION void load_textures(Catalog<Texture> *catalog)
     File_Info *info       = file_group.first_file_info;
     
     while (info) {
-        // Use permanent arena for strings to persist.
-        String8 name = str8_copy(os->permanent_arena, info->base_name);
-        String8 path = str8_copy(os->permanent_arena, info->full_path);
+        String8 name = str8_copy(arena, info->base_name);
+        String8 path = str8_copy(arena, info->full_path);
         
         Texture tex  = {};
         d3d11_load_texture(&tex, path);
@@ -33,7 +32,7 @@ FUNCTION void load_textures(Catalog<Texture> *catalog)
     }
 }
 
-FUNCTION void load_meshes(Catalog<Triangle_Mesh> *catalog)
+FUNCTION void load_meshes(Arena *arena, Catalog<Triangle_Mesh> *catalog)
 {
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
@@ -44,13 +43,12 @@ FUNCTION void load_meshes(Catalog<Triangle_Mesh> *catalog)
     File_Info *info       = file_group.first_file_info;
     
     while (info) {
-        // Use permanent arena for strings to persist.
-        String8 name = str8_copy(os->permanent_arena, info->base_name);
-        String8 path = str8_copy(os->permanent_arena, info->full_path);
+        String8 name = str8_copy(arena, info->base_name);
+        String8 path = str8_copy(arena, info->full_path);
         
         Triangle_Mesh mesh = {};
         mesh.name = name;
-        load_triangle_mesh(&mesh, path);
+        load_triangle_mesh(arena, &mesh, path);
         
         add(catalog, name, mesh);
         
@@ -58,7 +56,7 @@ FUNCTION void load_meshes(Catalog<Triangle_Mesh> *catalog)
     }
 }
 
-FUNCTION void load_animations(Catalog<Sampled_Animation> *catalog)
+FUNCTION void load_animations(Arena *arena, Catalog<Sampled_Animation> *catalog)
 {
     Arena_Temp scratch = get_scratch(0, 0);
     defer(free_scratch(scratch));
@@ -69,13 +67,12 @@ FUNCTION void load_animations(Catalog<Sampled_Animation> *catalog)
     File_Info *info       = file_group.first_file_info;
     
     while (info) {
-        // Use permanent arena for strings to persist.
-        String8 name = str8_copy(os->permanent_arena, info->base_name);
-        String8 path = str8_copy(os->permanent_arena, info->full_path);
+        String8 name = str8_copy(arena, info->base_name);
+        String8 path = str8_copy(arena, info->full_path);
         
         Sampled_Animation anim = {};
         anim.name = name;
-        load_sampled_animation(&anim, path);
+        load_sampled_animation(arena, &anim, path);
         
         add(catalog, name, anim);
         
@@ -86,43 +83,70 @@ FUNCTION void load_animations(Catalog<Sampled_Animation> *catalog)
 FUNCTION void control_camera(Camera *cam)
 {
     V3 delta_mouse = game->delta_mouse;
-    f32 dt = os->dt;
+    f32 dt         = os->dt;
+    f32 turn_speed = 2.0f;
     
-    V3 cam_p = cam->position;
-    V3 cam_f = cam->forward;
-    V3 cam_r = normalize_or_zero(cross(cam_f, V3U));
+    Entity *player   = get_player(&game->entity_manager);
+    V3 cam_r         = get_right(cam->object_to_world);
+    V3 cam_f         = get_forward(cam->object_to_world);
     
-    f32 speed = 2.0f;
-    if (key_held(&os->tick_input, Key_SHIFT))
-        speed *= 3.0f;
-    
-    if (key_held(&os->tick_input, Key_W)) 
-        cam_p +=  cam_f * speed * dt;
-    if (key_held(&os->tick_input, Key_S))
-        cam_p += -cam_f * speed * dt;
-    if (key_held(&os->tick_input, Key_D))
-        cam_p +=  cam_r * speed * dt;
-    if (key_held(&os->tick_input, Key_A))
-        cam_p += -cam_r * speed * dt;
-    if (key_held(&os->tick_input, Key_E))
-        cam_p +=  V3U * speed * dt;
-    if (key_held(&os->tick_input, Key_Q))
-        cam_p += -V3U * speed * dt;
-    
-    if (key_held(&os->tick_input, Key_MMIDDLE)) {
-        Quaternion yaw = quaternion_from_axis_angle(V3U, -speed*delta_mouse.x);
-        cam_f = yaw * cam_f;
+    if (cam->mode == CameraMode_GAME) {
+        V3 target = (player->position + 2.0f*V3U);
         
-        Quaternion pitch = quaternion_from_axis_angle(cam_r, speed*delta_mouse.y);
-        if(ABS(dot(V3U, pitch*cam_f)) < 0.98f)
-            cam_f = pitch*cam_f;
+        Quaternion yaw = quaternion_from_axis_angle(V3U, -turn_speed*delta_mouse.x);
+        cam->position  = rotate_point_around_pivot(cam->position, target, yaw);
+        
+        Quaternion pitch = quaternion_from_axis_angle(cam_r, turn_speed*delta_mouse.y);
+        cam->position    = rotate_point_around_pivot(cam->position, target, pitch);
+        
+        // @Todo: Limit the pitch angle!
+        f32 pitch_min = +7 * DEGS_TO_RADS;
+        f32 pitch_max = +55 * DEGS_TO_RADS;
+        f32 angle     = _arccos(dot(V3F, pitch*cam_f));
+        if(angle > pitch_min && angle < pitch_max) {
+        }
+        
+        // Make camera always maintain desired distance from target.
+        f32 desired_distance      = 5.0f; // In units.
+        V3 desired_camera_postion = target + desired_distance * normalize_or_z_axis(cam->position - target);
+        cam->position = move_towards(cam->position, desired_camera_postion, dt, 8.0f);
+        
+        cam->orientation = quaternion_look_at(target - cam->position, V3U);
+        cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, cam->orientation, v3(1));
     }
+#if DEVELOPER
+    else if (cam->mode == CameraMode_DEBUG) {
+        if (key_held(&os->tick_input, Key_SHIFT))
+            turn_speed *= 3.0f;
+        
+        if (key_held(&os->tick_input, Key_MMIDDLE)) {
+            Quaternion yaw   = quaternion_from_axis_angle(V3U,  -turn_speed*delta_mouse.x);
+            Quaternion pitch = quaternion_from_axis_angle(cam_r, turn_speed*delta_mouse.y);
+            cam->orientation = yaw * cam->orientation;
+            if(ABS(dot(V3U, pitch*cam_f)) < 0.98f)
+                cam->orientation = pitch * cam->orientation;
+        }
+        
+        cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, cam->orientation, v3(1));
+        cam_r = get_right(cam->object_to_world);
+        cam_f = get_forward(cam->object_to_world);
+        
+        if (key_held(&os->tick_input, Key_W)) 
+            cam->position +=  cam_f * turn_speed * dt;
+        if (key_held(&os->tick_input, Key_S))
+            cam->position += -cam_f * turn_speed * dt;
+        if (key_held(&os->tick_input, Key_D))
+            cam->position +=  cam_r * turn_speed * dt;
+        if (key_held(&os->tick_input, Key_A))
+            cam->position += -cam_r * turn_speed * dt;
+        if (key_held(&os->tick_input, Key_E))
+            cam->position +=  V3U * turn_speed * dt;
+        if (key_held(&os->tick_input, Key_Q))
+            cam->position += -V3U * turn_speed * dt;
+    }
+#endif
     
-    cam->position = cam_p;
-    cam->forward  = cam_f;
-    cam->matrix   = look_at(cam->position, 
-                            cam->position + cam->forward, 
-                            V3U);
+    set_world_to_view_from_camera(game->camera.object_to_world);
 }
 
 FUNCTION void game_init()
@@ -133,24 +157,30 @@ FUNCTION void game_init()
     catalog_init(&game->mesh_catalog);
     catalog_init(&game->animation_catalog);
     
-    entity_manager_init(&game->entity_manager);
-    
-    set_view_to_proj();
-    
-    // Init camera.
-    game->camera = {{-2.0f, 3.0f, 5.0f}, V3F};
-    control_camera(&game->camera);
-    set_world_to_view(game->camera.matrix);
-    
     // Load assets. Textures first because meshes reference them.
-    load_textures(&game->texture_catalog);
-    load_meshes(&game->mesh_catalog);
-    load_animations(&game->animation_catalog);
+    //
+    // @Note: Right now we have no maps and no map arena, so we'll just keep everything in memory.
+    load_textures(os->permanent_arena, &game->texture_catalog);
+    load_meshes(os->permanent_arena, &game->mesh_catalog);
+    load_animations(os->permanent_arena, &game->animation_catalog);
     
     // Set initial default dir light.
     game->num_dir_lights = 1;
     game->dir_lights[0]  = default_dir_light();
+    
+    Triangle_Mesh *player_mesh = find(&game->mesh_catalog, S8LIT("guy"));
+    entity_manager_init(&game->entity_manager, player_mesh);
+    
+    // Init camera.
+    game->camera;
+    game->camera.position    = {0.0f, 4.0f, 4.0f};
+    game->camera.orientation = quaternion_identity();
+    game->camera.mode = CameraMode_DEBUG;
+    control_camera(&game->camera);
+    
+    set_view_to_proj();
 }
+
 
 FUNCTION void game_update()
 {
@@ -158,8 +188,13 @@ FUNCTION void game_update()
     game->delta_mouse = os->mouse_ndc - old_ndc;
     old_ndc           = os->mouse_ndc;
     
+#if DEVELOPER
+    if (key_pressed(&os->tick_input, Key_F8)){
+        game->camera.mode = game->camera.mode == CameraMode_GAME? CameraMode_DEBUG : CameraMode_GAME;
+    }
+#endif;
+    
     control_camera(&game->camera);
-    set_world_to_view(game->camera.matrix);
     
     game->mouse_world = unproject(game->camera.position, 
                                   1.0f, 
@@ -167,10 +202,12 @@ FUNCTION void game_update()
                                   world_to_view_matrix, 
                                   view_to_proj_matrix);
     
+    Entity_Manager *manager = &game->entity_manager;
+    Entity *player = get_player(manager);
+    
     //
     // Update all entities.
     //
-    Entity_Manager *manager = &game->entity_manager;
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
         update_entity_transform(e);
@@ -210,8 +247,8 @@ FUNCTION void game_update()
             if (key_held(&os->tick_input, Key_ALT) && key_pressed(&os->tick_input, Key_MLEFT)) {
                 s32 end_index = (s32)manager->selected_entities.count - 1;
                 for (s32 i = 0; i < (end_index + 1); i++) {
-                    Entity e = *find_entity(manager, manager->selected_entities[i]);
-                    u32 new_entity_id = register_new_entity(&game->entity_manager, e);
+                    Entity *e = find_entity(manager, manager->selected_entities[i]);
+                    u32 new_entity_id = register_new_entity(&game->entity_manager, e->mesh, e->name, e->position, e->orientation);
                     add_entity_selection(manager, new_entity_id);
                 }
                 
@@ -229,7 +266,7 @@ FUNCTION void game_update()
     //
     if (key_pressed(&os->tick_input, Key_MLEFT) && !gizmo_is_active) {
         f32 sort_index      = F32_MAX;
-        s32 best_entity_id  = -1;
+        u32 best_entity_id  = U32_MAX;
         b32 multi_select    = key_held(&os->tick_input, Key_CONTROL);
         
         // Pick closest entity to camera (iff we intersect with one).
@@ -245,15 +282,21 @@ FUNCTION void game_update()
              
     */
             
-            V3 o = (e->object_to_world_matrix.inverse * camera_ray.origin);
-            V3 d = (e->object_to_world_matrix.inverse * v4(camera_ray.direction, 0.0f)).xyz;
+            V3 o = transform_point(e->object_to_world_matrix.inverse, camera_ray.origin);
+            V3 d = transform_vector(e->object_to_world_matrix.inverse, camera_ray.direction);
             
             // camera ray in object space of entity mesh.
             Ray ray_object = {o, normalize(d)};
             
+            // Early out.
+            if (ray_box_intersect(&ray_object, mesh->bounding_box) == FALSE)
+                continue;
+            
             V3 *vertices = mesh->vertices.data;
-            if (mesh->flags & MeshFlags_ANIMATED)
+            if (mesh->flags & MeshFlags_ANIMATED) {
+                skin_mesh(e->animation_player);
                 vertices = mesh->skinned_vertices.data;
+            }
             
             b32 is_hit = ray_mesh_intersect(&ray_object, mesh->vertices.count, vertices, mesh->indices.count, mesh->indices.data);
             if (is_hit && (ray_object.t < sort_index)) {
@@ -262,7 +305,7 @@ FUNCTION void game_update()
             }
         }
         
-        if (best_entity_id != -1) {
+        if (best_entity_id != U32_MAX) {
             if (multi_select)
                 add_entity_selection(manager, best_entity_id);
             else
@@ -277,16 +320,28 @@ FUNCTION void game_update()
 
 FUNCTION void game_render()
 {
+    Entity_Manager *manager = &game->entity_manager;
+    
 #if DEVELOPER
     // Draw simple wireframe quad instead of viewport grid for now.
     immediate_begin(TRUE);
     set_texture(0);
     immediate_rect_3d({}, V3U, 200.0f, {0.8f, 0.8f, 0.8f, 1.0f});
     immediate_end();
+    
+    Entity *player = get_player(manager);
+    immediate_begin();
+    V3 o = player->position;
+    V3 x = get_right(player->object_to_world_matrix.forward);
+    V3 y = get_up(player->object_to_world_matrix.forward);
+    V3 z = -get_forward(player->object_to_world_matrix.forward);
+    immediate_line_3d(o, o + 2.0f * x, v4(1, 0, 0, 1));
+    immediate_line_3d(o, o + 2.0f * y, v4(0, 1, 0, 1));
+    immediate_line_3d(o, o + 2.0f * z, v4(0, 0, 1, 1));
+    immediate_end();
 #endif
     
     // Render all entities.
-    Entity_Manager *manager = &game->entity_manager;
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
         draw_entity(e);

@@ -16,8 +16,8 @@ FUNCTION Animation_Player* create_animation_player_for_entity(Entity *e)
         return 0;
     }
     
-    // @Todo: Shouldn't use permanent_arena here.
-    Animation_Player *new_player = PUSH_STRUCT_ZERO(os->permanent_arena, Animation_Player);
+    Animation_Player *new_player = (Animation_Player *) malloc(sizeof(Animation_Player));
+    ASSERT(new_player);
     init(new_player);
     set_mesh(new_player, e->mesh);
     
@@ -25,39 +25,46 @@ FUNCTION Animation_Player* create_animation_player_for_entity(Entity *e)
     return new_player;
 }
 
-FUNCTION Entity create_default_entity()
+FUNCTION void set_mesh_on_entity(Entity *entity, Triangle_Mesh *mesh)
 {
-    Entity result = {};
-    result.orientation = quaternion_identity();
-    result.scale       = v3(1.0f);
-    update_entity_transform(&result);
+    if (!mesh) return;
     
-    // @Cleanup: First mesh in catalog is default for now...
-    result.mesh = find_from_index(&game->mesh_catalog, 0);
+    Triangle_Mesh *old_mesh = entity->mesh;
+    entity->mesh = mesh;
     
-    return result;
+    if (mesh->flags & MeshFlags_ANIMATED) {
+        // If first time setting mesh, then create animation player.
+        if (!old_mesh || !entity->animation_player)
+            create_animation_player_for_entity(entity);
+        else
+            set_mesh(entity->animation_player, mesh);
+    } else {
+        if (entity->animation_player)
+            destroy(&entity->animation_player);
+    }
 }
 
-FUNCTION void entity_manager_init(Entity_Manager *manager)
+FUNCTION u32 register_new_entity(Entity_Manager *manager, Triangle_Mesh *mesh, 
+                                 String8 name   = S8ZERO,
+                                 V3 pos         = V3ZERO, 
+                                 Quaternion ori = quaternion_identity(), 
+                                 V3 scale       = v3(1.0f))
 {
-    // @Todo: Still need to find a way to avoid reserving 8GB because of default ARENA_MAX_DEFAULT... ugh!
-    table_init(&manager->entity_table);
-    array_init(&manager->all_entities);
+    ASSERT(mesh);
     
-#if DEVELOPER
-    array_init(&manager->selected_entities);
-    manager->selected_entity = 0;
-#endif
-}
-
-FUNCTION u32 register_new_entity(Entity_Manager *manager, Entity entity)
-{
+    Entity entity = {};
+    entity.position    = pos;
+    entity.orientation = ori;
+    entity.scale       = scale;
+    update_entity_transform(&entity);
+    
     entity.id = entity_id_counter++;
     
-    // @Todo: Shouldn't use permanent_arena here...
-    // @Cleanup: Make sure newly created entity always has a unique name.
-    String8 name = entity.mesh? entity.mesh->name : S8LIT("unnamed");
-    entity.name  = sprint(os->permanent_arena, "%S_%u", name, entity.id);
+    set_mesh_on_entity(&entity, mesh);
+    
+    // Make sure newly created entity always has a unique name.
+    String8 n = name.data? name : entity.mesh? entity.mesh->name : S8LIT("unnamed");
+    entity.name  = sprint(os->permanent_arena, "%S_%u", n, entity.id);
     
     table_add(&manager->entity_table, entity.id, entity);
     array_add(&game->entity_manager.all_entities, entity.id);
@@ -65,9 +72,30 @@ FUNCTION u32 register_new_entity(Entity_Manager *manager, Entity entity)
     return entity.id;
 }
 
+FUNCTION void entity_manager_init(Entity_Manager *manager, Triangle_Mesh *player_mesh)
+{
+    // @Todo: Still need to find a way to avoid reserving 8GB because of default ARENA_MAX_DEFAULT... ugh!
+    table_init(&manager->entity_table);
+    array_init(&manager->all_entities);
+    
+    // Create player entity.
+    register_new_entity(manager, player_mesh, S8LIT("player"));
+    
+#if DEVELOPER
+    array_init(&manager->selected_entities);
+    manager->selected_entity = 0;
+#endif
+}
+
 FUNCTION Entity* find_entity(Entity_Manager *manager, u32 entity_id)
 {
     Entity *e = table_find_pointer(&manager->entity_table, entity_id);
+    return e;
+}
+
+FUNCTION Entity* get_player(Entity_Manager *manager)
+{
+    Entity *e = table_find_pointer(&manager->entity_table, 0U);
     return e;
 }
 

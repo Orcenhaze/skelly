@@ -27,6 +27,14 @@ void catalog_init(Catalog<T> *catalog)
 }
 
 template<typename T>
+void catalog_free(Catalog<T> *catalog)
+{
+    table_free(&catalog->table);
+    table_free(&catalog->names);
+    array_free(&catalog->items);
+}
+
+template<typename T>
 void add(Catalog<T> *catalog, String8 name, T item)
 {
     u32 new_item_id = catalog_item_id_counter++;

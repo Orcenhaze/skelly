@@ -1,4 +1,4 @@
-/* orh.h - v0.83 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.84 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.84 - added V4s type. Added M3x3 type. Added some M4x4 helper functions. Removed operator*(M4x4, V3). Added FUNCDEF/inline to definitions as well.
 0.83 - fixed array_remove_range() assert. Added "found" parameter to table_find().
 0.82 - added per-tick and per-frame inputs for keys.
 0.81 - improved move_towards() api. Removed instrumentation and created orh_profiler.cpp instead.
@@ -107,6 +108,8 @@ TODO:
 [] arenas never decommit memory. Find a good way to add that.
 
 MISC:
+=== === ===
+
  About Flags:
  Toggle     : dst  ^=  src;
  Set        : dst  |=  src;
@@ -114,7 +117,101 @@ MISC:
  is_set     : (src & flag) == flag;
  is_cleared : (src & flag) == 0;
 
+=== === ===
+
+About affine transformation matrices:
+Our "object to world" matrices are considered affine transforms. They're also known as "model matrices".
+   Our affine transforms _in most cases_ contain only translation, rotation, and scale information.
+
+ Composing affine transformation matrices:
+We can compose an affine matrix with T = translation, R = rotation, S = scale matrices by doing:
+
+M = (T * (R * S)) --> We apply scale first, then rotation, then translation.
+
+  We can optimize by not having to do all these matrix muls:
+  Doing (R * S) only fills the upper 3x3 "linear" part and M._44 remains 1.0f, we can instead just multiply
+  columns of rotation matrix with components of scale vector and insert the translation vector in the last "4th" column.
+
+
+
+To compose the inverse (i- prefix denotes inverse):
+    iM = (iS * (iR * iT))
+    
+    iS = scale matrix using (1.0f / scale vector).
+    iR = transpose of original rotation matrix.
+    iT = translation matrix using (-translation vector).
+
+If the transform has no scaling, we can optimize with this:
+   https://stackoverflow.com/a/2625420
+
+=== === ===
+
+About matrix "pictures" - HMH EP.362:
+
+Let's say we are multiplying a matrix M and a vector v, then there are two modes/pictures/perspectives/conceptualizations of that multiplication:
+
+1) The row picture.
+2) The column picture.
+
+The row picture is essentially doing the dot product of the each row of the matrix M with the vector v:
+result.x = dot(M.row[0], v);
+result.y = dot(M.row[1], v);
+result.z = dot(M.row[2], v);
+
+The column picture is "scaling" the columns of the matrix M by corresponding components of vector v:
+result   = M.column[0]*v.x + M.column[1]*v.y + M.column[2]*v.z;
+
+Both produce the same result, only we are looking at the multiplication in two different ways.
+
+=== === ===
+
+About multiplication order and WORLD vs LOCAL:
+
+Multiplying quaternions to "add" rotation:
+Let's say we have an orientation represented by a quaternion (ori), and we wanted to modify that orientation by adding a rotation around some axis, then:
+We create a new quaternion that represents the rotation around said axis by some amount (call it q).
+
+// To rotate around WORLD axis.
+ori = q * ori; 
+
+// To rotate around LOCAL axis.
+ori = ori * q;
+
+This is also true of matrix multiplication.
+
+=== === ===
+
 */
+
+//
+// THE SHELF - DEPRECATED/UNUSED STUFF
+//
+#if 0
+FUNCDEF inline M4x4 translate_world(M4x4 affine, V3 t); // Along world axes.
+FUNCDEF inline M4x4 translate_local(M4x4 affine, V3 t); // Along local axes.
+FUNCDEF inline M4x4 translate(M4x4 affine, V3 t);
+M4x4 translate_world(M4x4 affine, V3 t)
+{
+    M4x4 result = affine;
+    result._14 += t.x;
+    result._24 += t.y;
+    result._34 += t.z;
+    return result;
+}
+M4x4 translate_local(M4x4 affine, V3 t)
+{
+    M4x4 result  = affine;
+    result._14  += dot(result.row[0].xyz, t);
+    result._24  += dot(result.row[1].xyz, t);
+    result._34  += dot(result.row[2].xyz, t);
+    return result;
+}
+M4x4 translate(M4x4 affine, V3 t)
+{
+    return translate_world(affine, t);
+}
+#endif
+
 
 #ifndef ORH_H
 #define ORH_H
@@ -407,6 +504,7 @@ union V3
     struct { f32 r, g, b; };
     f32 I[3];
 };
+extern const V3 V3_ZERO;
 extern const V3 V3_X_AXIS;
 extern const V3 V3_Y_AXIS;
 extern const V3 V3_Z_AXIS;
@@ -440,6 +538,12 @@ union V4
     f32 I[4];
 };
 
+union V4s
+{
+    struct { s32 x, y, z, w; };
+    s32 I[4];
+};
+
 union Quaternion
 {
     struct
@@ -455,14 +559,38 @@ union Quaternion
     f32 I[4];
 };
 
+union M3x3
+{
+    // @Note: We use row-major with column vectors!
+    
+    // @Note: If you decide to switch to column-major, make sure to modify functions that use [] indexing.
+    // Also make sure you're consistent with graphics API.
+    
+    f32 II [3][3];
+    f32 I     [9];
+    V3  row   [3];
+    struct
+    {
+        // First index is row.
+        f32 _11, _12, _13;
+        f32 _21, _22, _23;
+        f32 _31, _32, _33;
+    };
+};
+
 union M4x4
 {
     // @Note: We use row-major with column vectors!
+    
+    // @Note: If you decide to switch to column-major, make sure to modify functions that use [] indexing.
+    // Also make sure you're consistent with graphics API.
+    
     f32 II [4][4];
     f32 I    [16];
     V4  row   [4];
     struct
     {
+        // First index is row.
         f32 _11, _12, _13, _14;
         f32 _21, _22, _23, _24;
         f32 _31, _32, _33, _34;
@@ -516,110 +644,143 @@ FUNCDEF inline V3 floor(V3 v);
 FUNCDEF inline V2 ceil(V2 v);
 FUNCDEF inline V3 ceil(V3 v);
 
-FUNCDEF f32 frac(f32 x); // Output in range [0, 1]
-FUNCDEF V2  frac(V2 v);
-FUNCDEF V3  frac(V3 v);
+FUNCDEF inline f32 frac(f32 x); // Output in range [0, 1]
+FUNCDEF inline V2  frac(V2 v);
+FUNCDEF inline V3  frac(V3 v);
 
-FUNCDEF f32 safe_div(f32 x, f32 y, f32 n);
-FUNCDEF f32 safe_div0(f32 x, f32 y);
-FUNCDEF f32 safe_div1(f32 x, f32 y);
+FUNCDEF inline f32 safe_div(f32 x, f32 y, f32 n);
+FUNCDEF inline f32 safe_div0(f32 x, f32 y);
+FUNCDEF inline f32 safe_div1(f32 x, f32 y);
 
-FUNCDEF V2 v2(f32 x, f32 y);
-FUNCDEF V2 v2(f32 c);
+FUNCDEF inline b32 nearly_zero(f32 x);
 
-FUNCDEF V2u v2u(u32 x, u32 y);
-FUNCDEF V2u v2u(u32 c);
+FUNCDEF inline V2 v2(f32 x, f32 y);
+FUNCDEF inline V2 v2(f32 c);
 
-FUNCDEF V2s v2s(s32 x, s32 y);
-FUNCDEF V2s v2s(s32 c);
+FUNCDEF inline V2u v2u(u32 x, u32 y);
+FUNCDEF inline V2u v2u(u32 c);
 
-FUNCDEF V3 v3(f32 x, f32 y, f32 z);
-FUNCDEF V3 v3(f32 c);
-FUNCDEF V3 v3(V2 xy, f32 z);
+FUNCDEF inline V2s v2s(s32 x, s32 y);
+FUNCDEF inline V2s v2s(s32 c);
 
-FUNCDEF V4 v4(f32 x, f32 y, f32 z, f32 w);
-FUNCDEF V4 v4(f32 c);
-FUNCDEF V4 v4(V3 xyz, f32 w);
-FUNCDEF V4 v4(V2 xy, V2 zw);
+FUNCDEF inline V3 v3(f32 x, f32 y, f32 z);
+FUNCDEF inline V3 v3(f32 c);
+FUNCDEF inline V3 v3(V2 xy, f32 z);
 
-FUNCDEF V2 hadamard_mul(V2 a, V2 b);
-FUNCDEF V3 hadamard_mul(V3 a, V3 b);
-FUNCDEF V4 hadamard_mul(V4 a, V4 b);
+FUNCDEF inline V4 v4(f32 x, f32 y, f32 z, f32 w);
+FUNCDEF inline V4 v4(f32 c);
+FUNCDEF inline V4 v4(V3 xyz, f32 w);
+FUNCDEF inline V4 v4(V2 xy, V2 zw);
 
-FUNCDEF V2 hadamard_div(V2 a, V2 b);
-FUNCDEF V3 hadamard_div(V3 a, V3 b);
-FUNCDEF V4 hadamard_div(V4 a, V4 b);
+FUNCDEF inline V4s v4s(s32 c);
 
-FUNCDEF f32 dot(V2 a, V2 b);
-FUNCDEF s32 dot(V2s a, V2s b);
-FUNCDEF f32 dot(V3 a, V3 b);
-FUNCDEF f32 dot(V4 a, V4 b);
+FUNCDEF inline V2 hadamard_mul(V2 a, V2 b);
+FUNCDEF inline V3 hadamard_mul(V3 a, V3 b);
+FUNCDEF inline V4 hadamard_mul(V4 a, V4 b);
 
-FUNCDEF V2  perp(V2 v); // Counter-Clockwise
-FUNCDEF V3  cross(V3 a, V3 b);
+FUNCDEF inline V2 hadamard_div(V2 a, V2 b);
+FUNCDEF inline V3 hadamard_div(V3 a, V3 b);
+FUNCDEF inline V4 hadamard_div(V4 a, V4 b);
 
-FUNCDEF f32 length2(V2 v);
-FUNCDEF f32 length2(V3 v);
-FUNCDEF f32 length2(V4 v);
+FUNCDEF inline f32 dot(V2 a, V2 b);
+FUNCDEF inline s32 dot(V2s a, V2s b);
+FUNCDEF inline f32 dot(V3 a, V3 b);
+FUNCDEF inline f32 dot(V4 a, V4 b);
 
-FUNCDEF f32 length(V2 v);
-FUNCDEF f32 length(V3 v);
-FUNCDEF f32 length(V4 v);
+FUNCDEF inline V2  perp(V2 v); // Counter-Clockwise
+FUNCDEF inline V3  cross(V3 a, V3 b);
 
-FUNCDEF V2 min_v2(V2 a, V2 b);
-FUNCDEF V3 min_v3(V3 a, V3 b);
-FUNCDEF V4 min_v4(V4 a, V4 b);
+FUNCDEF inline f32 length2(V2 v);
+FUNCDEF inline f32 length2(V3 v);
+FUNCDEF inline f32 length2(V4 v);
 
-FUNCDEF V2 max_v2(V2 a, V2 b);
-FUNCDEF V3 max_v3(V3 a, V3 b);
-FUNCDEF V4 max_v4(V4 a, V4 b);
+FUNCDEF inline f32 length(V2 v);
+FUNCDEF inline f32 length(V3 v);
+FUNCDEF inline f32 length(V4 v);
 
-FUNCDEF V2 normalize(V2 v);
-FUNCDEF V3 normalize(V3 v);
-FUNCDEF V4 normalize(V4 v);
+FUNCDEF inline V2 min_v2(V2 a, V2 b);
+FUNCDEF inline V3 min_v3(V3 a, V3 b);
+FUNCDEF inline V4 min_v4(V4 a, V4 b);
 
-FUNCDEF V2 normalize_or_zero(V2 v);
-FUNCDEF V3 normalize_or_zero(V3 v);
-FUNCDEF V4 normalize_or_zero(V4 v);
+FUNCDEF inline V2 max_v2(V2 a, V2 b);
+FUNCDEF inline V3 max_v3(V3 a, V3 b);
+FUNCDEF inline V4 max_v4(V4 a, V4 b);
 
-FUNCDEF V3 normalize_or_z_axis(V3 v);
+FUNCDEF inline V2 normalize(V2 v);
+FUNCDEF inline V3 normalize(V3 v);
+FUNCDEF inline V4 normalize(V4 v);
 
-FUNCDEF V3 reflect(V3 incident, V3 normal);
+FUNCDEF inline V2 normalize_or_zero(V2 v);
+FUNCDEF inline V3 normalize_or_zero(V3 v);
+FUNCDEF inline V4 normalize_or_zero(V4 v);
 
-FUNCDEF f32        dot(Quaternion a, Quaternion b);
-FUNCDEF f32        length(Quaternion q);
-FUNCDEF Quaternion normalize(Quaternion q);
-FUNCDEF Quaternion normalize_or_identity(Quaternion q);
+FUNCDEF inline V3 normalize_or_x_axis(V3 v);
+FUNCDEF inline V3 normalize_or_y_axis(V3 v);
+FUNCDEF inline V3 normalize_or_z_axis(V3 v);
+
+FUNCDEF inline V3 reflect(V3 incident, V3 normal);
+
+FUNCDEF inline f32        dot(Quaternion a, Quaternion b);
+FUNCDEF inline f32        length(Quaternion q);
+FUNCDEF inline Quaternion normalize(Quaternion q);
+FUNCDEF inline Quaternion normalize_or_identity(Quaternion q);
 
 FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w);
 FUNCDEF inline Quaternion quaternion(V3 v, f32 w);
 FUNCDEF inline Quaternion quaternion_identity();
 
-FUNCDEF Quaternion quaternion_from_axis_angle(V3 axis, f32 angle); // Rotation around _axis_ by _angle_ radians.
-FUNCDEF inline Quaternion quaternion_from_axis_angle_turns(V3 axis, f32 angle_turns); // Rotation around _axis_ by _angle_ turns.
+FUNCDEF        Quaternion quaternion_from_m3x3(M3x3 const &affine);
+FUNCDEF inline Quaternion quaternion_from_m4x4(M4x4 const &affine);
+FUNCDEF inline Quaternion quaternion_look_at(V3 direction, V3 up);
+FUNCDEF inline Quaternion quaternion_from_axis_angle(V3 axis, f32 radians);
+FUNCDEF inline Quaternion quaternion_from_axis_angle_turns(V3 axis, f32 turns); // Rotation around _axis_ by _angle_ turns.
 
-FUNCDEF Quaternion quaternion_from_two_vectors_helper(V3 a, V3 b, f32 len_ab);
-FUNCDEF Quaternion quaternion_from_two_vectors(V3 a, V3 b);
-FUNCDEF Quaternion quaternion_from_two_normals(V3 a, V3 b);
+FUNCDEF        Quaternion quaternion_from_two_vectors_helper(V3 a, V3 b, f32 len_ab);
+FUNCDEF inline Quaternion quaternion_from_two_vectors(V3 a, V3 b);
+FUNCDEF inline Quaternion quaternion_from_two_normals(V3 a, V3 b);
 
-FUNCDEF Quaternion quaternion_conjugate(Quaternion q);
-FUNCDEF Quaternion quaternion_inverse(Quaternion q);
-FUNCDEF V3         quaternion_get_axis(Quaternion q);
-FUNCDEF f32        quaternion_get_angle(Quaternion q);
-FUNCDEF inline f32 quaternion_get_angle_turns(Quaternion q);
+FUNCDEF inline Quaternion quaternion_conjugate(Quaternion q);
+FUNCDEF inline Quaternion quaternion_inverse(Quaternion q);
+FUNCDEF inline V3         quaternion_get_axis(Quaternion q);
+FUNCDEF inline f32        quaternion_get_angle(Quaternion q);
+FUNCDEF inline f32        quaternion_get_angle_turns(Quaternion q);
 
-FUNCDEF M4x4 m4x4_identity();
-FUNCDEF M4x4 m4x4_from_quaternion(Quaternion q);
-FUNCDEF M4x4 m4x4_from_translation_rotation_scale(V3 translation, Quaternion rotation, V3 scale);
+FUNCDEF inline M3x3 m3x3_identity();
+FUNCDEF inline M3x3 m3x3(M4x4 const &m);
+FUNCDEF        M3x3 m3x3_from_quaternion(Quaternion q);
 
-FUNCDEF M4x4 transpose(M4x4 m);
-FUNCDEF b32  invert(M4x4 m, M4x4 *result);
-FUNCDEF V4   transform(M4x4 m, V4 v);
-FUNCDEF inline V3   get_column(M4x4 m, u32 c);
-FUNCDEF inline V3   get_row(M4x4 m, u32 r);
-FUNCDEF inline V3   get_translation(M4x4 m);
-FUNCDEF inline V3   get_scale(M4x4 m);
-FUNCDEF inline M4x4 get_rotation(M4x4 m);
+FUNCDEF inline M3x3 get_rotation(M3x3 const &m);
+FUNCDEF inline V3   get_scale(M3x3 const &m);
+
+FUNCDEF inline M3x3 transpose(M3x3 const &m);
+FUNCDEF inline V3   transform(M3x3 const &m, V3 v);
+
+FUNCDEF inline M4x4 m4x4_identity();
+FUNCDEF inline void m4x4_set_upper(M4x4 *m, M3x3 const &upper);
+FUNCDEF inline M4x4 m4x4_from_quaternion(Quaternion q);
+FUNCDEF        M4x4 m4x4_from_axis_angle(V3 axis, f32 radians);
+FUNCDEF inline M4x4 m4x4_from_axis_angle_turns(V3 axis, f32 turns);
+FUNCDEF inline M4x4 m4x4_from_translation_rotation_scale(V3 t, Quaternion r, V3 s);
+
+FUNCDEF inline V4   get_column(M4x4 const &m, u32 c);
+FUNCDEF inline V4   get_row(M4x4 const &m, u32 r);
+FUNCDEF inline V3   get_x_axis(M4x4 const &affine);
+FUNCDEF inline V3   get_y_axis(M4x4 const &affine);
+FUNCDEF inline V3   get_z_axis(M4x4 const &affine);
+FUNCDEF inline V3   get_forward(M4x4 const &affine);
+FUNCDEF inline V3   get_right(M4x4 const &affine);
+FUNCDEF inline V3   get_up(M4x4 const &affine);
+FUNCDEF inline V3   get_translation(M4x4 const &affine);
+FUNCDEF inline M4x4 get_rotation(M4x4 const &affine);
+FUNCDEF inline V3   get_scale(M4x4 const &affine);
+
+FUNCDEF inline M4x4 transpose(M4x4 const &m);
+FUNCDEF        b32  invert(M4x4 const &m, M4x4 *result);
+
+FUNCDEF inline V4   transform(M4x4 const &m, V4 v);
+FUNCDEF inline V3   transform_point(M4x4 const &m, V3 p);
+FUNCDEF inline V3   transform_vector(M4x4 const &m, V3 v);
+
 
 // Linear interpolation. Returns value between a and b based on fraction t.
 FUNCDEF inline f32 lerp(f32 a, f32 t, f32 b);
@@ -628,30 +789,30 @@ FUNCDEF inline V3  lerp(V3 a, f32 t, V3 b);
 FUNCDEF inline V4  lerp(V4 a, f32 t, V4 b);
 
 // Inverse of lerp. Returns fraction t, based on a value between a and b.
-FUNCDEF f32 unlerp(f32 a, f32 value, f32 b);
-FUNCDEF f32 unlerp(V2 a, V2 v, V2 b);
-FUNCDEF f32 unlerp(V3 a, V3 v, V3 b);
-FUNCDEF f32 unlerp(V4 a, V4 v, V4 b);
+FUNCDEF inline f32 unlerp(f32 a, f32 value, f32 b);
+FUNCDEF inline f32 unlerp(V2 a, V2 v, V2 b);
+FUNCDEF inline f32 unlerp(V3 a, V3 v, V3 b);
+FUNCDEF inline f32 unlerp(V4 a, V4 v, V4 b);
 
 // Remaps value from input range to output range.
-FUNCDEF f32 remap(f32 value, f32 imin, f32 imax, f32 omin, f32 omax);
-FUNCDEF V2  remap(V2 value, V2 imin, V2 imax, V2 omin, V2 omax);
-FUNCDEF V3  remap(V3 value, V3 imin, V3 imax, V3 omin, V3 omax);
-FUNCDEF V4  remap(V4 value, V4 imin, V4 imax, V4 omin, V4 omax);
+FUNCDEF inline f32 remap(f32 value, f32 imin, f32 imax, f32 omin, f32 omax);
+FUNCDEF inline V2  remap(V2 value, V2 imin, V2 imax, V2 omin, V2 omax);
+FUNCDEF inline V3  remap(V3 value, V3 imin, V3 imax, V3 omin, V3 omax);
+FUNCDEF inline V4  remap(V4 value, V4 imin, V4 imax, V4 omin, V4 omax);
 
-FUNCDEF Quaternion   lerp(Quaternion a, f32 t, Quaternion b);
-FUNCDEF f32        unlerp(Quaternion a, Quaternion q, Quaternion b);
-FUNCDEF Quaternion  nlerp(Quaternion a, f32 t, Quaternion b);
-FUNCDEF Quaternion  slerp(Quaternion a, f32 t, Quaternion b);
+FUNCDEF inline Quaternion   lerp(Quaternion a, f32 t, Quaternion b);
+FUNCDEF inline f32        unlerp(Quaternion a, Quaternion q, Quaternion b);
+FUNCDEF inline Quaternion  nlerp(Quaternion a, f32 t, Quaternion b);
+FUNCDEF        Quaternion  slerp(Quaternion a, f32 t, Quaternion b);
 
 FUNCDEF inline f32 smooth_step  (f32 edge0, f32 x, f32 edge1); // Output in range [0, 1]
 FUNCDEF inline f32 smoother_step(f32 edge0, f32 x, f32 edge1); // Output in range [0, 1]
 
-FUNCDEF f32 move_towards(f32 current, f32 target, f32 delta_time, f32 speed);
-FUNCDEF V2  move_towards(V2 current, V2 target, f32 delta_time, f32 speed);
-FUNCDEF V3  move_towards(V3 current, V3 target, f32 delta_time, f32 speed);
-FUNCDEF V2  rotate_point_around_pivot(V2 point, V2 pivot, Quaternion q);
-FUNCDEF V3  rotate_point_around_pivot(V3 point, V3 pivot, Quaternion q);
+FUNCDEF        f32 move_towards(f32 current, f32 target, f32 delta_time, f32 speed);
+FUNCDEF        V2  move_towards(V2 current, V2 target, f32 delta_time, f32 speed);
+FUNCDEF        V3  move_towards(V3 current, V3 target, f32 delta_time, f32 speed);
+FUNCDEF inline V2  rotate_point_around_pivot(V2 point, V2 pivot, Quaternion q);
+FUNCDEF inline V3  rotate_point_around_pivot(V3 point, V3 pivot, Quaternion q);
 
 FUNCDEF inline Range range(f32 min, f32 max);
 FUNCDEF inline Rect2 rect2(V2  min, V2  max);
@@ -668,10 +829,10 @@ FUNCDEF inline V3 get_size(Rect3 rect);
 FUNCDEF inline f32 get_width(Rect2 rect);
 FUNCDEF inline f32 get_height(Rect2 rect);
 
-FUNCDEF f32 repeat(f32 x, f32 max_y);
-FUNCDEF f32 ping_pong(f32 x, f32 max_y);
+FUNCDEF inline f32 repeat(f32 x, f32 max_y);
+FUNCDEF inline f32 ping_pong(f32 x, f32 max_y);
 
-FUNCDEF V3 bezier2(V3 p0, V3 p1, V3 p2, f32 t);
+FUNCDEF inline V3 bezier2(V3 p0, V3 p1, V3 p2, f32 t);
 
 FUNCDEF V4 hsv(f32 h, f32 s, f32 v);
 
@@ -734,7 +895,7 @@ inline V2 operator*(V2 a, V2 b)
 }
 inline V2 operator/(V2 v, f32 s)  
 { 
-    V2 result = operator*(v, 1.0f/s);
+    V2 result = {v.x/s, v.y/s};
     return result;
 }
 inline V2& operator+=(V2 &a, V2 b) 
@@ -855,9 +1016,19 @@ inline V3 operator*(V3 a, V3 b)
     V3 result = hadamard_mul(a, b);
     return result;
 }
+inline V3 operator/(V3 a, V3 b)  
+{ 
+    V3 result = hadamard_div(a, b);
+    return result;
+}
+inline V3& operator*=(V3 &a, V3 b)
+{ 
+    a = a * b;
+    return a;
+}
 inline V3 operator/(V3 v, f32 s)  
 { 
-    V3 result = operator*(v, 1.0f/s);
+    V3 result = {v.x/s, v.y/s, v.z/s};
     return result;
 }
 inline b32 operator==(V3 a, V3 b)
@@ -923,7 +1094,7 @@ inline V4 operator*(f32 s, V4 v)
 }
 inline V4 operator/(V4 v, f32 s)  
 { 
-    V4 result = operator*(v, 1.0f/s);
+    V4 result = {v.x/s, v.y/s, v.z/s, v.w/s};
     return result;
 }
 inline V4& operator+=(V4 &a, V4 b) 
@@ -1026,11 +1197,12 @@ inline V3 operator*(Quaternion q, V3 v)
     return result;
 }
 
-inline V3 operator*(M4x4 m, V3 v)
+inline V3 operator*(M3x3 m, V3 v)
 { 
-    V3 result = transform(m, v4(v, 1.0f)).xyz;
+    V3 result = transform(m, v);
     return result;
 }
+
 inline V4 operator*(M4x4 m, V4 v)
 { 
     V4 result = transform(m, v);
@@ -1114,16 +1286,16 @@ struct Arena_Temp
     u64    used;
 };
 
-FUNCDEF Arena*     arena_init(u64 max_size = ARENA_MAX_DEFAULT);
-FUNCDEF void       arena_free(Arena *arena);
-FUNCDEF void*      arena_push(Arena *arena, u64 size, u64 alignment);
-FUNCDEF void*      arena_push_zero(Arena *arena, u64 size, u64 alignment);
-FUNCDEF void       arena_pop(Arena *arena, u64 size);
-FUNCDEF void       arena_reset(Arena *arena);
-FUNCDEF Arena_Temp arena_temp_begin(Arena *arena);
-FUNCDEF void       arena_temp_end(Arena_Temp temp);
-FUNCDEF Arena_Temp get_scratch(Arena **conflict_array, s32 count);
-#define            free_scratch(temp) arena_temp_end(temp)
+FUNCDEF        Arena*      arena_init(u64 max_size = ARENA_MAX_DEFAULT);
+FUNCDEF inline void        arena_free(Arena *arena);
+FUNCDEF        void*       arena_push(Arena *arena, u64 size, u64 alignment);
+FUNCDEF inline void*       arena_push_zero(Arena *arena, u64 size, u64 alignment);
+FUNCDEF inline void        arena_pop(Arena *arena, u64 size);
+FUNCDEF inline void        arena_reset(Arena *arena);
+FUNCDEF inline Arena_Temp  arena_temp_begin(Arena *arena);
+FUNCDEF inline void        arena_temp_end(Arena_Temp temp);
+FUNCDEF        Arena_Temp  get_scratch(Arena **conflict_array, s32 count);
+#define free_scratch(temp) arena_temp_end(temp)
 
 /////////////////////////////////////////
 //~
@@ -1189,7 +1361,7 @@ FUNCDEF String8 extract_parent_folder(String8 path);
 
 //~ String misc helpers
 FUNCDEF inline void advance(String8 *s, u64 count);
-FUNCDEF        void get(String8 *s, void *data, u64 size);
+FUNCDEF inline void get(String8 *s, void *data, u64 size);
 FUNCDEF        u32  get_hash(String8 s);
 
 template<typename T>
@@ -1908,194 +2080,195 @@ FUNCDEF V3    unproject(V3 camera_position, f32 Zworld_distance_from_camera, V3 
 #    pragma clang diagnostic ignored "-Wmissing-braces"
 #endif
 
+const V3 V3_ZERO    = {};
 const V3 V3_X_AXIS  = {1.0f, 0.0f, 0.0f};
 const V3 V3_Y_AXIS  = {0.0f, 1.0f, 0.0f};
 const V3 V3_Z_AXIS  = {0.0f, 0.0f, 1.0f};
-const V3 V3_RIGHT   = {1.0f, 0.0f, 0.0f};
-const V3 V3_UP      = {0.0f, 1.0f, 0.0f};
-const V3 V3_FORWARD = {0.0f, 0.0f, -1.0f};
+const V3 V3_RIGHT   =  V3_X_AXIS;
+const V3 V3_UP      =  V3_Y_AXIS;
+const V3 V3_FORWARD = -V3_Z_AXIS;
 
 #if !defined(ORH_NO_STD_MATH) || COMPILER_CL
 #include <math.h>
-f32 _pow(f32 x, f32 y)     
+FUNCDEF inline f32 _pow(f32 x, f32 y)     
 {
     f32 result = powf(x, y); 
     return result;
 }
-f64 _mod(f64 x, f64 y)     
+FUNCDEF inline f64 _mod(f64 x, f64 y)     
 {
     f64 result = fmod(x, y); 
     return result;
 }
-f32 _mod(f32 x, f32 y)     
+FUNCDEF inline f32 _mod(f32 x, f32 y)     
 {
     f32 result = fmodf(x, y); 
     return result;
 }
-f32 _sqrt(f32 x)           
+FUNCDEF inline f32 _sqrt(f32 x)           
 {
     f32 result = sqrtf(x); 
     return result;
 }
-f32 _sin(f32 radians)      
+FUNCDEF inline f32 _sin(f32 radians)      
 {
     f32 result = sinf(radians); 
     return result;
 }
-f32 _cos(f32 radians)      
+FUNCDEF inline f32 _cos(f32 radians)      
 {
     f32 result = cosf(radians); 
     return result;
 }
-f32 _tan(f32 radians)      
+FUNCDEF inline f32 _tan(f32 radians)      
 {
     f32 result = tanf(radians); 
     return result;
 }
-f32 _arcsin(f32 x)         
+FUNCDEF inline f32 _arcsin(f32 x)         
 {
     f32 result = asinf(x); 
     return result;
 }
-f32 _arccos(f32 x)         
+FUNCDEF inline f32 _arccos(f32 x)         
 {
     f32 result = acosf(x); 
     return result;
 }
-f32 _arctan(f32 x)         
+FUNCDEF inline f32 _arctan(f32 x)         
 {
     f32 result = atanf(x); 
     return result;
 }
-f32 _arctan2(f32 y, f32 x) 
+FUNCDEF inline f32 _arctan2(f32 y, f32 x) 
 {
     f32 result = atan2f(y, x); 
     return result;
 }
-f32 _round(f32 x)          
+FUNCDEF inline f32 _round(f32 x)          
 {
     f32 result = roundf(x); 
     return result;
 }
-f32 _floor(f32 x)          
+FUNCDEF inline f32 _floor(f32 x)          
 {
     f32 result = floorf(x); 
     return result;
 }
-f32 _ceil(f32 x)           
+FUNCDEF inline f32 _ceil(f32 x)           
 {
     f32 result = ceilf(x); 
     return result;
 }
 #else
-f32 _pow(f32 x, f32 y)     
+FUNCDEF inline f32 _pow(f32 x, f32 y)     
 {
     f32 result = __builtin_powf(x, y); 
     return result;
 }
-f64 _mod(f64 x, f64 y)     
+FUNCDEF inline f64 _mod(f64 x, f64 y)     
 {
     f64 result = __builtin_fmod(x, y);
     return result;
 }
-f32 _mod(f32 x, f32 y)     
+FUNCDEF inline f32 _mod(f32 x, f32 y)     
 {
     f32 result = __builtin_fmodf(x, y); 
     return result;
 }
-f32 _sqrt(f32 x)           
+FUNCDEF inline f32 _sqrt(f32 x)           
 {
     f32 result = __builtin_sqrtf(x); 
     return result;
 }
-f32 _sin(f32 radians)      
+FUNCDEF inline f32 _sin(f32 radians)      
 {
     f32 result = __builtin_sinf(radians); 
     return result;
 }
-f32 _cos(f32 radians)      
+FUNCDEF inline f32 _cos(f32 radians)      
 {
     f32 result = __builtin_cosf(radians); 
     return result;
 }
-f32 _tan(f32 radians)      
+FUNCDEF inline f32 _tan(f32 radians)      
 {
     f32 result = __builtin_tanf(radians); 
     return result;
 }
-f32 _arcsin(f32 x)         
+FUNCDEF inline f32 _arcsin(f32 x)         
 {
     f32 result = __builtin_asinf(x); 
     return result;
 }
-f32 _arccos(f32 x)         
+FUNCDEF inline f32 _arccos(f32 x)         
 {
     f32 result = __builtin_acosf(x); 
     return result;
 }
-f32 _arctan(f32 x)
+FUNCDEF inline f32 _arctan(f32 x)
 {
     f32 result = __builtin_atanf(x); 
     return result;
 }
-f32 _arctan2(f32 y, f32 x)
+FUNCDEF inline f32 _arctan2(f32 y, f32 x)
 {
     f32 result = __builtin_atan2f(y, x); 
     return result;
 }
-f32 _round(f32 x)          
+FUNCDEF inline f32 _round(f32 x)          
 {
     f32 result = __builtin_roundf(x); 
     return result;
 }
-f32 _floor(f32 x)          
+FUNCDEF inline f32 _floor(f32 x)          
 {
     f32 result = __builtin_floorf(x); 
     return result;
 }
-f32 _ceil(f32 x)           
+FUNCDEF inline f32 _ceil(f32 x)           
 {
     f32 result = __builtin_ceilf(x); 
     return result;
 }
 #endif
-f32 _sin_turns(f32 turns)
+FUNCDEF inline f32 _sin_turns(f32 turns)
 {
     return _sin(turns * TURNS_TO_RADS);
 }
-f32 _cos_turns(f32 turns)
+FUNCDEF inline f32 _cos_turns(f32 turns)
 {
     return _cos(turns * TURNS_TO_RADS);
 }
-f32 _tan_turns(f32 turns)
+FUNCDEF inline f32 _tan_turns(f32 turns)
 {
     return _tan(turns * TURNS_TO_RADS);
 }
-f32 _arcsin_turns(f32 x)
+FUNCDEF inline f32 _arcsin_turns(f32 x)
 {
     return _arcsin(x) * RADS_TO_TURNS;
 }
-f32 _arccos_turns(f32 x)
+FUNCDEF inline f32 _arccos_turns(f32 x)
 {
     return _arccos(x) * RADS_TO_TURNS;
 }
-f32 _arctan_turns(f32 x)
+FUNCDEF inline f32 _arctan_turns(f32 x)
 {
     return _arctan(x) * RADS_TO_TURNS;
 }
-f32 _arctan2_turns(f32 y, f32 x)
+FUNCDEF inline f32 _arctan2_turns(f32 y, f32 x)
 {
     return _arctan2(y, x) * RADS_TO_TURNS;
 }
 
-V2 pow(V2 v, f32 y)
+FUNCDEF inline V2 pow(V2 v, f32 y)
 {
     V2 result = {};
     result.x = _pow(v.x, y);
     result.y = _pow(v.y, y);
     return result;
 }
-V3 pow(V3 v, f32 y)
+FUNCDEF inline V3 pow(V3 v, f32 y)
 {
     V3 result = {};
     result.x = _pow(v.x, y);
@@ -2103,14 +2276,14 @@ V3 pow(V3 v, f32 y)
     result.z = _pow(v.z, y);
     return result;
 }
-V2 clamp(V2 min, V2 x, V2 max)
+FUNCDEF inline V2 clamp(V2 min, V2 x, V2 max)
 {
     V2 result = {};
     result.x = CLAMP(min.x, x.x, max.x);
     result.y = CLAMP(min.y, x.y, max.y);
     return result;
 }
-V3 clamp(V3 min, V3 x, V3 max)
+FUNCDEF inline V3 clamp(V3 min, V3 x, V3 max)
 {
     V3 result = {};
     result.x = CLAMP(min.x, x.x, max.x);
@@ -2118,14 +2291,14 @@ V3 clamp(V3 min, V3 x, V3 max)
     result.z = CLAMP(min.z, x.z, max.z);
     return result;
 }
-V2 round(V2 v)
+FUNCDEF inline V2 round(V2 v)
 {
     V2 result = {};
     result.x  = _round(v.x);
     result.y  = _round(v.y);
     return result;
 }
-V3 round(V3 v)
+FUNCDEF inline V3 round(V3 v)
 {
     V3 result = {};
     result.x  = _round(v.x);
@@ -2133,14 +2306,14 @@ V3 round(V3 v)
     result.z  = _round(v.z);
     return result;
 }
-V2 floor(V2 v)
+FUNCDEF inline V2 floor(V2 v)
 {
     V2 result = {};
     result.x  = _floor(v.x);
     result.y  = _floor(v.y);
     return result;
 }
-V3 floor(V3 v)
+FUNCDEF inline V3 floor(V3 v)
 {
     V3 result = {};
     result.x  = _floor(v.x);
@@ -2148,14 +2321,14 @@ V3 floor(V3 v)
     result.z  = _floor(v.z);
     return result;
 }
-V2 ceil(V2 v)
+FUNCDEF inline V2 ceil(V2 v)
 {
     V2 result = {};
     result.x  = _ceil(v.x);
     result.y  = _ceil(v.y);
     return result;
 }
-V3 ceil(V3 v)
+FUNCDEF inline V3 ceil(V3 v)
 {
     V3 result = {};
     result.x  = _ceil(v.x);
@@ -2164,19 +2337,19 @@ V3 ceil(V3 v)
     return result;
 }
 
-f32 frac(f32 x)
+FUNCDEF inline f32 frac(f32 x)
 {
     f32 result = x - _floor(x);
     return result;
 }
-V2 frac(V2 v)
+FUNCDEF inline V2 frac(V2 v)
 {
     V2 result = {};
     result.x  = frac(v.x);
     result.y  = frac(v.y);
     return result;
 }
-V3 frac(V3 v)
+FUNCDEF inline V3 frac(V3 v)
 {
     V3 result = {};
     result.x  = frac(v.x);
@@ -2185,155 +2358,165 @@ V3 frac(V3 v)
     return result;
 }
 
-f32 safe_div(f32 x, f32 y, f32 n) 
+FUNCDEF inline f32 safe_div(f32 x, f32 y, f32 n) 
 {
     f32 result = y == 0.0f ? n : x/y; 
     return result;
 }
-f32 safe_div0(f32 x, f32 y)       
+FUNCDEF inline f32 safe_div0(f32 x, f32 y)       
 {
     f32 result = safe_div(x, y, 0.0f); 
     return result;
 }
-f32 safe_div1(f32 x, f32 y)       
+FUNCDEF inline f32 safe_div1(f32 x, f32 y)       
 {
     f32 result = safe_div(x, y, 1.0f); 
     return result;
 }
 
-V2 v2(f32 x, f32 y)
+FUNCDEF inline b32 nearly_zero(f32 x)
+{
+    b32 result = (x < 9.99999944E-11f);
+    return result;
+}
+
+FUNCDEF inline V2 v2(f32 x, f32 y)
 {
     V2 v = {x, y}; 
     return v; 
 }
-V2 v2(f32 c)
+FUNCDEF inline V2 v2(f32 c)
 {
     V2 v = {c, c}; 
     return v; 
 }
 
-V2u v2u(u32 x, u32 y)
+FUNCDEF inline V2u v2u(u32 x, u32 y)
 {
     V2u v = {x, y}; 
     return v; 
 }
-V2u v2u(u32 c)
+FUNCDEF inline V2u v2u(u32 c)
 {
     V2u v = {c, c}; 
     return v; 
 }
 
-V2s v2s(s32 x, s32 y)
+FUNCDEF inline V2s v2s(s32 x, s32 y)
 {
     V2s v = {x, y}; 
     return v; 
 }
-V2s v2s(s32 c)
+FUNCDEF inline V2s v2s(s32 c)
 {
     V2s v = {c, c}; 
     return v; 
 }
 
-
-V3 v3(f32 x, f32 y, f32 z)
+FUNCDEF inline V3 v3(f32 x, f32 y, f32 z)
 {
     V3 v = {x, y, z}; 
     return v; 
 }
-V3 v3(f32 c)
+FUNCDEF inline V3 v3(f32 c)
 {
     V3 v = {c, c, c}; 
     return v; 
 }
-V3 v3(V2 xy, f32 z)
+FUNCDEF inline V3 v3(V2 xy, f32 z)
 {
     V3 v; v.xy = xy; v.z = z; 
     return v; 
 }
 
-V4 v4(f32 x, f32 y, f32 z, f32 w)
+FUNCDEF inline V4 v4(f32 x, f32 y, f32 z, f32 w)
 {
     V4 v = {x, y, z, w}; 
     return v; 
 }
-V4 v4(f32 c)
+FUNCDEF inline V4 v4(f32 c)
 {
     V4 v = {c, c, c, c}; 
     return v; 
 }
-V4 v4(V3 xyz, f32 w)
+FUNCDEF inline V4 v4(V3 xyz, f32 w)
 {
     V4 v; v.xyz = xyz; v.w = w; 
     return v; 
 }
-V4 v4(V2 xy, V2 zw)
+FUNCDEF inline V4 v4(V2 xy, V2 zw)
 {
     V4 v; v.xy = xy; v.zw = zw;
     return v;
 }
 
-V2 hadamard_mul(V2 a, V2 b)
+FUNCDEF inline V4s v4s(s32 c)
+{
+    V4s v = {c, c, c, c};
+    return v;
+}
+
+FUNCDEF inline V2 hadamard_mul(V2 a, V2 b)
 {
     V2 v = {a.x*b.x, a.y*b.y}; 
     return v; 
 }
-V3 hadamard_mul(V3 a, V3 b)
+FUNCDEF inline V3 hadamard_mul(V3 a, V3 b)
 {
     V3 v = {a.x*b.x, a.y*b.y, a.z*b.z}; 
     return v; 
 }
-V4 hadamard_mul(V4 a, V4 b)
+FUNCDEF inline V4 hadamard_mul(V4 a, V4 b)
 {
     V4 v = {a.x*b.x, a.y*b.y, a.z*b.z, a.w*b.w}; 
     return v; 
 }
 
-V2 hadamard_div(V2 a, V2 b)
+FUNCDEF inline V2 hadamard_div(V2 a, V2 b)
 {
     V2 v = {a.x/b.x, a.y/b.y}; 
     return v; 
 }
-V3 hadamard_div(V3 a, V3 b)
+FUNCDEF inline V3 hadamard_div(V3 a, V3 b)
 {
     V3 v = {a.x/b.x, a.y/b.y, a.z/b.z}; 
     return v; 
 }
-V4 hadamard_div(V4 a, V4 b)
+FUNCDEF inline V4 hadamard_div(V4 a, V4 b)
 {
     V4 v = {a.x/b.x, a.y/b.y, a.z/b.z, a.w/b.w}; 
     return v; 
 }
 
-
-f32 dot(V2 a, V2 b) 
+FUNCDEF inline f32 dot(V2 a, V2 b) 
 { 
     f32 result = a.x*b.x + a.y*b.y;
     return result;
 }
-s32 dot(V2s a, V2s b) 
+FUNCDEF inline s32 dot(V2s a, V2s b) 
 { 
     s32 result = a.x*b.x + a.y*b.y; 
     return result;
 }
-f32 dot(V3 a, V3 b) 
+FUNCDEF inline f32 dot(V3 a, V3 b) 
 { 
     f32 result = a.x*b.x + a.y*b.y + a.z*b.z; 
     return result;
 }
-f32 dot(V4 a, V4 b) 
+FUNCDEF inline f32 dot(V4 a, V4 b) 
 { 
     f32 result = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w; 
     return result;
 }
 
-V2 perp(V2 v)
+FUNCDEF inline V2 perp(V2 v)
 {
     // Counter-Clockwise.
     
     V2 result = {-v.y, v.x};
     return result;
 }
-V3 cross(V3 a, V3 b) 
+FUNCDEF inline V3 cross(V3 a, V3 b) 
 {
     V3 result =
     {
@@ -2344,39 +2527,39 @@ V3 cross(V3 a, V3 b)
     return result;
 }
 
-f32 length2(V2 v) 
+FUNCDEF inline f32 length2(V2 v) 
 {
     f32 result = dot(v, v); 
     return result;
 }
-f32 length2(V3 v) 
+FUNCDEF inline f32 length2(V3 v) 
 {
     f32 result = dot(v, v); 
     return result;
 }
-f32 length2(V4 v) 
+FUNCDEF inline f32 length2(V4 v) 
 {
     f32 result = dot(v, v); 
     return result;
 }
 
-f32 length(V2 v) 
+FUNCDEF inline f32 length(V2 v) 
 {
     f32 result = _sqrt(length2(v)); 
     return result;
 }
-f32 length(V3 v) 
+FUNCDEF inline f32 length(V3 v) 
 {
     f32 result = _sqrt(length2(v)); 
     return result;
 }
-f32 length(V4 v) 
+FUNCDEF inline f32 length(V4 v) 
 {
     f32 result = _sqrt(length2(v)); 
     return result;
 }
 
-V2 min_v2(V2 a, V2 b)
+FUNCDEF inline V2 min_v2(V2 a, V2 b)
 {
     V2 result = 
     {
@@ -2385,7 +2568,7 @@ V2 min_v2(V2 a, V2 b)
     };
     return result;
 }
-V3 min_v3(V3 a, V3 b)
+FUNCDEF inline V3 min_v3(V3 a, V3 b)
 {
     V3 result = 
     {
@@ -2395,7 +2578,7 @@ V3 min_v3(V3 a, V3 b)
     };
     return result;
 }
-V4 min_v4(V4 a, V4 b)
+FUNCDEF inline V4 min_v4(V4 a, V4 b)
 {
     V4 result = 
     {
@@ -2407,7 +2590,7 @@ V4 min_v4(V4 a, V4 b)
     return result;
 }
 
-V2 max_v2(V2 a, V2 b)
+FUNCDEF inline V2 max_v2(V2 a, V2 b)
 {
     V2 result = 
     {
@@ -2416,7 +2599,7 @@ V2 max_v2(V2 a, V2 b)
     };
     return result;
 }
-V3 max_v3(V3 a, V3 b)
+FUNCDEF inline V3 max_v3(V3 a, V3 b)
 {
     V3 result = 
     {
@@ -2426,7 +2609,7 @@ V3 max_v3(V3 a, V3 b)
     };
     return result;
 }
-V4 max_v4(V4 a, V4 b)
+FUNCDEF inline V4 max_v4(V4 a, V4 b)
 {
     V4 result = 
     {
@@ -2438,99 +2621,176 @@ V4 max_v4(V4 a, V4 b)
     return result;
 }
 
-V2 normalize(V2 v) 
+FUNCDEF inline V2 normalize(V2 v) 
 {
     V2 result = (v * (1.0f / length(v))); 
     return result;
 }
-V3 normalize(V3 v) 
+FUNCDEF inline V3 normalize(V3 v) 
 {
     V3 result = (v * (1.0f / length(v))); 
     return result;
 }
-V4 normalize(V4 v) 
+FUNCDEF inline V4 normalize(V4 v) 
 {
     V4 result = (v * (1.0f / length(v))); 
     return result;
 }
 
-V2 normalize_or_zero(V2 v) 
+FUNCDEF inline V2 normalize_or_zero(V2 v) 
 { 
     f32 len = length(v); 
     return len > 0 ? v/len : v2(0.0f); 
 }
-V3 normalize_or_zero(V3 v) 
+FUNCDEF inline V3 normalize_or_zero(V3 v) 
 { 
     f32 len = length(v); 
     return len > 0 ? v/len : v3(0.0f); 
 }
-V4 normalize_or_zero(V4 v) 
+FUNCDEF inline V4 normalize_or_zero(V4 v) 
 { 
     f32 len = length(v);
     return len > 0 ? v/len : v4(0.0f); 
 }
 
-V3 normalize_or_z_axis(V3 v)
+FUNCDEF inline V3 normalize_or_x_axis(V3 v)
 {
     f32 len = length(v);
-    return len > 0 ? v/len : v3(0.0f, 0.0f, 1.0f); 
+    return len > 0 ? v/len : V3_X_AXIS; 
+}
+FUNCDEF inline V3 normalize_or_y_axis(V3 v)
+{
+    f32 len = length(v);
+    return len > 0 ? v/len : V3_Y_AXIS; 
+}
+FUNCDEF inline V3 normalize_or_z_axis(V3 v)
+{
+    f32 len = length(v);
+    return len > 0 ? v/len : V3_Z_AXIS;
 }
 
-V3 reflect(V3 incident, V3 normal)
+FUNCDEF inline V3 reflect(V3 incident, V3 normal)
 {
     V3 result = incident - 2.0f * dot(incident, normal) * normal;
     return result;
 }
 
-f32 dot(Quaternion a, Quaternion b) 
+FUNCDEF inline f32 dot(Quaternion a, Quaternion b) 
 {
     f32 result = dot(a.xyz, b.xyz) + a.w*b.w; 
     return result;
 }
-f32 length(Quaternion q)            
+FUNCDEF inline f32 length(Quaternion q)            
 {
     f32 result = _sqrt(dot(q, q)); 
     return result;
 }
-Quaternion normalize(Quaternion q)  
+FUNCDEF inline Quaternion normalize(Quaternion q)  
 {
     Quaternion result = (q * (1.0f / length(q))); 
     return result;
 }
-Quaternion normalize_or_identity(Quaternion q)
+FUNCDEF inline Quaternion normalize_or_identity(Quaternion q)
 {
     f32 len = length(q);
     return len > 0 ? (q * 1.0f/len) : quaternion_identity();
 }
 
-Quaternion quaternion(f32 x, f32 y, f32 z, f32 w) 
+FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w) 
 { 
     Quaternion q = {x, y, z, w}; 
     return q; 
 }
-Quaternion quaternion(V3 v, f32 w)
+FUNCDEF inline Quaternion quaternion(V3 v, f32 w)
 { 
     Quaternion q; q.xyz = v; q.w = w; 
     return q; 
 }
-Quaternion quaternion_identity()
+FUNCDEF inline Quaternion quaternion_identity()
 {
     Quaternion result = {0.0f, 0.0f, 0.0f, 1.0f};
     return result;
 }
 
-Quaternion quaternion_from_axis_angle(V3 axis, f32 angle)
+Quaternion quaternion_from_m3x3(M3x3 const &affine)
 {
-    // @Note: Rotation around _axis_ by _angle_ radians.
+    // @Note: From GLM. I think this implementation is based on the paper:
+    // "Accurate Computation of Quaternions from Rotation Matrices" by Soheil Sarabandi and Federico Thomas.
+    
+    // @Sanity: Remove any potential scaling that might have been applied to the input matrix.
+    M3x3 m = get_rotation(affine);
+    
+    f32 fourXSquaredMinus1 = m._11 - m._22 - m._33;
+    f32 fourYSquaredMinus1 = m._22 - m._11 - m._33;
+    f32 fourZSquaredMinus1 = m._33 - m._11 - m._22;
+    f32 fourWSquaredMinus1 = m._11 + m._22 + m._33;
+    
+    s32 biggest_idx = 0;
+    f32 fourBiggestSquaredMinus1 = fourWSquaredMinus1;
+    if(fourXSquaredMinus1 > fourBiggestSquaredMinus1) {
+        fourBiggestSquaredMinus1 = fourXSquaredMinus1;
+        biggest_idx = 1;
+    }
+    if(fourYSquaredMinus1 > fourBiggestSquaredMinus1) {
+        fourBiggestSquaredMinus1 = fourYSquaredMinus1;
+        biggest_idx = 2;
+    }
+    if(fourZSquaredMinus1 > fourBiggestSquaredMinus1) {
+        fourBiggestSquaredMinus1 = fourZSquaredMinus1;
+        biggest_idx = 3;
+    }
+    
+    f32 biggest_val = _sqrt(fourBiggestSquaredMinus1 + 1.0f) * 0.5f;
+    f32 mult        = 0.25f / biggest_val;
     
     Quaternion result;
-    result.v = axis * _sin(angle*0.5f);
-    result.w =        _cos(angle*0.5f);
+    switch(biggest_idx) {
+        case 0:
+        result = quaternion((m._32 - m._23) * mult, (m._13 - m._31) * mult, (m._21 - m._12) * mult, biggest_val); break;
+        case 1:
+        result = quaternion(biggest_val, (m._21 + m._12) * mult, (m._13 + m._31) * mult, (m._32 - m._23) * mult); break;
+        case 2:
+        result = quaternion((m._21 + m._12) * mult, biggest_val, (m._32 + m._23) * mult, (m._13 - m._31) * mult); break;
+        case 3:
+        result = quaternion((m._13 + m._31) * mult, (m._32 + m._23) * mult, biggest_val, (m._21 - m._12) * mult); break;
+        default: // Silence a -Wswitch-default warning in GCC. Should never actually get here. Assert is just for sanity.
+        ASSERT(false);
+        result = quaternion(0, 0, 0, 1); break;
+    }
+    
     return result;
 }
-Quaternion quaternion_from_axis_angle_turns(V3 axis, f32 angle_turns)
+FUNCDEF inline Quaternion quaternion_from_m4x4(M4x4 const &affine)
 {
-    Quaternion result = quaternion_from_axis_angle(axis, angle_turns * TURNS_TO_RADS);
+    Quaternion result = quaternion_from_m3x3(m3x3(affine));
+    return result;
+}
+FUNCDEF inline Quaternion quaternion_look_at(V3 direction, V3 up)
+{
+    // @Note: Axes will be normalized when calculating the quaternion.
+    V3 zaxis = -direction;
+    V3 xaxis = cross(up, zaxis);
+    V3 yaxis = cross(zaxis, xaxis);
+    M3x3 rot =
+    {
+        xaxis.x, yaxis.x, zaxis.x,
+        xaxis.y, yaxis.y, zaxis.y,
+        xaxis.z, yaxis.z, zaxis.z,
+    };
+    Quaternion result = quaternion_from_m3x3(rot);
+    return result;
+}
+FUNCDEF inline Quaternion quaternion_from_axis_angle(V3 axis, f32 radians)
+{
+    // @Note: Rotation around _axis_ by _angle_ radians.
+    Quaternion result;
+    result.v = axis * _sin(radians*0.5f);
+    result.w =        _cos(radians*0.5f);
+    return result;
+}
+FUNCDEF inline Quaternion quaternion_from_axis_angle_turns(V3 axis, f32 turns)
+{
+    Quaternion result = quaternion_from_axis_angle(axis, turns * TURNS_TO_RADS);
     return result;
 }
 
@@ -2559,57 +2819,68 @@ Quaternion quaternion_from_two_vectors_helper(V3 a, V3 b, f32 len_ab)
     result = normalize(result);
     return result;
 }
-Quaternion quaternion_from_two_vectors(V3 a, V3 b)
+FUNCDEF inline Quaternion quaternion_from_two_vectors(V3 a, V3 b)
 {
     f32 len = _sqrt(length2(a) * length2(b));
     Quaternion result = quaternion_from_two_vectors_helper(a, b, len);
     return result;
 }
-Quaternion quaternion_from_two_normals(V3 a, V3 b)
+FUNCDEF inline Quaternion quaternion_from_two_normals(V3 a, V3 b)
 {
     f32 len = 1.0f;
     Quaternion result = quaternion_from_two_vectors_helper(a, b, len);
     return result;
 }
 
-Quaternion quaternion_conjugate(Quaternion q) 
+FUNCDEF inline Quaternion quaternion_conjugate(Quaternion q) 
 {
     Quaternion result;
     result.v = -q.v;
     result.w =  q.w;
     return result;
 }
-Quaternion quaternion_inverse(Quaternion q) 
+FUNCDEF inline Quaternion quaternion_inverse(Quaternion q) 
 {
     Quaternion result = quaternion_conjugate(q)/dot(q, q);
     return result;
 }
-V3 quaternion_get_axis(Quaternion q)
+FUNCDEF inline V3 quaternion_get_axis(Quaternion q)
 {
     V3 result = normalize_or_zero(q.v);
     return result;
 }
-f32 quaternion_get_angle(Quaternion q)
+FUNCDEF inline f32 quaternion_get_angle(Quaternion q)
 {
     f32 result = _arctan2(length(q.v), q.w) * 2.0f;
     return result;
 }
-f32 quaternion_get_angle_turns(Quaternion q)
+FUNCDEF inline f32 quaternion_get_angle_turns(Quaternion q)
 {
     f32 result = quaternion_get_angle(q) * RADS_TO_TURNS;
     return result;
 }
 
-M4x4 m4x4_identity() 
+FUNCDEF inline M3x3 m3x3_identity()
 {
-    M4x4 result = {};
-    result._11 = 1.0f;
-    result._22 = 1.0f;
-    result._33 = 1.0f;
-    result._44 = 1.0f;
+    M3x3 result = 
+    {
+        1.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 1.0f,
+    };
     return result;
 }
-M4x4 m4x4_from_quaternion(Quaternion q)
+FUNCDEF inline M3x3 m3x3(M4x4 const &m)
+{
+    M3x3 result = 
+    {
+        m._11, m._12, m._13,
+        m._21, m._22, m._23,
+        m._31, m._32, m._33,
+    };
+    return result;
+}
+M3x3 m3x3_from_quaternion(Quaternion q)
 {
     // Taken from:
     // https://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToMatrix/index.htm
@@ -2620,48 +2891,211 @@ M4x4 m4x4_from_quaternion(Quaternion q)
         2*qx*qz - 2*qy*qw	2*qy*qz + 2*qx*qw	1 - 2*qx2 - 2*qy2;
          */
     
-    M4x4 result = m4x4_identity();
+    M3x3 result;
+    q = normalize_or_identity(q);
     
-    q = normalize(q);
     f32 qyy = q.y * q.y; f32 qzz = q.z * q.z; f32 qxy = q.x * q.y; 
     f32 qxz = q.x * q.z; f32 qyw = q.y * q.w; f32 qzw = q.z * q.w; 
     f32 qxx = q.x * q.x; f32 qyz = q.y * q.z; f32 qxw = q.x * q.w; 
     
     result._11 = 1.0f - 2.0f * (qyy + qzz);
-    result._21 =        2.0f * (qxy + qzw);
-    result._31 =        2.0f * (qxz - qyw);
-    
     result._12 =        2.0f * (qxy - qzw);
-    result._22 = 1.0f - 2.0f * (qxx + qzz);
-    result._32 =        2.0f * (qyz + qxw);
-    
     result._13 =        2.0f * (qxz + qyw);
+    
+    result._21 =        2.0f * (qxy + qzw);
+    result._22 = 1.0f - 2.0f * (qxx + qzz);
     result._23 =        2.0f * (qyz - qxw);
+    
+    result._31 =        2.0f * (qxz - qyw);
+    result._32 =        2.0f * (qyz + qxw);
     result._33 = 1.0f - 2.0f * (qxx + qyy);
     
     return result;
 }
-M4x4 m4x4_from_translation_rotation_scale(V3 translation, Quaternion rotation, V3 scale)
+
+FUNCDEF inline M3x3 get_rotation(M3x3 const &m)
 {
-    M4x4 result = m4x4_identity();
-    
-    M4x4 t = m4x4_identity();
-    t._14  = translation.x;
-    t._24  = translation.y;
-    t._34  = translation.z;
-    
-    M4x4 r = m4x4_from_quaternion(rotation);
-    
-    M4x4 s = m4x4_identity();
-    s._11  = scale.x;
-    s._22  = scale.y;
-    s._33  = scale.z;
-    
-    result = t * r * s;
+    // Simply normalize the columns of the input matrix.
+    V3 xaxis = normalize_or_x_axis(v3(m._11, m._21, m._31)); // x-axis column[0]
+    V3 yaxis = normalize_or_y_axis(v3(m._12, m._22, m._32)); // y-axis column[1]
+    V3 zaxis = normalize_or_z_axis(v3(m._13, m._23, m._33)); // z-axis column[2]
+    M3x3 result =
+    {
+        xaxis.x, yaxis.x, zaxis.x,
+        xaxis.y, yaxis.y, zaxis.y,
+        xaxis.z, yaxis.z, zaxis.z,
+    };
+    return result;
+}
+FUNCDEF inline V3 get_scale(M3x3 const &m)
+{
+    V3 result =
+    {
+        length(v3(m._11, m._21, m._31)), // x-axis column[0]
+        length(v3(m._12, m._22, m._32)), // y-axis column[1]
+        length(v3(m._13, m._23, m._33))  // z-axis column[2]
+    };
     return result;
 }
 
-M4x4 transpose(M4x4 m)
+FUNCDEF inline M3x3 transpose(M3x3 const &m)
+{
+    M3x3 result = 
+    {
+        m._11, m._21, m._31,
+        m._12, m._22, m._32,
+        m._13, m._23, m._33,
+    };
+    return result;
+}
+FUNCDEF inline V3 transform(M3x3 const &m, V3 v)
+{
+    V3 result = 
+    {
+        m._11*v.x + m._12*v.y + m._13*v.z,
+        m._21*v.x + m._22*v.y + m._23*v.z,
+        m._31*v.x + m._32*v.y + m._33*v.z,
+    };
+    return result;
+}
+
+FUNCDEF inline M4x4 m4x4_identity() 
+{
+    M4x4 result = 
+    {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f,
+    };
+    return result;
+}
+FUNCDEF inline void m4x4_set_upper(M4x4 *m, M3x3 const &upper)
+{
+    m->row[0].xyz = upper.row[0];
+    m->row[1].xyz = upper.row[1];
+    m->row[2].xyz = upper.row[2];
+}
+FUNCDEF inline M4x4 m4x4_from_quaternion(Quaternion q)
+{
+    M3x3 rot    = m3x3_from_quaternion(q);
+    M4x4 result = m4x4_identity();
+    m4x4_set_upper(&result, rot);
+    return result;
+}
+M4x4 m4x4_from_axis_angle(V3 axis, f32 radians)
+{
+    // @Note: From GLM.
+    
+    // @Hack: This is giving us a rotation in the wrong direction, so I will just negate the angle :)
+    radians = -radians;
+    f32 c   = _cos(radians);
+    f32 s   = _sin(radians);
+    
+    axis    = normalize_or_zero(axis);
+    V3 temp = (1.0f - c) * axis;
+    
+    M4x4 result = m4x4_identity();
+    result._11 = c + temp.x * axis.x;          // XAXIS_x
+    result._12 = temp.x * axis.y + s * axis.z; // YAXIS_x
+    result._13 = temp.x * axis.z - s * axis.y; // ZAXIS_x
+    
+    result._21 = temp.y * axis.x - s * axis.z; // XAXIS_y
+    result._22 = c + temp.y * axis.y;          // YAXIS_y
+    result._23 = temp.y * axis.z + s * axis.x; // ZAXIS_y
+    
+    result._31 = temp.z * axis.x + s * axis.y; // XAXIS_z
+    result._32 = temp.z * axis.y - s * axis.x; // YAXIS_z
+    result._33 = c + temp.z * axis.z;          // ZAXIS_z
+    
+    return result;
+}
+FUNCDEF inline M4x4 m4x4_from_axis_angle_turns(V3 axis, f32 turns)
+{
+    M4x4 result = m4x4_from_axis_angle(axis, turns * TURNS_TO_RADS);
+    return result;
+}
+FUNCDEF inline M4x4 m4x4_from_translation_rotation_scale(V3 t, Quaternion r, V3 s)
+{
+    // @Note: Instead of doing T*R*S, we use this faster way. Read Misc about composing affine transforms.
+    
+    M4x4 result = m4x4_from_quaternion(r);
+    result.row[0].xyz *= s;
+    result.row[1].xyz *= s;
+    result.row[2].xyz *= s;
+    
+    result._14 = t.x;
+    result._24 = t.y;
+    result._34 = t.z;
+    
+    return result;
+}
+
+FUNCDEF inline V4 get_column(M4x4 const &m, u32 c) 
+{
+    V4 result = {m.II[0][c], m.II[1][c], m.II[2][c], m.II[3][c]};
+    return result;
+}
+FUNCDEF inline V4 get_row(M4x4 const &m, u32 r)
+{
+    V4 result = {m.II[r][0], m.II[r][1], m.II[r][2], m.II[r][3]};
+    return result;
+}
+FUNCDEF inline V3 get_x_axis(M4x4 const &affine)
+{
+    V3 result = {affine._11, affine._21, affine._31}; // column[0]
+    return result;
+}
+FUNCDEF inline V3 get_y_axis(M4x4 const &affine)
+{
+    V3 result = {affine._12, affine._22, affine._32}; // column[1]
+    return result;
+}
+FUNCDEF inline V3 get_z_axis(M4x4 const &affine)
+{
+    V3 result = {affine._13, affine._23, affine._33}; // column[2]
+    return result;
+}
+FUNCDEF inline V3 get_forward(M4x4 const &affine)
+{
+    // Forward is negative z-axis.
+    V3 result = -normalize_or_z_axis(get_z_axis(affine));
+    return result;
+}
+FUNCDEF inline V3 get_right(M4x4 const &affine)
+{
+    V3 result = normalize_or_x_axis(get_x_axis(affine));
+    return result;
+}
+FUNCDEF inline V3 get_up(M4x4 const &affine)
+{
+    V3 result = normalize_or_y_axis(get_y_axis(affine));
+    return result;
+}
+FUNCDEF inline V3 get_translation(M4x4 const &affine)
+{
+    V3 result = get_column(affine, 3).xyz; 
+    return result;
+}
+FUNCDEF inline M4x4 get_rotation(M4x4 const &affine)
+{
+    M4x4 result = m4x4_identity();
+    M3x3 rot    = get_rotation(m3x3(affine));
+    m4x4_set_upper(&result, rot);
+    return result;
+}
+FUNCDEF inline V3 get_scale(M4x4 const &affine)
+{
+    V3 result =
+    {
+        length(get_x_axis(affine)),
+        length(get_y_axis(affine)),
+        length(get_z_axis(affine))
+    };
+    return result;
+}
+
+FUNCDEF inline M4x4 transpose(M4x4 const &m)
 {
     M4x4 result = 
     {
@@ -2672,7 +3106,7 @@ M4x4 transpose(M4x4 m)
     };
     return result;
 }
-b32 invert(M4x4 m, M4x4 *result)
+b32 invert(M4x4 const &m, M4x4 *result)
 {
     // @Note: Call this to compute the inverse of a matrix of unknown origin.
     // Otherwise constructing the inverse of a matrix by hand could be faster.
@@ -2738,7 +3172,8 @@ b32 invert(M4x4 m, M4x4 *result)
     
     return TRUE;
 }
-V4 transform(M4x4 m, V4 v)
+
+FUNCDEF inline V4 transform(M4x4 const &m, V4 v)
 {
     V4 result = 
     {
@@ -2749,129 +3184,100 @@ V4 transform(M4x4 m, V4 v)
     };
     return result;
 }
-V3 get_column(M4x4 m, u32 c) 
+FUNCDEF inline V3 transform_point(M4x4 const &m, V3 p)
 {
-    V3 result = {m.II[0][c], m.II[1][c], m.II[2][c]};
+    V3 result = transform(m, {p.x, p.y, p.z, 1.0f}).xyz;
     return result;
 }
-V3 get_row(M4x4 m, u32 r)
+FUNCDEF inline V3 transform_vector(M4x4 const &m, V3 v)
 {
-    V3 result = {m.II[r][0], m.II[r][1], m.II[r][2]};
-    return result;
-}
-V3 get_translation(M4x4 m) 
-{
-    V3 result = get_column(m, 3); 
-    return result;
-}
-V3 get_scale(M4x4 m)
-{
-    f32 sx = length(get_column(m, 0));
-    f32 sy = length(get_column(m, 1));
-    f32 sz = length(get_column(m, 2));
-    return {sx, sy, sz};
-}
-M4x4 get_rotation(M4x4 m)
-{
-    V3 scale = get_scale(m);
-    
-    V3 c0 = get_column(m, 0) / scale.x;
-    V3 c1 = get_column(m, 1) / scale.y;
-    V3 c2 = get_column(m, 2) / scale.z;
-    
-    M4x4 result = 
-    {
-        c0.x, c1.x, c2.x, 0.0f,
-        c0.y, c1.y, c2.y, 0.0f,
-        c0.z, c1.z, c2.z, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f
-    };
+    V3 result = transform(m, {v.x, v.y, v.z, 0.0f}).xyz;
     return result;
 }
 
-f32 lerp(f32 a, f32 t, f32 b) 
+FUNCDEF inline f32 lerp(f32 a, f32 t, f32 b) 
 {
     f32 result = a*(1.0f - t) + b*t; 
     return result;
 }
-V2 lerp(V2 a, f32 t, V2 b) 
+FUNCDEF inline V2 lerp(V2 a, f32 t, V2 b) 
 {
     V2 result = a*(1.0f - t) + b*t; 
     return result;
 }
-V3 lerp(V3 a, f32 t, V3 b) 
+FUNCDEF inline V3 lerp(V3 a, f32 t, V3 b) 
 {
     V3 result = a*(1.0f - t) + b*t; 
     return result;
 }
-V4 lerp(V4 a, f32 t, V4 b) 
+FUNCDEF inline V4 lerp(V4 a, f32 t, V4 b) 
 {
     V4 result = a*(1.0f - t) + b*t; 
     return result;
 }
 
-f32 unlerp(f32 a, f32 value, f32 b)
+FUNCDEF inline f32 unlerp(f32 a, f32 value, f32 b)
 {
     f32 t = (value - a) / (b - a);
     return t;
 }
-f32 unlerp(V2 a, V2 v, V2 b)
+FUNCDEF inline f32 unlerp(V2 a, V2 v, V2 b)
 {
     V2 av = v-a, ab = b-a;
     f32 t = dot(av, ab) / dot(ab, ab);
     return t;
 }
-f32 unlerp(V3 a, V3 v, V3 b)
+FUNCDEF inline f32 unlerp(V3 a, V3 v, V3 b)
 {
     V3 av = v-a, ab = b-a;
     f32 t = dot(av, ab) / dot(ab, ab);
     return t;
 }
-f32 unlerp(V4 a, V4 v, V4 b)
+FUNCDEF inline f32 unlerp(V4 a, V4 v, V4 b)
 {
     V4 av = v-a, ab = b-a;
     f32 t = dot(av, ab) / dot(ab, ab);
     return t;
 }
 
-f32 remap(f32 value, f32 imin, f32 imax, f32 omin, f32 omax)
+FUNCDEF inline f32 remap(f32 value, f32 imin, f32 imax, f32 omin, f32 omax)
 {
     f32 t      = unlerp(imin, value, imax);
     f32 result = lerp(omin, t, omax);
     return result;
 }
-V2 remap(V2 value, V2 imin, V2 imax, V2 omin, V2 omax)
+FUNCDEF inline V2 remap(V2 value, V2 imin, V2 imax, V2 omin, V2 omax)
 {
     f32 t     = unlerp(imin, value, imax);
     V2 result = lerp(omin, t, omax);
     return result;
 }
-V3 remap(V3 value, V3 imin, V3 imax, V3 omin, V3 omax)
+FUNCDEF inline V3 remap(V3 value, V3 imin, V3 imax, V3 omin, V3 omax)
 {
     f32 t     = unlerp(imin, value, imax);
     V3 result = lerp(omin, t, omax);
     return result;
 }
-V4 remap(V4 value, V4 imin, V4 imax, V4 omin, V4 omax)
+FUNCDEF inline V4 remap(V4 value, V4 imin, V4 imax, V4 omin, V4 omax)
 {
     f32 t     = unlerp(imin, value, imax);
     V4 result = lerp(omin, t, omax);
     return result;
 }
 
-Quaternion lerp(Quaternion a, f32 t, Quaternion b)
+FUNCDEF inline Quaternion lerp(Quaternion a, f32 t, Quaternion b)
 {
     Quaternion q;
     q.xyzw = lerp(a.xyzw, t, b.xyzw);
     return q;
 }
-f32 unlerp(Quaternion a, Quaternion q, Quaternion b)
+FUNCDEF inline f32 unlerp(Quaternion a, Quaternion q, Quaternion b)
 {
     Quaternion aq = q-a, ab = b-a;
     f32 t = dot(aq, ab) / dot(ab, ab);
     return t;
 }
-Quaternion nlerp(Quaternion a, f32 t, Quaternion b)
+FUNCDEF inline Quaternion nlerp(Quaternion a, f32 t, Quaternion b)
 {
     return normalize_or_identity(lerp(a, t, b));
 }
@@ -2901,13 +3307,13 @@ Quaternion slerp(Quaternion a, f32 t, Quaternion b)
     return result;
 }
 
-f32 smooth_step(f32 edge0, f32 x, f32 edge1) 
+FUNCDEF inline f32 smooth_step(f32 edge0, f32 x, f32 edge1) 
 {
     x = CLAMP01((x - edge0) / (edge1 - edge0));
     x = SQUARE(x)*(3.0f - 2.0f*x);
     return x;
 }
-f32 smoother_step(f32 edge0, f32 x, f32 edge1) 
+FUNCDEF inline f32 smoother_step(f32 edge0, f32 x, f32 edge1) 
 {
     x = CLAMP01((x - edge0) / (edge1 - edge0));
     x = CUBE(x)*(x*(6.0f*x - 15.0f) + 10.0f);
@@ -2947,71 +3353,71 @@ V3 move_towards(V3 current, V3 target, f32 delta_time, f32 speed)
     f32 ratio = max_distance / _sqrt(distance2);
     return current + (delta * ratio);
 }
-V2 rotate_point_around_pivot(V2 point, V2 pivot, Quaternion q)
+FUNCDEF inline V2 rotate_point_around_pivot(V2 point, V2 pivot, Quaternion q)
 {
     V2 result = rotate_point_around_pivot(v3(point, 0), v3(pivot, 0), q).xy;
     return result;
 }
-V3 rotate_point_around_pivot(V3 point, V3 pivot, Quaternion q)
+FUNCDEF inline V3 rotate_point_around_pivot(V3 point, V3 pivot, Quaternion q)
 {
     V3 result = (q * (point - pivot)) + pivot;
     return result;
 }
 
-Range range(f32 min, f32 max) 
-{ 
+FUNCDEF inline Range range(f32 min, f32 max) 
+{
     Range result = {min, max}; 
     return result; 
 }
-Rect2 rect2(V2  min, V2  max) 
+FUNCDEF inline Rect2 rect2(V2  min, V2  max) 
 { 
     Rect2 result = {min, max}; 
     return result; 
 }
-Rect2 rect2(f32 x0, f32 y0, f32 x1, f32 y1)
+FUNCDEF inline Rect2 rect2(f32 x0, f32 y0, f32 x1, f32 y1)
 {
     Rect2 result = {x0, y0, x1, y1}; 
     return result; 
 }
-Rect3 rect3(V3  min, V3  max)
+FUNCDEF inline Rect3 rect3(V3  min, V3  max)
 { 
     Rect3 result = {min, max}; 
     return result; 
 }
-Rect3 rect3(f32 x0, f32 y0, f32 z0, f32 x1, f32 y1, f32 z1)
+FUNCDEF inline Rect3 rect3(f32 x0, f32 y0, f32 z0, f32 x1, f32 y1, f32 z1)
 {
     Rect3 result = {x0, y0, z0, x1, y1, z1}; 
     return result; 
 }
 
-V2 get_center(Rect2 rect)
+FUNCDEF inline V2 get_center(Rect2 rect)
 {
     V2 result = (rect.min + rect.max) * 0.5f;
     return result;
 }
-V3 get_center(Rect3 rect)
+FUNCDEF inline V3 get_center(Rect3 rect)
 {
     V3 result = (rect.min + rect.max) * 0.5f;
     return result;
 }
 
-V2 get_size(Rect2 rect)
+FUNCDEF inline V2 get_size(Rect2 rect)
 {
     V2 result = rect.max - rect.min;
     return result;
 }
-V3 get_size(Rect3 rect)
+FUNCDEF inline V3 get_size(Rect3 rect)
 {
     V3 result = rect.max - rect.min;
     return result;
 }
 
-f32 get_width(Rect2 rect)
+FUNCDEF inline f32 get_width(Rect2 rect)
 {
     f32 result = rect.max.x - rect.min.x;
     return result;
 }
-f32 get_height(Rect2 rect)
+FUNCDEF inline f32 get_height(Rect2 rect)
 {
     f32 result = rect.max.y - rect.min.y;
     return result;
@@ -3020,7 +3426,7 @@ f32 get_height(Rect2 rect)
 //
 // @Note: From Unity!
 //
-f32 repeat(f32 x, f32 max_y)
+FUNCDEF inline f32 repeat(f32 x, f32 max_y)
 {
     // Loops the returned value (y a.k.a. result), so that it is never larger than max_y and never smaller than 0.
     //
@@ -3032,7 +3438,7 @@ f32 repeat(f32 x, f32 max_y)
     f32 result = CLAMP(0.0f, x - _floor(x / max_y) * max_y, max_y);
     return result;
 }
-f32 ping_pong(f32 x, f32 max_y)
+FUNCDEF inline f32 ping_pong(f32 x, f32 max_y)
 {
     // PingPongs the returned value (y a.k.a. result), so that it is never larger than max_y and never smaller than 0.
     //
@@ -3046,7 +3452,7 @@ f32 ping_pong(f32 x, f32 max_y)
     return result;
 }
 
-V3 bezier2(V3 p0, V3 p1, V3 p2, f32 t)
+FUNCDEF inline V3 bezier2(V3 p0, V3 p1, V3 p2, f32 t)
 {
     V3 result = lerp(lerp(p0, t, p1), t, lerp(p1, t, p2));
     return result;
@@ -3090,42 +3496,34 @@ V4 hsv(f32 h, f32 s, f32 v)
 
 M4x4_Inverse look_at(V3 pos, V3 at, V3 up)
 {
+    // @Note: This function creates a "view matrix". 
+    // The inverse of the view matrix is the camera "model matrix" which we will construct from inputs.
+    // The forward of the view matrix is the inverse of the camera model matrix.
+    //
+    // To understand why we do "-dot(axis, pos)" to invert position, look at HMH EP.362.
+    
     ASSERT(length2(pos - at) >= 1e-6f);
     
-    V3 zaxis  = normalize(at - pos);
-    V3 xaxis  = normalize(cross(zaxis, up));
-    V3 yaxis  = cross(xaxis, zaxis);
-    V3 t      = 
-    {
-        -dot(xaxis, pos), 
-        -dot(yaxis, pos), 
-        dot(zaxis, pos)
-    };
-    
-    V3 xaxisI =  xaxis/length2(xaxis);
-    V3 yaxisI =  yaxis/length2(yaxis);
-    V3 zaxisI = -zaxis/length2(-zaxis);
-    V3 tI     = 
-    {
-        xaxisI.x*t.x + yaxisI.x*t.y + -zaxis.x*t.z,
-        xaxisI.y*t.x + yaxisI.y*t.y + -zaxis.y*t.z,
-        xaxisI.z*t.x + yaxisI.z*t.y + -zaxis.z*t.z
-    };
+    // Construct the camera's model matrix axes.
+    // (at - pos) is front vector, negate it to get z-axis.
+    V3 zaxis = normalize(-(at - pos));
+    V3 xaxis = normalize(cross(up, zaxis));
+    V3 yaxis = cross(zaxis, xaxis);
     
     M4x4_Inverse result =
     {
-        {{ // The transform itself.
-                { xaxis.x,  xaxis.y,  xaxis.z,  t.x},
-                { yaxis.x,  yaxis.y,  yaxis.z,  t.y},
-                {-zaxis.x, -zaxis.y, -zaxis.z,  t.z},
+        {{ // The transform itself (inverse of camera model matrix).
+                { xaxis.x,  xaxis.y,  xaxis.z, -dot(xaxis, pos)},
+                { yaxis.x,  yaxis.y,  yaxis.z, -dot(yaxis, pos)},
+                { zaxis.x,  zaxis.y,  zaxis.z, -dot(zaxis, pos)},
                 {    0.0f,     0.0f,     0.0f, 1.0f}
             }},
         
-        {{ // The inverse.
-                { xaxisI.x,  yaxisI.x, zaxisI.x,  -tI.x},
-                { xaxisI.y,  yaxisI.y, zaxisI.y,  -tI.y},
-                { xaxisI.z,  yaxisI.z, zaxisI.z,  -tI.z},
-                {     0.0f,      0.0f,     0.0f,   1.0f}
+        {{ // The inverse (camera model matrix).
+                { xaxis.x,  yaxis.x, zaxis.x, pos.x},
+                { xaxis.y,  yaxis.y, zaxis.y, pos.y},
+                { xaxis.z,  yaxis.z, zaxis.z, pos.z},
+                {    0.0f,     0.0f,    0.0f,  1.0f}
             }}
     };
     
@@ -3299,7 +3697,7 @@ void calculate_tangents(V3 normal, V3 *tangent_out, V3 *bitangent_out)
 // @Note: From Matrins: https://gist.github.com/mmozeiko/1561361cd4105749f80bb0b9223e9db8
 #define PCG_DEFAULT_MULTIPLIER_64 6364136223846793005ULL
 #define PCG_DEFAULT_INCREMENT_64  1442695040888963407ULL
-Random_PCG random_seed(u64 seed)
+FUNCDEF inline Random_PCG random_seed(u64 seed)
 {
     Random_PCG result;
     result.state  = 0ULL;
@@ -3309,7 +3707,7 @@ Random_PCG random_seed(u64 seed)
     
     return result;
 }
-u32 random_next(Random_PCG *rng)
+FUNCDEF inline u32 random_next(Random_PCG *rng)
 {
     u64 state  = rng->state;
     rng->state = state * PCG_DEFAULT_MULTIPLIER_64 + PCG_DEFAULT_INCREMENT_64;
@@ -3319,28 +3717,28 @@ u32 random_next(Random_PCG *rng)
     s32 rot   = state >> 59;
     return rot ? (value >> rot) | (value << (32 - rot)) : value;
 }
-u64 random_next64(Random_PCG *rng)
+FUNCDEF inline u64 random_next64(Random_PCG *rng)
 {
 	u64 value = random_next(rng);
 	value   <<= 32;
 	value    |= random_next(rng);
 	return value;
 }
-f32 random_nextf(Random_PCG *rng)
+FUNCDEF inline f32 random_nextf(Random_PCG *rng)
 {
     // @Note: returns float in [0, 1) interval.
     
     u32 x = random_next(rng);
     return (f32)(s32)(x >> 8) * 0x1.0p-24f;
 }
-f64 random_nextd(Random_PCG *rng)
+FUNCDEF inline f64 random_nextd(Random_PCG *rng)
 {
 	// @Note: returns double in [0, 1) interval.
     
     u64 x = random_next64(rng);
     return (f64)(s64)(x >> 11) * 0x1.0p-53;
 }
-u32 random_range(Random_PCG *rng, u32 min, u32 max)
+FUNCDEF inline u32 random_range(Random_PCG *rng, u32 min, u32 max)
 {
     // @Note: Returns value in [min, max) interval.
     
@@ -3356,13 +3754,13 @@ u32 random_range(Random_PCG *rng, u32 min, u32 max)
         }
     }
 }
-f32 random_rangef(Random_PCG *rng, f32 min, f32 max)
+FUNCDEF inline f32 random_rangef(Random_PCG *rng, f32 min, f32 max)
 {
     // @Note: Returns value in [min, max) interval.
     f32 result = lerp(min, random_nextf(rng), max);
     return result;
 }
-V2 random_range_v2(Random_PCG *rng, V2 min, V2 max)
+FUNCDEF inline V2 random_range_v2(Random_PCG *rng, V2 min, V2 max)
 {
     // @Note: Returns value in [min, max) interval.
     
@@ -3371,7 +3769,7 @@ V2 random_range_v2(Random_PCG *rng, V2 min, V2 max)
     result.y = lerp(min.y, random_nextf(rng), max.y);
     return result;
 }
-V3 random_range_v3(Random_PCG *rng, V3 min, V3 max)
+FUNCDEF inline V3 random_range_v3(Random_PCG *rng, V3 min, V3 max)
 {
     // @Note: Returns value in [min, max) interval.
     
@@ -3386,7 +3784,7 @@ V3 random_range_v3(Random_PCG *rng, V3 min, V3 max)
 //~
 // Memory Arena Implementation
 //
-Arena* arena_init(u64 max_size /*= ARENA_MAX_DEFAULT*/)
+FUNCDEF Arena* arena_init(u64 max_size /*= ARENA_MAX_DEFAULT*/)
 {
     Arena *result = 0;
     if (max_size >= ARENA_COMMIT_SIZE) {
@@ -3405,11 +3803,11 @@ Arena* arena_init(u64 max_size /*= ARENA_MAX_DEFAULT*/)
     ASSERT(result != 0);
     return result;
 }
-void arena_free(Arena *arena)
+FUNCDEF inline void arena_free(Arena *arena)
 {
     os->release(arena);
 }
-void* arena_push(Arena *arena, u64 size, u64 alignment)
+FUNCDEF void* arena_push(Arena *arena, u64 size, u64 alignment)
 {
     void *result = 0;
     u64 s = ALIGN_UP(arena->used + size, alignment); 
@@ -3430,13 +3828,13 @@ void* arena_push(Arena *arena, u64 size, u64 alignment)
     ASSERT(result != 0);
     return result;
 }
-void* arena_push_zero(Arena *arena, u64 size, u64 alignment)
+FUNCDEF inline void* arena_push_zero(Arena *arena, u64 size, u64 alignment)
 {
     void *result = arena_push(arena, size, alignment);
     MEMORY_ZERO(result, size);
     return result;
 }
-void arena_pop(Arena *arena, u64 size)
+FUNCDEF inline void arena_pop(Arena *arena, u64 size)
 {
     // @Todo: Decommit memory.
     
@@ -3445,16 +3843,16 @@ void arena_pop(Arena *arena, u64 size)
     size = CLAMP_UPPER(arena->used - header_size, size);
     arena->used -= size;
 }
-void arena_reset(Arena *arena)
+FUNCDEF inline void arena_reset(Arena *arena)
 {
     arena_pop(arena, arena->used);
 }
-Arena_Temp arena_temp_begin(Arena *arena)
+FUNCDEF inline Arena_Temp arena_temp_begin(Arena *arena)
 {
     Arena_Temp result = {arena, arena->used};
     return result;
 }
-void arena_temp_end(Arena_Temp temp)
+FUNCDEF inline void arena_temp_end(Arena_Temp temp)
 {
     if (temp.arena->used >= temp.used)
         temp.arena->used = temp.used;
@@ -3493,25 +3891,25 @@ Arena_Temp get_scratch(Arena **conflict_array, s32 count)
 //~
 // String8 Implementation
 //
-String8 str8(u8 *data, u64 count)
+FUNCDEF String8 str8(u8 *data, u64 count)
 { 
     String8 result = {data, count};
     return result;
 }
-String8 str8_cstring(const char *c_string)
+FUNCDEF String8 str8_cstring(const char *c_string)
 {
     String8 result;
     result.data  = (u8 *) c_string;
     result.count = str8_length(c_string);
     return result;
 }
-u64 str8_length(const char *c_string)
+FUNCDEF u64 str8_length(const char *c_string)
 {
     u64 result = 0;
     while (*c_string++) result++;
     return result;
 }
-String8 str8_copy(Arena *arena, String8 s)
+FUNCDEF String8 str8_copy(Arena *arena, String8 s)
 {
     String8 result;
     result.count = s.count;
@@ -3520,7 +3918,7 @@ String8 str8_copy(Arena *arena, String8 s)
     result.data[result.count] = 0;
     return result;
 }
-String8 str8_cat(Arena *arena, String8 a, String8 b)
+FUNCDEF String8 str8_cat(Arena *arena, String8 a, String8 b)
 {
     String8 result;
     result.count = a.count + b.count;
@@ -3530,12 +3928,12 @@ String8 str8_cat(Arena *arena, String8 a, String8 b)
     result.data[result.count] = 0;
     return result;
 }
-b32 str8_empty(String8 s)
+FUNCDEF b32 str8_empty(String8 s)
 {
     b32 result = (!s.data || !s.count);
     return result;
 }
-b32 str8_match(String8 a, String8 b)
+FUNCDEF b32 str8_match(String8 a, String8 b)
 {
     if (a.count != b.count) return FALSE;
     for(u64 i = 0; i < a.count; i++)
@@ -3552,7 +3950,7 @@ b32 str8_match(String8 a, String8 b)
 
 //~ String ctor helpers
 // @Note: Assumes passed strings are immutable! We won't allocate memory for the result string!
-String8 str8_skip(String8 str, u64 amount)
+FUNCDEF String8 str8_skip(String8 str, u64 amount)
 {
     amount         = CLAMP_UPPER(str.count, amount);
     u64 remaining  = str.count - amount;
@@ -3561,7 +3959,7 @@ String8 str8_skip(String8 str, u64 amount)
 }
 
 //~ String character helpers
-b32 is_spacing(char c)
+FUNCDEF inline b32 is_spacing(char c)
 {
     b32 result = ((c == ' ')  ||
                   (c == '\t') ||
@@ -3569,34 +3967,34 @@ b32 is_spacing(char c)
                   (c == '\f'));
     return result;
 }
-b32 is_end_of_line(char c)
+FUNCDEF inline b32 is_end_of_line(char c)
 {
     b32 result = ((c == '\n') ||
                   (c == '\r'));
     return result;
 }
-b32 is_whitespace(char c)
+FUNCDEF inline b32 is_whitespace(char c)
 {
     b32 result = (is_spacing(c) || is_end_of_line(c));
     return result;
 }
-b32 is_alpha(char c)
+FUNCDEF inline b32 is_alpha(char c)
 {
     b32 result = (((c >= 'A') && (c <= 'Z')) ||
                   ((c >= 'a') && (c <= 'z')));
     return result;
 }
-b32 is_numeric(char c)
+FUNCDEF inline b32 is_numeric(char c)
 {
     b32 result = (((c >= '0') && (c <= '9')));
     return result;
 }
-b32 is_alphanumeric(char c)
+FUNCDEF inline b32 is_alphanumeric(char c)
 {
     b32 result = (is_alpha(c) || is_numeric(c));
     return result;
 }
-b32 is_slash(char c)
+FUNCDEF inline b32 is_slash(char c)
 {
     b32 result = ((c == '\\') || (c == '/'));
     return result;
@@ -3604,7 +4002,7 @@ b32 is_slash(char c)
 
 //~ String path helpers
 // @Note: Assumes passed strings are immutable! We won't allocate memory for the result string!
-String8 chop_extension(String8 path)
+FUNCDEF String8 chop_extension(String8 path)
 {
     String8 result = path;
     if (path.count <= 0)
@@ -3621,7 +4019,7 @@ String8 chop_extension(String8 path)
     result.count = last_period_pos;
     return result;
 }
-String8 extract_file_name(String8 path)
+FUNCDEF String8 extract_file_name(String8 path)
 {
     // Result includes extension.
     String8 result = path;
@@ -3639,14 +4037,14 @@ String8 extract_file_name(String8 path)
     result = str8_skip(path, last_slash_pos + 1);
     return result;
 }
-String8 extract_base_name(String8 path)
+FUNCDEF String8 extract_base_name(String8 path)
 {
     // Result doesn't include extension.
     String8 result = extract_file_name(path);
     result         = chop_extension(result);
     return result;
 }
-String8 extract_parent_folder(String8 path)
+FUNCDEF String8 extract_parent_folder(String8 path)
 {
     // Result includes extension.
     String8 result = path;
@@ -3667,20 +4065,20 @@ String8 extract_parent_folder(String8 path)
 }
 
 //~ String misc helpers
-void advance(String8 *s, u64 count)
+FUNCDEF inline void advance(String8 *s, u64 count)
 {
     count     = CLAMP_UPPER(s->count, count);
     s->data  += count;
     s->count -= count;
 }
-void get(String8 *s, void *data, u64 size)
+FUNCDEF inline void get(String8 *s, void *data, u64 size)
 {
     ASSERT(size <= s->count);
     
     MEMORY_COPY(data, s->data, size);
     advance(s, size);
 }
-u32 get_hash(String8 s)
+FUNCDEF u32 get_hash(String8 s)
 {
     // djb2 hash from http://www.cse.yorku.ca/~oz/hash.html
     
@@ -3703,18 +4101,18 @@ GLOBAL char decimal_digits[]   = "0123456789";
 GLOBAL char lower_hex_digits[] = "0123456789abcdef";
 GLOBAL char upper_hex_digits[] = "0123456789ABCDEF";
 
-void put_char(String8 *dest, char c)
+FUNCDEF void put_char(String8 *dest, char c)
 {
     if (dest->count) {
         dest->count--;
         *dest->data++ = c;
     }
 }
-void put_c_string(String8 *dest, const char *c_string)
+FUNCDEF void put_c_string(String8 *dest, const char *c_string)
 {
     while (*c_string) put_char(dest, *c_string++);
 }
-void u64_to_ascii(String8 *dest, u64 value, u32 base, char *digits)
+FUNCDEF void u64_to_ascii(String8 *dest, u64 value, u32 base, char *digits)
 {
     ASSERT(base != 0);
     
@@ -3733,7 +4131,7 @@ void u64_to_ascii(String8 *dest, u64 value, u32 base, char *digits)
         start++;
     }
 }
-void f64_to_ascii(String8 *dest, f64 value, u32 precision)
+FUNCDEF void f64_to_ascii(String8 *dest, f64 value, u32 precision)
 {
     if (value < 0) {
         put_char(dest, '-');
@@ -3756,7 +4154,7 @@ void f64_to_ascii(String8 *dest, f64 value, u32 precision)
         put_char(dest, decimal_digits[integer_part]);
     }
 }
-u64 ascii_to_u64(char **at)
+FUNCDEF u64 ascii_to_u64(char **at)
 {
     u64 result = 0;
     char *tmp = *at;
@@ -3768,7 +4166,7 @@ u64 ascii_to_u64(char **at)
     *at = tmp;
     return result;
 }
-u64 string_format_list(char *dest_start, u64 dest_count, const char *format, va_list arg_list)
+FUNCDEF u64 string_format_list(char *dest_start, u64 dest_count, const char *format, va_list arg_list)
 {
     if (!dest_count) return 0;
     
@@ -3923,7 +4321,7 @@ u64 string_format_list(char *dest_start, u64 dest_count, const char *format, va_
     
     return result;
 }
-u64 string_format(char *dest_start, u64 dest_count, const char *format, ...)
+FUNCDEF u64 string_format(char *dest_start, u64 dest_count, const char *format, ...)
 {
     va_list arg_list;
     va_start(arg_list, format);
@@ -3932,7 +4330,20 @@ u64 string_format(char *dest_start, u64 dest_count, const char *format, ...)
     
     return result;
 }
-String8 sprint(Arena *arena, const char *format, ...)
+FUNCDEF void debug_print(const char *format, ...)
+{
+    char temp[4096];
+    String8 s = {};
+    
+    va_list arg_list;
+    va_start(arg_list, format);
+    s.data  = (u8 *) temp;
+    s.count = string_format_list(temp, sizeof(temp), format, arg_list);
+    va_end(arg_list);
+    
+    os->print_to_debug_output(s);
+}
+FUNCDEF String8 sprint(Arena *arena, const char *format, ...)
 {
     char temp[4096];
     String8 s = {};
@@ -3946,25 +4357,12 @@ String8 sprint(Arena *arena, const char *format, ...)
     String8 result = str8_copy(arena, s);
     return result;
 }
-void debug_print(const char *format, ...)
-{
-    char temp[4096];
-    String8 s = {};
-    
-    va_list arg_list;
-    va_start(arg_list, format);
-    s.data  = (u8 *) temp;
-    s.count = string_format_list(temp, sizeof(temp), format, arg_list);
-    va_end(arg_list);
-    
-    os->print_to_debug_output(s);
-}
 
 /////////////////////////////////////////
 //~
 // String Builder Implementation
 //
-String_Builder sb_init(u64 capacity /*= SB_BLOCK_SIZE*/)
+FUNCDEF String_Builder sb_init(u64 capacity /*= SB_BLOCK_SIZE*/)
 {
     String_Builder builder = {};
     builder.arena    = arena_init();
@@ -3972,18 +4370,18 @@ String_Builder sb_init(u64 capacity /*= SB_BLOCK_SIZE*/)
     sb_reset(&builder);
     return builder;
 }
-void sb_free(String_Builder *builder)
+FUNCDEF void sb_free(String_Builder *builder)
 {
     arena_free(builder->arena);
 }
-void sb_reset(String_Builder *builder)
+FUNCDEF void sb_reset(String_Builder *builder)
 {
     arena_reset(builder->arena);
     builder->length = 0;
     builder->start  = PUSH_ARRAY(builder->arena, u8, builder->capacity);
     builder->buffer = {builder->start, builder->capacity};
 }
-void sb_append(String_Builder *builder, void *data, u64 size)
+FUNCDEF void sb_append(String_Builder *builder, void *data, u64 size)
 {
     if ((builder->length + size) > builder->capacity) {
         builder->capacity += (size + (SB_BLOCK_SIZE-1));
@@ -3999,7 +4397,7 @@ void sb_append(String_Builder *builder, void *data, u64 size)
     
     builder->length = builder->buffer.data - builder->start;
 }
-void sb_appendf(String_Builder *builder, char *format, ...)
+FUNCDEF void sb_appendf(String_Builder *builder, char *format, ...)
 {
     char temp[4096];
     
@@ -4010,7 +4408,7 @@ void sb_appendf(String_Builder *builder, char *format, ...)
     
     sb_append(builder, temp, size);
 }
-String8 sb_to_string(String_Builder *builder, Arena *arena)
+FUNCDEF String8 sb_to_string(String_Builder *builder, Arena *arena)
 {
     // Add null terminator.
     if (builder->buffer.count)
@@ -4040,7 +4438,7 @@ String8 sb_to_string(String_Builder *builder, Arena *arena)
 //~
 // Sound Implementation
 //
-void sound_update(Sound *sound, u32 samples_to_advance)
+FUNCDEF void sound_update(Sound *sound, u32 samples_to_advance)
 {
     sound->pos += samples_to_advance;
     if (sound->loop)
@@ -4048,7 +4446,7 @@ void sound_update(Sound *sound, u32 samples_to_advance)
     else
         sound->pos = MIN(sound->pos, sound->count);
 }
-void sound_mix(Sound *sound, f32 volume, f32 *samples_out, u32 samples_to_write)
+FUNCDEF void sound_mix(Sound *sound, f32 volume, f32 *samples_out, u32 samples_to_write)
 {
     const s16 *s_samples = sound->samples;
     u32 s_count          = sound->count;
@@ -4078,28 +4476,28 @@ void sound_mix(Sound *sound, f32 volume, f32 *samples_out, u32 samples_to_write)
 //
 OS_State *os = 0;
 
-b32 key_pressed(Key_States *states, s32 key, b32 capture /* = FALSE */)
+FUNCDEF b32 key_pressed(Key_States *states, s32 key, b32 capture /* = FALSE */)
 {
     b32 result = states->pressed[key];
     if (result && capture)
         states->pressed[key] = FALSE;
     return result;
 }
-b32 key_held(Key_States *states, s32 key, b32 capture /* = FALSE */)
+FUNCDEF b32 key_held(Key_States *states, s32 key, b32 capture /* = FALSE */)
 {
     b32 result = states->held[key];
     if (result && capture)
         states->pressed[key] = FALSE;
     return result;
 }
-b32 key_released(Key_States *states, s32 key, b32 capture /* = FALSE */)
+FUNCDEF b32 key_released(Key_States *states, s32 key, b32 capture /* = FALSE */)
 {
     b32 result = states->released[key];
     if (result && capture)
         states->released[key] = FALSE;
     return result;
 }
-void reset_key_states(Key_States *states)
+FUNCDEF void reset_key_states(Key_States *states)
 {
     // @Note: Call this after input usage code (frame end or end of accum loop).
     
@@ -4110,7 +4508,7 @@ void reset_key_states(Key_States *states)
     MEMORY_ZERO_ARRAY(states->pressed);
     MEMORY_ZERO_ARRAY(states->released);
 }
-void clear_key_states(Key_States *states)
+FUNCDEF void clear_key_states(Key_States *states)
 {
     // @Note: Call this when app changes focus (like WM_ACTIVATE and WM_ACTIVATEAPP on windows)
     
@@ -4123,7 +4521,7 @@ void clear_key_states(Key_States *states)
     MEMORY_ZERO_ARRAY(states->released);
 }
 
-Rect2 aspect_ratio_fit(V2u render_dim, V2u window_dim)
+FUNCDEF Rect2 aspect_ratio_fit(V2u render_dim, V2u window_dim)
 {
     // @Note: From Handmade Hero E.322.
     
@@ -4164,12 +4562,12 @@ Rect2 aspect_ratio_fit(V2u render_dim, V2u window_dim)
     
     return result;
 }
-V3 unproject(V3 camera_position, f32 Zworld_distance_from_camera,
-             V3 mouse_ndc, M4x4_Inverse world_to_view, M4x4_Inverse view_to_proj)
+FUNCDEF V3 unproject(V3 camera_position, f32 Zworld_distance_from_camera,
+                     V3 mouse_ndc, M4x4_Inverse world_to_view, M4x4_Inverse view_to_proj)
 {
     // @Note: Handmade Hero EP.373 and EP.374
     
-    V3 camera_zaxis = get_row(world_to_view.forward, 2);
+    V3 camera_zaxis = get_z_axis(world_to_view.inverse);
     V3 new_p        = camera_position - Zworld_distance_from_camera*camera_zaxis;
     V4 probe_z      = v4(new_p, 1.0f);
     

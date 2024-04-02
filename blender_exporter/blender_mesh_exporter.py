@@ -5,10 +5,13 @@ make_convex_hull = 0
 directory = "C:\\work\\skelly\\data\\meshes\\"
 extension = ".mesh"
 
-# File format version. Increment when modifying file.
+# File format version. Increment when modifying file format.
 version = 2
 
 """
+    IMPORTANT:
+    !! Make sure to always use front-view (Numpad1) when modeling the front side of the object; we automatically apply a matrix transform to make the object comply with our engine coordinates. !!
+    
     About this mesh exporter:
     - It only writes blender's Principled BSDF, and only the basic data in it.
     - It exports one object only, so make sure to join sub-meshes together.
@@ -93,10 +96,12 @@ class Vertex_Blend_Info:
 
 """ GLOBAL VARIABLES
 """
-# Matrix to transform from Blender's space coordinates to "our" space coordinates.
-# Rotate -90deg around x-axis.
-BlenderToEngineQuat   = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0))
-BlenderToEngineMatrix = mathutils.Quaternion((0.707, -0.707, 0.0, 0.0)).to_matrix().to_4x4()
+PI = 3.141592653589793
+
+# Matrix to transform from Blender's space coordinates to "our" space coordinates... -90.deg around x, and 180.deg around y.
+BlenderToEngineEuler  = mathutils.Euler((-PI * 0.5, PI, 0), 'XYZ')
+BlenderToEngineQuat   = BlenderToEngineEuler.to_quaternion()
+BlenderToEngineMatrix = BlenderToEngineEuler.to_matrix().to_4x4()
 
 # Poor man's enum of Material_Texture_Map_Type:
 MapType_ALBEDO    = 0
@@ -162,9 +167,9 @@ def parse_armature(armature):
     # This function will fill the skeleton_joints[] list with Joint_Info (num_skeleton_joints as many)
     #
 
-    # Search for root candidates
+    # Search for root candidates (deform joints that have no parents)
     bones = armature.data.bones
-    root_candidates = [b for b in bones if not b.parent]
+    root_candidates = [b for b in bones if not b.parent and b.use_deform == True]
     # root_candidates = [b for b in bones if not b.parent and b.name[:4].lower() == 'root']
 
     # Only one node can be eligible
@@ -190,6 +195,9 @@ def parse_armature(armature):
         recursively_add_joint(child, root_id)
 
 def recursively_add_joint(joint, parent_id):
+    if joint.use_deform == False:
+        return
+    
     rest_pose_matrix       = BlenderToEngineMatrix @ joint.matrix_local
     rest_pose_rotation_rel = joint.matrix.to_quaternion().normalized()
     joint_id               = add_joint(rest_pose_matrix.inverted(), rest_pose_rotation_rel, joint.name, parent_id)

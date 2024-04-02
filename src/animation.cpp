@@ -10,7 +10,7 @@ FUNCTION void print_sqts(Array<SQT> transforms)
 
 //~ Sampled Animation
 //
-FUNCTION b32 load_sampled_animation(Sampled_Animation *anim, String8 full_path)
+FUNCTION b32 load_sampled_animation(Arena *arena, Sampled_Animation *anim, String8 full_path)
 {
     String8 file = os->read_entire_file(full_path);
     if (!file.data) {
@@ -21,9 +21,8 @@ FUNCTION b32 load_sampled_animation(Sampled_Animation *anim, String8 full_path)
     
     //-
     
-    // @Todo: Shouldn't use permanent_arena here.
     String8 name = extract_base_name(full_path);
-    anim->name   = str8_copy(os->permanent_arena, name);
+    anim->name   = str8_copy(arena, name);
     
     s32 version = 0;
     get(&file, &version);
@@ -55,12 +54,11 @@ FUNCTION b32 load_sampled_animation(Sampled_Animation *anim, String8 full_path)
         Pose_Joint_Info *joint = &anim->joints[joint_index];
         
         // Read name
-        // @Todo: Shouldn't use permanent_arena here.
         s32 joint_name_len = 0;
         get(&file, &joint_name_len);
         String8 joint_name = str8(file.data, joint_name_len);
         advance(&file, joint_name_len);
-        joint->name = str8_copy(os->permanent_arena, joint_name);
+        joint->name = str8_copy(arena, joint_name);
         
         // Read parent id
         get(&file, &joint->parent_id);
@@ -93,6 +91,18 @@ FUNCTION b32 load_sampled_animation(Sampled_Animation *anim, String8 full_path)
 FUNCTION void init(Animation_Channel *channel)
 {
     array_init(&channel->lerped_joints_relative);
+}
+
+FUNCTION void destroy(Animation_Channel **channel)
+{
+    if (!channel || !*channel)
+        return;
+    
+    Animation_Channel *ch = *channel;
+    array_free(&ch->lerped_joints_relative);
+    
+    free(ch);
+    *channel = 0;
 }
 
 FUNCTION void set_animation(Animation_Channel *channel, Sampled_Animation *anim, f64 t0)
@@ -210,9 +220,29 @@ FUNCTION void init(Animation_Player *player)
     array_init(&player->channels);
 }
 
+FUNCTION void destroy(Animation_Player **player)
+{
+    if (!player || !*player)
+        return;
+    
+    Animation_Player *pl = *player;
+    
+    //table_free(&pl->joint_name_to_index_map);
+    array_free(&pl->skinning_matrices);
+    array_free(&pl->blended_joints_relative);
+    
+    for (s32 i = 0; i < pl->channels.count; i++)
+        destroy(&pl->channels[i]);
+    
+    array_free(&pl->channels);
+    
+    free(pl);
+    *player = 0;
+}
+
 FUNCTION void set_mesh(Animation_Player *player, Triangle_Mesh *mesh)
 {
-    if (!mesh) return;
+    if (!mesh || ((mesh->flags & MeshFlags_ANIMATED) == 0)) return;
     
     //table_reset(&player->joint_name_to_index_map);
     
@@ -222,15 +252,18 @@ FUNCTION void set_mesh(Animation_Player *player, Triangle_Mesh *mesh)
         return;
     }
     
+    // Resize and initialize final skinning matrices to identity.
     array_resize(&player->skinning_matrices, skeleton->joint_info.count);
+    for (s32 i = 0; i < player->skinning_matrices.count; i++)
+        player->skinning_matrices[i] = m4x4_identity();
     
     player->mesh = mesh;
 }
 
 FUNCTION Animation_Channel* add_animation_channel(Animation_Player *player)
 {
-    // @Todo: Shouldn't use permanent_arena here.
-    Animation_Channel *channel = PUSH_STRUCT_ZERO(os->permanent_arena, Animation_Channel);
+    Animation_Channel *channel = (Animation_Channel *) malloc(sizeof(Animation_Channel));
+    ASSERT(channel);
     init(channel);
     array_add(&player->channels, channel);
     
@@ -241,8 +274,6 @@ FUNCTION void advance_time(Animation_Player *player, f64 dt)
 {
     if (!player) return;
     
-    // @MemoryLeak: We are only removing pointers to channel and not freeing anything.
-    
     for (s32 i = 0; i < player->channels.count; i++) {
         Animation_Channel *channel = player->channels[i];
         advance_time(channel, dt);
@@ -252,9 +283,7 @@ FUNCTION void advance_time(Animation_Player *player, f64 dt)
             
             if ((channel->blend_t > channel->blend_duration) &&
                 (channel->blending_out)) {
-                // @MemoryLeak:
-                // @MemoryLeak:
-                // @Todo: Find a way to deallocate the channel!
+                destroy(&player->channels[i]);
                 array_ordered_remove_by_index(&player->channels, i);
             }
         }
@@ -380,14 +409,12 @@ FUNCTION void eval(Animation_Player *player)
     // @Todo: Remove locomotion?
 }
 
+#if DEVELOPER
 FUNCTION void skin_mesh(Animation_Player *player)
 {
-    // @Speed: Skin on the GPU.
-    // @Speed:
+    // @Note: We skin on CPU only for things like mouse-picking in editor.
     
-    if (!player->mesh) return;
-    
-    if (!player->mesh->skeleton) return;
+    if (!player || !player->mesh || !player->mesh->skeleton) return;
     
     Triangle_Mesh *mesh = player->mesh;
     Skeleton *sk = mesh->skeleton;
@@ -396,59 +423,19 @@ FUNCTION void skin_mesh(Animation_Player *player)
         Vertex_Blend_Info *blend_info = &sk->vertex_blend_info[canonical_vertex_index];
         
         V4 p = {};
-        V3 n = {};
+        //V3 n = {};
         
         for (s32 piece_index = 0; piece_index < blend_info->num_pieces; piece_index++) {
             Vertex_Blend_Piece piece = blend_info->pieces[piece_index];
-            f32 w = piece.weight;
-            
             M4x4 m = player->skinning_matrices[piece.joint_id];
-            
-            p += w * transform(m, v4(mesh->vertices[i],    1.0f));
-            n += w * transform(m, v4(mesh->tbns[i].normal, 0.0f)).xyz;
+            p     += transform(m, v4(mesh->vertices[i], 1.0f)) * piece.weight;
+            //n += w * transform(m, v4(mesh->tbns[i].normal, 0.0f)).xyz;
         }
         
-        if (p.w) {
+        if (p.w)
             p.xyz /= p.w;
-        }
         
         mesh->skinned_vertices[i] = p.xyz;
-        mesh->skinned_normals[i]  = normalize_or_z_axis(n);
     }
-    
-    //
-    // Upload vertex data to GPU.
-    //
-    s32 num_vertices = (s32)mesh->vertices.count;
-    Arena_Temp scratch = get_scratch(0, 0);
-    Vertex_XTBNUC *vertex_buffer = PUSH_ARRAY_ZERO(scratch.arena, Vertex_XTBNUC, num_vertices);
-    Vertex_XTBNUC *vertex = vertex_buffer;
-    
-    for (s32 vindex = 0; vindex < num_vertices; vindex++, vertex++) {
-        if (mesh->skinned_vertices.count) vertex->position = mesh->skinned_vertices[vindex];
-        else                      vertex->position = {};
-        
-        if (mesh->tbns.count)     vertex->tangent = mesh->tbns[vindex].tangent;
-        else                      vertex->tangent = {1.0f, 0.0f, 0.0f};
-        
-        if (mesh->tbns.count)     vertex->bitangent = mesh->tbns[vindex].bitangent;
-        else                      vertex->bitangent = {0.0f, 1.0f, 0.0f};
-        
-        if (mesh->tbns.count)     vertex->normal = mesh->skinned_normals[vindex];
-        else                      vertex->normal = {0.0f, 0.0f, 1.0f};
-        
-        if (mesh->uvs.count)      vertex->uv = mesh->uvs[vindex];
-        else                      vertex->uv = {};
-        
-        if (mesh->colors.count)   vertex->color = mesh->colors[vindex];
-        else                      vertex->color = {1.0f, 1.0f, 1.0f, 1.0f};
-    }
-    
-    
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    device_context->Map(mesh->vbo, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    MEMORY_COPY(mapped.pData, vertex_buffer, sizeof(Vertex_XTBNUC) * num_vertices);
-    device_context->Unmap(mesh->vbo, 0);
-    
-    free_scratch(scratch);
 }
+#endif
