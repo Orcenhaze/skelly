@@ -18,7 +18,7 @@ CONVENTIONS:
 * When storing paths, if string name has "folder" in it, then it ends with '/' or '\\'.
 
 TODO:
-[] World-space text rendering.
+[] Pull FOV out into a variable?
 
 MISC:
 About sRGB:
@@ -933,8 +933,9 @@ FUNCTION void set_texture(Texture *texture)
 
 FUNCTION void set_view_to_proj()
 {
-    f32 ar = (f32)os->render_size.w / (f32)os->render_size.h;
-    view_to_proj_matrix = perspective(90.0f * DEGS_TO_RADS, ar, 0.1f, 1000.0f);
+    f32 ar  = (f32)os->render_size.w / (f32)os->render_size.h;
+    f32 fov = 90.0f;
+    view_to_proj_matrix = perspective(fov * DEGS_TO_RADS, ar, 0.1f, 1000.0f);
 }
 
 FUNCTION void set_world_to_view(M4x4_Inverse matrix)

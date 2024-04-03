@@ -1,6 +1,7 @@
-/* win32_base.cpp - v0.03 - base functionality for win32_main.cpp
+/* win32_base.cpp - v0.04 - base functionality for win32_main.cpp
 
 REVISION HISTORY:
+0.04 - added some cursor functionality and cleaned some stuff up.
 0.03 - removed primary_window; now we pass HWND to functions that need it.
 0.02 - renamed print() to debug_print() and added ability to load File_Info and File_Group and string stuff.
 0.01 - added mouse capture for middle mouse button.
@@ -34,15 +35,30 @@ extern "C" {
     __declspec(dllexport) DWORD AmdPowerXpressRequestHighPerformance = 0x00000001;
 }
 
+// For registering raw input devices.
+#ifndef HID_USAGE_PAGE_GENERIC
+#define HID_USAGE_PAGE_GENERIC  ((unsigned short) 0x01)
+#endif
+#ifndef HID_USAGE_GENERIC_MOUSE
+#define HID_USAGE_GENERIC_MOUSE ((unsigned short) 0x02)
+#endif
+
 ////////////////////////////////
 //~ Globals
-GLOBAL OS_State global_os;
-GLOBAL s64      global_performance_frequency;
-GLOBAL HANDLE   global_waitable_timer;
-GLOBAL char     global_exe_full_path[256];
-GLOBAL char     global_exe_parent_folder[256];
-GLOBAL char     global_data_folder[256];
-//GLOBAL char     global_saved_games_folder[256];
+struct Win32
+{
+    OS_State state;
+    char     exe_full_path    [256];
+    char     exe_parent_folder[256];
+    char     data_folder      [256];
+    //char     saved_games_folder[256];
+    HWND     window;                // Handle to the window we created.
+    HANDLE   waitable_timer;        // Used for frame limiter.
+    s64      performance_frequency; // Used timing things with QueryPerformanceCounter.
+    b32      keep_cursor_centered;
+    s32      restore_cursor_pos_x, restore_cursor_pos_y;
+};
+GLOBAL Win32 _win32;
 
 ////////////////////////////////
 //~ Timing
@@ -56,9 +72,9 @@ inline LARGE_INTEGER win32_qpc()
 inline f64 win32_get_seconds_elapsed(LARGE_INTEGER start, LARGE_INTEGER end)
 {
     // Make sure we QueryPerformanceFrequency() before calling this (we do in win32_init).
-    ASSERT(global_performance_frequency != 0);
+    ASSERT(_win32.performance_frequency != 0);
     
-    f64 result = (f64)(end.QuadPart - start.QuadPart) / (f64)global_performance_frequency;
+    f64 result = (f64)(end.QuadPart - start.QuadPart) / (f64)_win32.performance_frequency;
     return result;
 }
 
@@ -110,20 +126,20 @@ FUNCTION void win32_print_to_debug_output(String8 text)
 
 FUNCTION void win32_build_paths()
 {
-    GetModuleFileNameA(0, global_exe_full_path, sizeof(global_exe_full_path));
+    GetModuleFileNameA(0, _win32.exe_full_path, sizeof(_win32.exe_full_path));
     
-    char *one_past_slash = global_exe_full_path;
-    char *exe            = global_exe_full_path;
+    char *one_past_slash = _win32.exe_full_path;
+    char *exe            = _win32.exe_full_path;
     while (*exe)  {
         if (*exe++ == '\\') one_past_slash = exe;
     }
-    MEMORY_COPY(global_exe_parent_folder, global_exe_full_path, one_past_slash - global_exe_full_path);
+    MEMORY_COPY(_win32.exe_parent_folder, _win32.exe_full_path, one_past_slash - _win32.exe_full_path);
     
 #if DEVELOPER
-    string_format(global_data_folder, sizeof(global_data_folder), "%s../data/", global_exe_parent_folder);
+    string_format(_win32.data_folder, sizeof(_win32.data_folder), "%s../data/", _win32.exe_parent_folder);
 #else
     // @Note: We will copy the data folder when building the game and put it next to .exe.
-    string_format(global_data_folder, sizeof(global_data_folder), "%sdata/", global_exe_parent_folder);
+    string_format(_win32.data_folder, sizeof(_win32.data_folder), "%sdata/", _win32.exe_parent_folder);
 #endif
     
 #if 0
@@ -133,12 +149,97 @@ FUNCTION void win32_build_paths()
         // Convert the wide character path to a ascii/ansi
         int size = WideCharToMultiByte(CP_ACP, 0, wide_path, -1, 0, 0, 0, 0);
         if (size > 0)
-            WideCharToMultiByte(CP_ACP, 0, wide_path, -1, global_saved_games_folder, size, 0, 0);
+            WideCharToMultiByte(CP_ACP, 0, wide_path, -1, _win32.saved_games_folder, size, 0, 0);
         
         // Remember to free the allocated memory for the wide character path
         CoTaskMemFree(wide_path);
     }
 #endif
+}
+
+FUNCTION void win32_show_window(HWND window)
+{
+    ShowWindow(window, SW_SHOWDEFAULT);
+}
+
+FUNCTION void win32_focus_window(HWND window)
+{
+    BringWindowToTop(window);
+    SetForegroundWindow(window);
+    SetFocus(window);
+}
+
+FUNCTION void win32_get_cursor_position(HWND window, s32 *x, s32 *y)
+{
+    // Return pos in client window space.
+    POINT pos; 
+    if (GetCursorPos(&pos)) {
+        ScreenToClient(window, &pos);
+        if (x) *x = pos.x;
+        if (y) *y = pos.y;
+    }
+}
+FUNCTION void win32_set_cursor_position(HWND window, s32 x, s32 y)
+{
+    // Pass pos in client window space.
+    POINT pos = {x, y};
+    ClientToScreen(window, &pos);
+    SetCursorPos(pos.x, pos.y);
+}
+
+FUNCTION void win32_show_cursor()
+{
+    while (ShowCursor(TRUE) < 0);
+}
+FUNCTION void win32_hide_cursor()
+{
+    while (ShowCursor(FALSE) >= 0);
+}
+
+FUNCTION void win32_capture_cursor()
+{
+    // Confine cursor position within client window rect.
+    RECT clip_rect;
+    GetClientRect(_win32.window, &clip_rect);
+    ClientToScreen(_win32.window, (POINT*) &clip_rect.left);
+    ClientToScreen(_win32.window, (POINT*) &clip_rect.right);
+    ClipCursor(&clip_rect);
+}
+FUNCTION void win32_release_cursor()
+{
+    ClipCursor(NULL);
+}
+
+FUNCTION void win32_center_cursor()
+{
+    // Set cursor pos to center of window rect. 
+    RECT window_rect;
+    GetClientRect(_win32.window, &window_rect);
+    ClientToScreen(_win32.window, (POINT*) &window_rect.left);
+    ClientToScreen(_win32.window, (POINT*) &window_rect.right);
+    s32 x = window_rect.left + (s32)(_win32.state.window_size.x * 0.5f);
+    s32 y = window_rect.top  + (s32)(_win32.state.window_size.y * 0.5f);
+    SetCursorPos(x, y);
+}
+
+FUNCTION void win32_disable_cursor()
+{
+    win32_get_cursor_position(_win32.window,
+                              &_win32.restore_cursor_pos_x,
+                              &_win32.restore_cursor_pos_y);
+    win32_hide_cursor();
+    win32_center_cursor();
+    _win32.keep_cursor_centered = TRUE;
+    win32_capture_cursor();
+}
+FUNCTION void win32_enable_cursor()
+{
+    win32_release_cursor();
+    _win32.keep_cursor_centered = FALSE;
+    win32_show_cursor();
+    win32_set_cursor_position(_win32.window,
+                              _win32.restore_cursor_pos_x,
+                              _win32.restore_cursor_pos_y);
 }
 
 ////////////////////////////////
@@ -282,7 +383,7 @@ FUNCTION void win32_process_pending_messages(HWND window)
                 
                 if((vkcode == VK_F4) && alt_down)
                 {
-                    global_os.exit = TRUE;
+                    _win32.state.exit = TRUE;
                     return;
                 }
                 
@@ -309,52 +410,82 @@ FUNCTION void win32_process_pending_messages(HWND window)
                 
                 if (key != Key_NONE) {
                     Queued_Input input = {key, is_down};
-                    array_add(&global_os.inputs_to_process, input);
+                    array_add(&_win32.state.inputs_to_process, input);
                 }
             } break;
             
             case WM_LBUTTONDOWN: {
                 SetCapture(window);
                 Queued_Input input = {Key_MLEFT, (message.wParam & MK_LBUTTON)};
-                array_add(&global_os.inputs_to_process, input);
+                array_add(&_win32.state.inputs_to_process, input);
             } break;
             case WM_LBUTTONUP: {
                 ReleaseCapture();
                 Queued_Input input = {Key_MLEFT, (message.wParam & MK_LBUTTON)};
-                array_add(&global_os.inputs_to_process, input);
+                array_add(&_win32.state.inputs_to_process, input);
             } break;
             
             case WM_RBUTTONDOWN: {
                 SetCapture(window);
                 Queued_Input input = {Key_MRIGHT, (message.wParam & MK_RBUTTON)};
-                array_add(&global_os.inputs_to_process, input);
+                array_add(&_win32.state.inputs_to_process, input);
             } break;
             case WM_RBUTTONUP: {
                 ReleaseCapture();
                 Queued_Input input = {Key_MRIGHT, (message.wParam & MK_RBUTTON)};
-                array_add(&global_os.inputs_to_process, input);
+                array_add(&_win32.state.inputs_to_process, input);
             } break;
             
             case WM_MBUTTONDOWN:
             {
                 SetCapture(window);
                 Queued_Input input = {Key_MMIDDLE, (message.wParam & MK_MBUTTON)};
-                array_add(&global_os.inputs_to_process, input);
+                array_add(&_win32.state.inputs_to_process, input);
             } break;
             case WM_MBUTTONUP: {
                 ReleaseCapture();
                 Queued_Input input = {Key_MMIDDLE, (message.wParam & MK_MBUTTON)};
-                array_add(&global_os.inputs_to_process, input);
+                array_add(&_win32.state.inputs_to_process, input);
             } break;
             
+            // @Note: Process registered raw input devices!
+            case WM_INPUT: {
+                UINT size = sizeof(RAWINPUT);
+                LOCAL_PERSIST RAWINPUT raw[sizeof(RAWINPUT)];
+                
+                GetRawInputData((HRAWINPUT)message.lParam, RID_INPUT, raw, &size, sizeof(RAWINPUTHEADER));
+                
+                if (raw->header.dwType == RIM_TYPEMOUSE)
+                {
+                    // This is the raw mouse detla.
+                    s32 raw_x = raw->data.mouse.lLastX;
+                    s32 raw_y = raw->data.mouse.lLastY;
+                    
+                    _win32.state.tick_input.mouse_delta_raw  = {raw_x, raw_y};
+                    _win32.state.tick_input.mouse_delta      = v2((f32)raw_x, (f32)raw_y) * BASE_MOUSE_RESOLUTION;
+                    
+                    _win32.state.frame_input.mouse_delta_raw = {raw_x, raw_y};
+                    _win32.state.frame_input.mouse_delta     = v2((f32)raw_x, (f32)raw_y) * BASE_MOUSE_RESOLUTION;
+                    
+                    if (raw->data.mouse.usButtonFlags & RI_MOUSE_WHEEL) {
+                        s32 raw_wheel = (*(short*)&raw->data.mouse.usButtonData) / WHEEL_DELTA;
+                        _win32.state.tick_input.mouse_wheel_raw = raw_wheel;
+                        _win32.state.frame_input.mouse_wheel_raw = raw_wheel;
+                    }
+                }
+            } break;
+            
+#if 0
+            // No longer used. Using raw input instead.
             case WM_MOUSEWHEEL: {
                 f32 wheel_delta        = (f32) GET_WHEEL_DELTA_WPARAM(message.wParam) / WHEEL_DELTA;
-                global_os.mouse_scroll = v2(0, wheel_delta);
+                _win32.state.mouse_scroll = v2(0, wheel_delta);
             } break;
             case WM_MOUSEHWHEEL: {
                 f32 wheel_delta        = (f32) GET_WHEEL_DELTA_WPARAM(message.wParam) / WHEEL_DELTA;
-                global_os.mouse_scroll = v2(wheel_delta, 0);
+                _win32.state.mouse_scroll = v2(wheel_delta, 0);
             } break;
+#endif
             
             default:
             {
@@ -377,14 +508,14 @@ FUNCTION LRESULT CALLBACK win32_wndproc(HWND window, UINT message, WPARAM wparam
     switch (message) {
         case WM_ACTIVATE:
         case WM_ACTIVATEAPP: {
-            clear_key_states(&os->tick_input);
-            clear_key_states(&os->frame_input);
+            clear_input(&_win32.state.tick_input);
+            clear_input(&_win32.state.frame_input);
         } break;
         
         case WM_CLOSE: 
         case WM_DESTROY:
         case WM_QUIT: {
-            global_os.exit = TRUE;
+            _win32.state.exit = TRUE;
         } break;
         
         default: {
@@ -399,16 +530,17 @@ FUNCTION void win32_process_inputs(HWND window)
 {
     // Mouse position.
     //
-    POINT cursor; 
-    GetCursorPos(&cursor);
-    ScreenToClient(window, &cursor);
-    V2 mouse_client = {
-        (f32) cursor.x,
-        ((f32)global_os.window_size.h - 1.0f) - cursor.y,
+    s32 cursor_x, cursor_y;
+    win32_get_cursor_position(window, &cursor_x, &cursor_y);
+    V2 mouse_client = 
+    {
+        (f32) cursor_x,
+        ((f32)_win32.state.window_size.h - 1.0f) - cursor_y,
     };
-    global_os.mouse_ndc = {
-        2.0f*CLAMP01_RANGE(global_os.drawing_rect.min.x, mouse_client.x, global_os.drawing_rect.max.x) - 1.0f,
-        2.0f*CLAMP01_RANGE(global_os.drawing_rect.min.y, mouse_client.y, global_os.drawing_rect.max.y) - 1.0f,
+    _win32.state.mouse_ndc = 
+    {
+        2.0f*CLAMP01_RANGE(_win32.state.drawing_rect.min.x, mouse_client.x, _win32.state.drawing_rect.max.x) - 1.0f,
+        2.0f*CLAMP01_RANGE(_win32.state.drawing_rect.min.y, mouse_client.y, _win32.state.drawing_rect.max.y) - 1.0f,
         0.0f
     };
     
@@ -416,8 +548,8 @@ FUNCTION void win32_process_inputs(HWND window)
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     //debug_print("Want keyboard? %b     Want mouse? %b \n", io.WantCaptureKeyboard, io.WantCaptureMouse);
     if (io.WantCaptureKeyboard || io.WantCaptureMouse) {
-        clear_key_states(&os->tick_input);
-        clear_key_states(&os->frame_input);
+        clear_input(&_win32.state.tick_input);
+        clear_input(&_win32.state.frame_input);
         
         MSG message;
         while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
@@ -429,54 +561,56 @@ FUNCTION void win32_process_inputs(HWND window)
     }
 #endif
     
-    // Put input messages in queue + process mousewheel and such.
+    // Put input messages in queue + process raw input.
     //
     win32_process_pending_messages(window);
     
     // Process queued inputs.
     //
-    for (s32 i = 0; i < global_os.inputs_to_process.count; i++) {
-        Queued_Input input = global_os.inputs_to_process[i];
+    for (s32 i = 0; i < _win32.state.inputs_to_process.count; i++) {
+        Queued_Input input = _win32.state.inputs_to_process[i];
         if (input.down) {
             //
             // @Todo: This order preserving stuff could be wrong when we introduced per-frame input.
             //
             
             // Defer DOWN event because UP was TRUE, break to preserve order.
-            if (global_os.tick_input.released[input.key] && global_os.frame_input.released[input.key])
+            if (_win32.state.tick_input.released[input.key] && _win32.state.frame_input.released[input.key])
                 break;
             // Defer DOWN event because DOWN is already TRUE, break to preserve order.
-            else if (global_os.tick_input.pressed[input.key] && global_os.frame_input.pressed[input.key])
+            else if (_win32.state.tick_input.pressed[input.key] && _win32.state.frame_input.pressed[input.key])
                 break;
             else {
-                if (!global_os.tick_input.held[input.key])
-                    global_os.tick_input.pressed[input.key] = TRUE;
+                // Set tick input.
+                if (!_win32.state.tick_input.held[input.key])
+                    _win32.state.tick_input.pressed[input.key] = TRUE;
+                _win32.state.tick_input.held[input.key] = TRUE;
                 
-                global_os.tick_input.held[input.key] = TRUE;
+                // Set frame input.
+                if (!_win32.state.frame_input.held[input.key])
+                    _win32.state.frame_input.pressed[input.key] = TRUE;
+                _win32.state.frame_input.held[input.key] = TRUE;
                 
-                if (!global_os.frame_input.held[input.key])
-                    global_os.frame_input.pressed[input.key] = TRUE;
-                
-                global_os.frame_input.held[input.key] = TRUE;
-                
-                array_ordered_remove_by_index(&global_os.inputs_to_process, i);
+                array_ordered_remove_by_index(&_win32.state.inputs_to_process, i);
                 i--;
             }
         } else {
             // Defer UP event because DOWN was TRUE, break to preserve order.
-            if (global_os.tick_input.pressed[input.key] && global_os.frame_input.pressed[input.key])
+            if (_win32.state.tick_input.pressed[input.key] && _win32.state.frame_input.pressed[input.key])
                 break;
             // Defer UP event because UP is already TRUE, break to preserve order.
-            else if (global_os.tick_input.released[input.key] && global_os.frame_input.released[input.key])
+            else if (_win32.state.tick_input.released[input.key] && _win32.state.frame_input.released[input.key])
                 break;
             else {
-                global_os.tick_input.released[input.key] = TRUE;
-                global_os.tick_input.held[input.key] = FALSE;
+                // Set tick input.
+                _win32.state.tick_input.released[input.key] = TRUE;
+                _win32.state.tick_input.held[input.key]     = FALSE;
                 
-                global_os.frame_input.released[input.key] = TRUE;
-                global_os.frame_input.held[input.key] = FALSE;
+                // Set frame_input.
+                _win32.state.frame_input.released[input.key] = TRUE;
+                _win32.state.frame_input.held[input.key]     = FALSE;
                 
-                array_ordered_remove_by_index(&global_os.inputs_to_process, i);
+                array_ordered_remove_by_index(&_win32.state.inputs_to_process, i);
                 i--;
             }
         }
@@ -490,7 +624,7 @@ FUNCTION void win32_process_inputs(HWND window)
         if (!xinput_pad.connected)
             continue;
         
-        Gamepad *pad       = &global_os.gamepads[i];
+        Gamepad *pad       = &_win32.state.gamepads[i];
         pad->connected     = xinput_pad.connected;
         pad->left_stick    = {xinput_pad.stick_left_x, xinput_pad.stick_left_y};
         pad->right_stick   = {xinput_pad.stick_right_x, xinput_pad.stick_right_y};
@@ -520,19 +654,31 @@ FUNCTION void win32_process_inputs(HWND window)
 
 ////////////////////////////////
 //~ Win32 initialize
-void win32_init()
+FUNCTION void win32_init()
 {
     LARGE_INTEGER performance_frequency;
     QueryPerformanceFrequency(&performance_frequency);
-    global_performance_frequency = performance_frequency.QuadPart;
+    _win32.performance_frequency = performance_frequency.QuadPart;
     
-    global_waitable_timer = CreateWaitableTimerExW(0, 0, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
-    ASSERT(global_waitable_timer != 0);
+    _win32.waitable_timer = CreateWaitableTimerExW(0, 0, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    ASSERT(_win32.waitable_timer != 0);
     
     win32_build_paths();
 }
 
-HWND win32_create_window(int window_width, int window_height, LPCSTR window_name, HINSTANCE instance)
+FUNCTION void win32_register_raw_input_devices(HWND window)
+{
+    // We're configuring just one RAWINPUTDEVICE, the mouse,
+	// so it's a single-element array (a pointer).
+	RAWINPUTDEVICE rid[1];
+	rid[0].usUsagePage = HID_USAGE_PAGE_GENERIC;
+	rid[0].usUsage     = HID_USAGE_GENERIC_MOUSE;
+	rid[0].dwFlags     = RIDEV_INPUTSINK;
+	rid[0].hwndTarget  = window;
+	RegisterRawInputDevices(rid, 1, sizeof(rid[0]));
+}
+
+FUNCTION HWND win32_create_window(int window_width, int window_height, LPCSTR window_name, HINSTANCE instance)
 {
     //
     // Register window_class.
@@ -571,17 +717,22 @@ HWND win32_create_window(int window_width, int window_height, LPCSTR window_name
         ExitProcess(0);
     }
     
-    return window;
-}
-
-void win32_show_cursor()
-{
+    _win32.window = window;
+    
+    win32_init();
+    
+    win32_register_raw_input_devices(window);
+    
+    win32_show_window(window);
+    win32_focus_window(window);
+    
 #if DEVELOPER
-    ShowCursor(TRUE);
+    win32_show_cursor();
 #else
-    // @Todo: Cursor doesn't show on borders and titlebar...
-    ShowCursor(FALSE);
+    win32_hide_cursor();
 #endif
+    
+    return window;
 }
 
 ////////////////////////////////
@@ -628,15 +779,15 @@ FUNCTION Sound win32_sound_load(String8 full_path, u32 sample_rate)
 FUNCTION void win32_wasapi_begin()
 {
     wasapi_lock_buffer(&audio);
-    global_os.samples_out        = (f32 *)audio.sample_buffer;
-    global_os.samples_to_write   = (u32)MIN(global_os.sample_rate/10, audio.sample_count);
-    global_os.samples_to_advance = (u32)audio.num_samples_submitted;
-    MEMORY_ZERO(global_os.samples_out, global_os.samples_to_write * global_os.bytes_per_sample);
+    _win32.state.samples_out        = (f32 *)audio.sample_buffer;
+    _win32.state.samples_to_write   = (u32)MIN(_win32.state.sample_rate/10, audio.sample_count);
+    _win32.state.samples_to_advance = (u32)audio.num_samples_submitted;
+    MEMORY_ZERO(_win32.state.samples_out, _win32.state.samples_to_write * _win32.state.bytes_per_sample);
 }
 
 FUNCTION void win32_wasapi_end()
 {
-    wasapi_unlock_buffer(&audio, global_os.samples_to_write);
+    wasapi_unlock_buffer(&audio, _win32.state.samples_to_write);
 }
 
 FUNCTION void win32_wasapi_free()
@@ -647,106 +798,108 @@ FUNCTION void win32_wasapi_free()
 
 ////////////////////////////////
 //~ OS_State init
-void win32_os_state_init(HWND window)
+FUNCTION void win32_os_state_init(HWND window)
 {
-    os = &global_os;
+    os = &_win32.state;
     
     // Meta-data.
-    global_os.exe_full_path     = str8_cstring(global_exe_full_path);
-    global_os.exe_parent_folder = str8_cstring(global_exe_parent_folder);
-    global_os.data_folder       = str8_cstring(global_data_folder);
+    _win32.state.exe_full_path     = str8_cstring(_win32.exe_full_path);
+    _win32.state.exe_parent_folder = str8_cstring(_win32.exe_parent_folder);
+    _win32.state.data_folder       = str8_cstring(_win32.data_folder);
     
     // Options.
 #if DEVELOPER
-    global_os.fullscreen        = FALSE;
+    _win32.state.fullscreen        = FALSE;
 #else
-    global_os.fullscreen        = TRUE;
+    _win32.state.fullscreen        = TRUE;
     win32_toggle_fullscreen(window);
 #endif
-    global_os.exit              = FALSE;
+    _win32.state.exit              = FALSE;
     
-    global_os.vsync             = TRUE;
-    global_os.fix_aspect_ratio  = TRUE;
-    global_os.render_size       = {1920, 1080};
-    global_os.dt                = 1.0f/120.0f;
-    global_os.fps_max           = 120;
+    _win32.state.vsync             = TRUE;
+    _win32.state.fix_aspect_ratio  = TRUE;
+    _win32.state.render_size       = {1920, 1080};
+    _win32.state.dt                = 1.0f/120.0f;
+    _win32.state.fps_max           = 120;
     
     // @Note: Force fps_max to primary monitor refresh rate if possible.
     s32 refresh_hz = GetDeviceCaps(GetDC(window), VREFRESH);
-    if ((!global_os.vsync) && (global_os.fps_max > 0) && (refresh_hz > 1))
-        global_os.fps_max = refresh_hz;
+    if ((!_win32.state.vsync) && (_win32.state.fps_max > 0) && (refresh_hz > 1))
+        _win32.state.fps_max = refresh_hz;
     
-    global_os.time              = 0.0f;
+    _win32.state.time              = 0.0f;
     
     // Functions.
-    global_os.reserve               = win32_reserve;
-    global_os.release               = win32_release;
-    global_os.commit                = win32_commit;
-    global_os.decommit              = win32_decommit;
-    global_os.print_to_debug_output = win32_print_to_debug_output;
-    global_os.read_entire_file      = win32_read_entire_file;
-    global_os.write_entire_file     = win32_write_entire_file;
-    global_os.get_all_files_in_path = win32_get_all_files_in_path;
-    global_os.free_file_memory      = win32_free_file_memory;
+    _win32.state.disable_cursor        = win32_disable_cursor;
+    _win32.state.enable_cursor         = win32_enable_cursor;
+    _win32.state.reserve               = win32_reserve;
+    _win32.state.release               = win32_release;
+    _win32.state.commit                = win32_commit;
+    _win32.state.decommit              = win32_decommit;
+    _win32.state.print_to_debug_output = win32_print_to_debug_output;
+    _win32.state.read_entire_file      = win32_read_entire_file;
+    _win32.state.write_entire_file     = win32_write_entire_file;
+    _win32.state.get_all_files_in_path = win32_get_all_files_in_path;
+    _win32.state.free_file_memory      = win32_free_file_memory;
 #ifdef INCLUDE_WASAPI
-    global_os.sound_load            = win32_sound_load;
+    _win32.state.sound_load            = win32_sound_load;
 #endif
     
     // Arenas.
-    global_os.permanent_arena  = arena_init();
+    _win32.state.permanent_arena  = arena_init();
     
     // User Input.
-    array_init_and_reserve(&global_os.inputs_to_process, 512);
+    array_init_and_reserve(&_win32.state.inputs_to_process, 512);
     
 #ifdef INCLUDE_WASAPI
     // Audio Output.
     ASSERT(audio.initialized);
-    global_os.sample_rate        = audio.buffer_format->nSamplesPerSec;
-    global_os.bytes_per_sample   = audio.buffer_format->nBlockAlign;
-    global_os.samples_out        = 0;
-    global_os.samples_to_write   = 0;
-    global_os.samples_to_advance = 0;
+    _win32.state.sample_rate        = audio.buffer_format->nSamplesPerSec;
+    _win32.state.bytes_per_sample   = audio.buffer_format->nBlockAlign;
+    _win32.state.samples_out        = 0;
+    _win32.state.samples_to_write   = 0;
+    _win32.state.samples_to_advance = 0;
 #endif
 }
 
 ////////////////////////////////
 //~ Misc
-void win32_update_drawing_region(HWND window)
+FUNCTION void win32_update_drawing_region(HWND window)
 {
     RECT rect;
     GetClientRect(window, &rect);
     V2u window_size = {(u32)(rect.right - rect.left), (u32)(rect.bottom - rect.top)};
-    if (global_os.window_size != window_size) {
+    if (_win32.state.window_size != window_size) {
         Rect2 drawing_rect;
-        if (global_os.fix_aspect_ratio) {
-            drawing_rect = aspect_ratio_fit(global_os.render_size, window_size);
+        if (_win32.state.fix_aspect_ratio) {
+            drawing_rect = aspect_ratio_fit(_win32.state.render_size, window_size);
         } else {
             drawing_rect.min = {0, 0};
             drawing_rect.max = {(f32)window_size.x, (f32)window_size.y};
         }
         
-        global_os.window_size  = window_size;
-        global_os.drawing_rect = drawing_rect;
+        _win32.state.window_size  = window_size;
+        _win32.state.drawing_rect = drawing_rect;
     }
 }
 
-void win32_limit_framerate(LARGE_INTEGER last_counter)
+FUNCTION void win32_limit_framerate(LARGE_INTEGER last_counter)
 {
     // Framerate limiter (if vsync is off).
-    if ((!global_os.vsync) && (global_os.fps_max > 0)) {
-        f64 target_seconds_per_frame = 1.0/(f64)global_os.fps_max;
+    if ((!_win32.state.vsync) && (_win32.state.fps_max > 0)) {
+        f64 target_seconds_per_frame = 1.0/(f64)_win32.state.fps_max;
         f64 seconds_elapsed_so_far = win32_get_seconds_elapsed(last_counter, win32_qpc());
         if (seconds_elapsed_so_far < target_seconds_per_frame) {
-            if (global_waitable_timer) {
+            if (_win32.waitable_timer) {
                 f64 us_to_sleep = (target_seconds_per_frame - seconds_elapsed_so_far) * 1000000.0;
                 us_to_sleep    -= 1000.0; // -= 1ms;
                 if (us_to_sleep > 1) {
                     LARGE_INTEGER due_time;
                     due_time.QuadPart = -(s64)us_to_sleep * 10; // *10 because 100 ns intervals.
-                    b32 set_ok = SetWaitableTimerEx(global_waitable_timer, &due_time, 0, 0, 0, 0, 0);
+                    b32 set_ok = SetWaitableTimerEx(_win32.waitable_timer, &due_time, 0, 0, 0, 0, 0);
                     ASSERT(set_ok != 0);
                     
-                    WaitForSingleObjectEx(global_waitable_timer, INFINITE, 0);
+                    WaitForSingleObjectEx(_win32.waitable_timer, INFINITE, 0);
                 }
             } else {
                 // @Todo: Must use other methods of sleeping for older versions of Windows that don't have high resolution waitable timer.
@@ -757,4 +910,13 @@ void win32_limit_framerate(LARGE_INTEGER last_counter)
                 seconds_elapsed_so_far = win32_get_seconds_elapsed(last_counter, win32_qpc());
         }
     }
+}
+
+FUNCTION void win32_update_window_events(HWND window)
+{
+    win32_update_drawing_region(window);
+    win32_process_inputs(window);
+    
+    if (_win32.keep_cursor_centered)
+        win32_center_cursor();
 }

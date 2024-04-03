@@ -82,9 +82,9 @@ FUNCTION void load_animations(Arena *arena, Catalog<Sampled_Animation> *catalog)
 
 FUNCTION void control_camera(Camera *cam)
 {
-    V3 delta_mouse = game->delta_mouse;
+    V2 delta_mouse = os->tick_input.mouse_delta;
     f32 dt         = os->dt;
-    f32 turn_speed = 2.0f;
+    f32 turn_speed = 15.0f;
     
     Entity *player   = get_player(&game->entity_manager);
     V3 cam_r         = get_right(cam->object_to_world);
@@ -93,17 +93,17 @@ FUNCTION void control_camera(Camera *cam)
     if (cam->mode == CameraMode_GAME) {
         V3 target = (player->position + 2.0f*V3U);
         
-        Quaternion yaw = quaternion_from_axis_angle(V3U, -turn_speed*delta_mouse.x);
-        cam->position  = rotate_point_around_pivot(cam->position, target, yaw);
+        Quaternion q_yaw = quaternion_from_axis_angle(V3U, -turn_speed*delta_mouse.x);
+        cam->position  = rotate_point_around_pivot(cam->position, target, q_yaw);
         
-        Quaternion pitch = quaternion_from_axis_angle(cam_r, turn_speed*delta_mouse.y);
-        cam->position    = rotate_point_around_pivot(cam->position, target, pitch);
+        Quaternion q_pitch = quaternion_from_axis_angle(cam_r, -turn_speed*delta_mouse.y);
         
-        // @Todo: Limit the pitch angle!
-        f32 pitch_min = +7 * DEGS_TO_RADS;
-        f32 pitch_max = +55 * DEGS_TO_RADS;
-        f32 angle     = _arccos(dot(V3F, pitch*cam_f));
-        if(angle > pitch_min && angle < pitch_max) {
+        // Limit the pitch angle!
+        f32 pitch_min = -70 * DEGS_TO_RADS;
+        f32 pitch_max = +30 * DEGS_TO_RADS;
+        f32 pitch     = get_pitch(q_pitch * cam->orientation);
+        if(pitch > pitch_min && pitch < pitch_max) {
+            cam->position = rotate_point_around_pivot(cam->position, target, q_pitch);
         }
         
         // Make camera always maintain desired distance from target.
@@ -116,37 +116,48 @@ FUNCTION void control_camera(Camera *cam)
     }
 #if DEVELOPER
     else if (cam->mode == CameraMode_DEBUG) {
+        f32 move_speed = 2.0f;
         if (key_held(&os->tick_input, Key_SHIFT))
-            turn_speed *= 3.0f;
+            move_speed *= 3.0f;
         
         if (key_held(&os->tick_input, Key_MMIDDLE)) {
             Quaternion yaw   = quaternion_from_axis_angle(V3U,  -turn_speed*delta_mouse.x);
-            Quaternion pitch = quaternion_from_axis_angle(cam_r, turn_speed*delta_mouse.y);
+            Quaternion pitch = quaternion_from_axis_angle(cam_r,-turn_speed*delta_mouse.y);
             cam->orientation = yaw * cam->orientation;
             if(ABS(dot(V3U, pitch*cam_f)) < 0.98f)
                 cam->orientation = pitch * cam->orientation;
         }
-        
         cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, cam->orientation, v3(1));
         cam_r = get_right(cam->object_to_world);
         cam_f = get_forward(cam->object_to_world);
         
         if (key_held(&os->tick_input, Key_W)) 
-            cam->position +=  cam_f * turn_speed * dt;
+            cam->position +=  cam_f * move_speed * dt;
         if (key_held(&os->tick_input, Key_S))
-            cam->position += -cam_f * turn_speed * dt;
+            cam->position += -cam_f * move_speed * dt;
         if (key_held(&os->tick_input, Key_D))
-            cam->position +=  cam_r * turn_speed * dt;
+            cam->position +=  cam_r * move_speed * dt;
         if (key_held(&os->tick_input, Key_A))
-            cam->position += -cam_r * turn_speed * dt;
+            cam->position += -cam_r * move_speed * dt;
         if (key_held(&os->tick_input, Key_E))
-            cam->position +=  V3U * turn_speed * dt;
+            cam->position +=  V3U * move_speed * dt;
         if (key_held(&os->tick_input, Key_Q))
-            cam->position += -V3U * turn_speed * dt;
+            cam->position += -V3U * move_speed * dt;
     }
 #endif
     
     set_world_to_view_from_camera(game->camera.object_to_world);
+}
+
+FUNCTION void toggle_mode()
+{
+    s32 mode = game->camera.mode == CameraMode_GAME? CameraMode_DEBUG : CameraMode_GAME;
+    if (mode == CameraMode_DEBUG)
+        os->enable_cursor();
+    else if (mode == CameraMode_GAME)
+        os->disable_cursor();
+    
+    game->camera.mode = mode;
 }
 
 FUNCTION void game_init()
@@ -181,20 +192,19 @@ FUNCTION void game_init()
     set_view_to_proj();
 }
 
-
 FUNCTION void game_update()
 {
-    LOCAL_PERSIST V3 old_ndc = {};
-    game->delta_mouse = os->mouse_ndc - old_ndc;
-    old_ndc           = os->mouse_ndc;
-    
 #if DEVELOPER
-    if (key_pressed(&os->tick_input, Key_F8)){
-        game->camera.mode = game->camera.mode == CameraMode_GAME? CameraMode_DEBUG : CameraMode_GAME;
+    if (key_pressed(&os->tick_input, Key_ESCAPE)){
+        toggle_mode();
     }
 #endif;
     
     control_camera(&game->camera);
+    
+    // @Temporary:
+    V3 euler = get_euler(game->camera.orientation);
+    debug_print("euler: %v3\n", (euler*RADS_TO_DEGS));
     
     game->mouse_world = unproject(game->camera.position, 
                                   1.0f, 
@@ -344,7 +354,7 @@ FUNCTION void game_render()
     // Render all entities.
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
-        draw_entity(e);
+        //draw_entity(e);
     }
     
     

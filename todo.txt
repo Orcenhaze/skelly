@@ -1,7 +1,7 @@
-[] Implement decent 3rd person camera.
-	Hide and wrap the mouse cursor.
-	Limit pitch angle.
+[] Fix get_pitch value range.
 
+[] Add "game modes"  Game + Debug and remove mode from camera!
+	Disable mouse picking when in GAME mode.
 
 [] Gizmo translation and rotation snapping.
 
@@ -19,7 +19,7 @@ Get Quaternion orientation from M4x4: https://www.youtube.com/watch?v=aeDMABSW_K
 
 
 
-// @Temporary: Testing our matrix and quaternion functions.
+// Temporary: Testing our matrix and quaternion functions.
 V3 axis   = V3_Y_AXIS;
 f32 angle = PI32 / 4.0f;
 Quaternion qref = quaternion_from_axis_angle(axis, angle);

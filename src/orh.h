@@ -1,4 +1,4 @@
-/* orh.h - v0.84 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.85 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.85 - added raw input for mouse deltas. Added enable and disable cursor. Added get_euler() from quat.
 0.84 - added V4s type. Added M3x3 type. Added some M4x4 helper functions. Removed operator*(M4x4, V3). Added FUNCDEF/inline to definitions as well.
 0.83 - fixed array_remove_range() assert. Added "found" parameter to table_find().
 0.82 - added per-tick and per-frame inputs for keys.
@@ -384,6 +385,10 @@ typedef double             f64;
 #define FALSE 0
 #endif
 
+#ifndef NULL
+#define NULL 0
+#endif
+
 #if COMPILER_CL
 #    define threadvar __declspec(thread)
 #elif COMPILER_CLANG
@@ -724,6 +729,11 @@ FUNCDEF inline f32        dot(Quaternion a, Quaternion b);
 FUNCDEF inline f32        length(Quaternion q);
 FUNCDEF inline Quaternion normalize(Quaternion q);
 FUNCDEF inline Quaternion normalize_or_identity(Quaternion q);
+
+FUNCDEF inline f32        get_pitch(Quaternion const &q);
+FUNCDEF inline f32        get_yaw  (Quaternion const &q);
+FUNCDEF inline f32        get_roll (Quaternion const &q);
+FUNCDEF inline V3         get_euler(Quaternion const &q);
 
 FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w);
 FUNCDEF inline Quaternion quaternion(V3 v, f32 w);
@@ -1838,6 +1848,13 @@ FUNCDEF void sound_mix(const Sound *sound, f32 volume, f32 *samples_out, u32 sam
 // OS
 //
 
+// Configs.
+//
+// @Note I reversed engineer this value from CS2 by setting in-game sesitivity to 1.0 and figuring out
+// how much yaw the minimum mouse movement applied to the character. CS2 "setang" command uses degrees.
+// The result ended up being (0.022 degrees). I converted this value to radians and viola!
+#define BASE_MOUSE_RESOLUTION 0.00038397244f
+
 // Keyboards keys and mouse buttons.
 //
 enum Key
@@ -1918,11 +1935,15 @@ enum Key
     Key_COUNT,
 };
 
-struct Key_States
+struct Input_State
 {
+    // Key states.
     b32 pressed [Key_COUNT];
     b32 held    [Key_COUNT];
     b32 released[Key_COUNT];
+    V2s mouse_delta_raw;     // The raw mouse delta as reported by the os.
+    V2  mouse_delta;         // The raw mouse delta scaled by BASE_MOUSE_RESOLUTION.
+    s32 mouse_wheel_raw;     // The raw mouse wheel value as reported by os - +1 up, -1 down.
 };
 
 struct Queued_Input
@@ -2003,10 +2024,10 @@ struct OS_State
     // User Input.
     // Keyboard and mouse stuff.
     Array<Queued_Input> inputs_to_process;
-    Key_States          tick_input;   // Per-tick key states.
-    Key_States          frame_input;  // Per-frame key states.
-    V3  mouse_ndc;                    // In [-1, 1] interval - relative to drawing_rect.
-    V2  mouse_scroll;
+    Input_State         tick_input;   // Per-tick key states.
+    Input_State         frame_input;  // Per-frame key states.
+    V3  mouse_ndc;                    // Mouse position relative to drawing_rect - in [-1, 1] interval.
+    
     //
     // Gamepad/controller stuff. Can only care about gamepads[0] for singleplayer.
     Gamepad gamepads[GAMEPADS_MAX];
@@ -2028,12 +2049,14 @@ struct OS_State
     b32 fix_aspect_ratio;
     V2u render_size;         // Determines aspect ratio.
     V2u window_size;         // Client window width and height.
-    Rect2 drawing_rect;      // In pixel space (min top-left) - relative to client window.
+    Rect2 drawing_rect;      // The viewport. In pixel space (min top-left) - relative to client window.
     f32 dt;                  // The timestep - must be fixed!
     s32 fps_max;             // FPS limiter when vsync is off. Set to 0 for unlimited.
     f64 time;                // Incremented by dt at the end of each update.
     
     // Functions.
+    void       (*disable_cursor)();
+    void       (*enable_cursor)();
     void*      (*reserve) (u64 size);
     void       (*release) (void *memory);
     b32        (*commit)  (void *memory, u64 size);
@@ -2048,11 +2071,11 @@ struct OS_State
 extern OS_State *os;
 
 // Input helper functions. 
-FUNCDEF b32   key_pressed     (Key_States *states, s32 key, b32 capture = FALSE);
-FUNCDEF b32   key_held        (Key_States *states, s32 key, b32 capture = FALSE);
-FUNCDEF b32   key_released    (Key_States *states, s32 key, b32 capture = FALSE);
-FUNCDEF void  reset_key_states(Key_States *states);
-FUNCDEF void  clear_key_states(Key_States *states);
+FUNCDEF        b32   key_pressed     (Input_State *input, s32 key, b32 capture = FALSE);
+FUNCDEF        b32   key_held        (Input_State *input, s32 key, b32 capture = FALSE);
+FUNCDEF        b32   key_released    (Input_State *input, s32 key, b32 capture = FALSE);
+FUNCDEF inline void  reset_input     (Input_State *input);
+FUNCDEF inline void  clear_input     (Input_State *input);
 
 FUNCDEF Rect2 aspect_ratio_fit(V2u render_dim, V2u window_dim);
 FUNCDEF V3    unproject(V3 camera_position, f32 Zworld_distance_from_camera, V3 mouse_ndc, M4x4_Inverse world_to_view, M4x4_Inverse view_to_proj);
@@ -2694,6 +2717,39 @@ FUNCDEF inline Quaternion normalize_or_identity(Quaternion q)
 {
     f32 len = length(q);
     return len > 0 ? (q * 1.0f/len) : quaternion_identity();
+}
+
+FUNCDEF inline f32 get_pitch(Quaternion const &q)
+{
+    // x-axis rotation
+    f32 sinr_cosp = 2 * (q.w * q.x + q.y * q.z);
+    f32 cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+    f32 result    = _arctan2(sinr_cosp, cosr_cosp);
+    return result;
+}
+FUNCDEF inline f32 get_yaw(Quaternion const &q)
+{
+    // y-axis rotation)
+    f32 sinp   = _sqrt(1 + 2 * (q.w * q.y - q.x * q.z));
+    f32 cosp   = _sqrt(1 - 2 * (q.w * q.y - q.x * q.z));
+    f32 result = 2 * _arctan2(sinp, cosp) - PI32 / 2.0f;
+    return result;
+}
+FUNCDEF inline f32 get_roll(Quaternion const &q)
+{
+    // z-axis rotation
+    f32 siny_cosp = 2 * (q.w * q.z + q.x * q.y);
+    f32 cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+    f32 result    = _arctan2(siny_cosp, cosy_cosp);
+    return result;
+}
+FUNCDEF inline V3 get_euler(Quaternion const &q)
+{
+    f32 x = get_pitch(q);
+    f32 y = get_yaw(q);
+    f32 z = get_roll(q);
+    V3 result = {x, y, z};
+    return result;
 }
 
 FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w) 
@@ -4476,49 +4532,49 @@ FUNCDEF void sound_mix(Sound *sound, f32 volume, f32 *samples_out, u32 samples_t
 //
 OS_State *os = 0;
 
-FUNCDEF b32 key_pressed(Key_States *states, s32 key, b32 capture /* = FALSE */)
+FUNCDEF b32 key_pressed(Input_State *input, s32 key, b32 capture /* = FALSE */)
 {
-    b32 result = states->pressed[key];
+    b32 result = input->pressed[key];
     if (result && capture)
-        states->pressed[key] = FALSE;
+        input->pressed[key] = FALSE;
     return result;
 }
-FUNCDEF b32 key_held(Key_States *states, s32 key, b32 capture /* = FALSE */)
+FUNCDEF b32 key_held(Input_State *input, s32 key, b32 capture /* = FALSE */)
 {
-    b32 result = states->held[key];
+    b32 result = input->held[key];
     if (result && capture)
-        states->pressed[key] = FALSE;
+        input->pressed[key] = FALSE;
     return result;
 }
-FUNCDEF b32 key_released(Key_States *states, s32 key, b32 capture /* = FALSE */)
+FUNCDEF b32 key_released(Input_State *input, s32 key, b32 capture /* = FALSE */)
 {
-    b32 result = states->released[key];
+    b32 result = input->released[key];
     if (result && capture)
-        states->released[key] = FALSE;
+        input->released[key] = FALSE;
     return result;
 }
-FUNCDEF void reset_key_states(Key_States *states)
+FUNCDEF inline void reset_input(Input_State *input)
 {
     // @Note: Call this after input usage code (frame end or end of accum loop).
-    
-    // Clear mouse-wheel scroll.
-    os->mouse_scroll = {};
-    
-    // Clear pressed and released states of keyboard+mouse.
-    MEMORY_ZERO_ARRAY(states->pressed);
-    MEMORY_ZERO_ARRAY(states->released);
+    //
+    // Key held state persists across frames.
+    MEMORY_ZERO_ARRAY(input->pressed);
+    MEMORY_ZERO_ARRAY(input->released);
+    input->mouse_delta_raw = {};
+    input->mouse_delta     = {};
+    input->mouse_wheel_raw = {};
 }
-FUNCDEF void clear_key_states(Key_States *states)
+FUNCDEF void clear_input(Input_State *input)
 {
     // @Note: Call this when app changes focus (like WM_ACTIVATE and WM_ACTIVATEAPP on windows)
-    
-    // Clear mouse-wheel scroll.
-    os->mouse_scroll = {};
-    
-    // Clear all states of keyboard+mouse.
-    MEMORY_ZERO_ARRAY(states->pressed);
-    MEMORY_ZERO_ARRAY(states->held);
-    MEMORY_ZERO_ARRAY(states->released);
+    //
+    // Clear everything.
+    MEMORY_ZERO_ARRAY(input->pressed);
+    MEMORY_ZERO_ARRAY(input->held);
+    MEMORY_ZERO_ARRAY(input->released);
+    input->mouse_delta_raw = {};
+    input->mouse_delta     = {};
+    input->mouse_wheel_raw = {};
 }
 
 FUNCDEF Rect2 aspect_ratio_fit(V2u render_dim, V2u window_dim)

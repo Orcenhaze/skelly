@@ -27,15 +27,10 @@
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                    LPSTR command_line, int show_code)
 {
-    win32_init();
     HWND window = win32_create_window(1600, 900, "APP", instance);
     
     win32_os_state_init(window);
     d3d11_init(window);
-    
-    ShowWindow(window, SW_SHOWDEFAULT);
-    UpdateWindow(window);
-    win32_show_cursor();
     
 #if DEVELOPER
     //
@@ -55,7 +50,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     
     LARGE_INTEGER last_counter = win32_qpc();
     f64 accumulator = 0.0;
-    while (!global_os.exit) {
+    while (!os->exit) {
         // Sleep until our Present call won't block for queuing up a new frame. 
         d3d11_wait_for_swapchain();
         
@@ -68,8 +63,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         accumulator                   = CLAMP_UPPER(0.1, accumulator);
         //debug_print("FPS: %d\n", (s32)(1.0/seconds_elapsed_for_frame));
         
-        win32_update_drawing_region(window);
-        win32_process_inputs(window);
+        win32_update_window_events(window);
         
         while (accumulator >= os->dt) {
             //
@@ -80,23 +74,23 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             accumulator -= os->dt;
             os->time    += os->dt;
             
-            reset_key_states(&os->tick_input);
+            reset_input(&os->tick_input);
         }
         
 #if DEVELOPER
         // Start the Dear ImGui frame.
-        if ((global_os.window_size.x != 0) && (global_os.window_size.y != 0)) {
+        if ((os->window_size.x != 0) && (os->window_size.y != 0)) {
             ImGui_ImplDX11_NewFrame();
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
         }
 #endif
         // Render (only if window size is non-zero).
-        if ((global_os.window_size.x != 0) && (global_os.window_size.y != 0)) {
-            d3d11_viewport(global_os.drawing_rect.min.x, 
-                           global_os.drawing_rect.min.y, 
-                           get_width(global_os.drawing_rect), 
-                           get_height(global_os.drawing_rect));
+        if ((os->window_size.x != 0) && (os->window_size.y != 0)) {
+            d3d11_viewport(os->drawing_rect.min.x, 
+                           os->drawing_rect.min.y, 
+                           get_width(os->drawing_rect), 
+                           get_height(os->drawing_rect));
             d3d11_clear();
             
             //
@@ -108,9 +102,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             ImGui::Render();
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 #endif
-            d3d11_present(global_os.vsync);
+            d3d11_present(os->vsync);
             
-            reset_key_states(&os->frame_input);
+            reset_input(&os->frame_input);
         }
         
         
