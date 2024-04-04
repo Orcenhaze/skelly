@@ -101,7 +101,7 @@ FUNCTION void control_camera(Camera *cam)
         // Limit the pitch angle!
         f32 pitch_min = -70 * DEGS_TO_RADS;
         f32 pitch_max = +30 * DEGS_TO_RADS;
-        f32 pitch     = get_pitch(q_pitch * cam->orientation);
+        f32 pitch     = normalize_half_axis(get_euler(q_pitch * cam->orientation).x);
         if(pitch > pitch_min && pitch < pitch_max) {
             cam->position = rotate_point_around_pivot(cam->position, target, q_pitch);
         }
@@ -153,9 +153,9 @@ FUNCTION void toggle_mode()
 {
     s32 mode = game->camera.mode == CameraMode_GAME? CameraMode_DEBUG : CameraMode_GAME;
     if (mode == CameraMode_DEBUG)
-        os->enable_cursor();
+        os->set_cursor_mode(CursorMode_NORMAL);
     else if (mode == CameraMode_GAME)
-        os->disable_cursor();
+        os->set_cursor_mode(CursorMode_DISABLED);
     
     game->camera.mode = mode;
 }
@@ -201,10 +201,6 @@ FUNCTION void game_update()
 #endif;
     
     control_camera(&game->camera);
-    
-    // @Temporary:
-    V3 euler = get_euler(game->camera.orientation);
-    debug_print("euler: %v3\n", (euler*RADS_TO_DEGS));
     
     game->mouse_world = unproject(game->camera.position, 
                                   1.0f, 

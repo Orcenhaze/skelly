@@ -1,4 +1,5 @@
-[] Fix get_pitch value range.
+
+[] Add M_YAW and M_PITCH and ability to change them? Maybe in os_state.
 
 [] Add "game modes"  Game + Debug and remove mode from camera!
 	Disable mouse picking when in GAME mode.

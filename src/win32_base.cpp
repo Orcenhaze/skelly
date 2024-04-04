@@ -1,10 +1,13 @@
-/* win32_base.cpp - v0.04 - base functionality for win32_main.cpp
+/* win32_base.cpp - v0.05 - base functionality for win32_main.cpp
 
 REVISION HISTORY:
+0.05 - replace WM_ACTIVATE with WM_SETFOCUS/WM_KILLFOCUS and general cleanup.
 0.04 - added some cursor functionality and cleaned some stuff up.
 0.03 - removed primary_window; now we pass HWND to functions that need it.
 0.02 - renamed print() to debug_print() and added ability to load File_Info and File_Group and string stuff.
 0.01 - added mouse capture for middle mouse button.
+
+A bunch of guidance from GLFW.
 
 */
 
@@ -55,31 +58,120 @@ struct Win32
     HWND     window;                // Handle to the window we created.
     HANDLE   waitable_timer;        // Used for frame limiter.
     s64      performance_frequency; // Used timing things with QueryPerformanceCounter.
-    b32      keep_cursor_centered;
     s32      restore_cursor_pos_x, restore_cursor_pos_y;
 };
 GLOBAL Win32 _win32;
 
 ////////////////////////////////
-//~ Timing
-inline LARGE_INTEGER win32_qpc()
+//~ Utility
+FUNCTION inline LARGE_INTEGER win32_qpc()
 {
     LARGE_INTEGER result;
     QueryPerformanceCounter(&result);
     return result;
 }
 
-inline f64 win32_get_seconds_elapsed(LARGE_INTEGER start, LARGE_INTEGER end)
+FUNCTION inline f64 win32_get_seconds_elapsed(LARGE_INTEGER start, LARGE_INTEGER end)
 {
     // Make sure we QueryPerformanceFrequency() before calling this (we do in win32_init).
     ASSERT(_win32.performance_frequency != 0);
-    
     f64 result = (f64)(end.QuadPart - start.QuadPart) / (f64)_win32.performance_frequency;
     return result;
 }
 
-////////////////////////////////
-//~ Utility
+FUNCTION b32 win32_window_focused(HWND window)
+{
+    return window == GetActiveWindow();
+}
+
+FUNCTION void win32_show_window(HWND window)
+{
+    ShowWindow(window, SW_SHOWDEFAULT);
+}
+
+FUNCTION void win32_focus_window(HWND window)
+{
+    BringWindowToTop(window);
+    SetForegroundWindow(window);
+    SetFocus(window);
+}
+
+FUNCTION void win32_get_cursor_position(HWND window, s32 *x, s32 *y)
+{
+    // Return pos in client window space.
+    POINT pos; 
+    if (GetCursorPos(&pos)) {
+        ScreenToClient(window, &pos);
+        if (x) *x = pos.x;
+        if (y) *y = pos.y;
+    }
+}
+
+FUNCTION void win32_set_cursor_position(HWND window, s32 x, s32 y)
+{
+    // Pass pos in client window space.
+    POINT pos = {x, y};
+    ClientToScreen(window, &pos);
+    SetCursorPos(pos.x, pos.y);
+}
+
+FUNCTION void win32_show_cursor()
+{
+    while (ShowCursor(TRUE) < 0);
+}
+
+FUNCTION void win32_hide_cursor()
+{
+    while (ShowCursor(FALSE) >= 0);
+}
+
+FUNCTION void win32_capture_cursor(HWND window)
+{
+    // Confine cursor position within client window rect.
+    RECT clip_rect;
+    GetClientRect(window, &clip_rect);
+    ClientToScreen(window, (POINT*) &clip_rect.left);
+    ClientToScreen(window, (POINT*) &clip_rect.right);
+    ClipCursor(&clip_rect);
+}
+
+FUNCTION void win32_release_cursor()
+{
+    ClipCursor(NULL);
+}
+
+FUNCTION void win32_center_cursor(HWND window)
+{
+    // Set cursor pos to center of client window rect. 
+    RECT rect;
+    GetClientRect(window, &rect);
+    V2u window_size = {(u32)(rect.right - rect.left), (u32)(rect.bottom - rect.top)};
+    ClientToScreen(window, (POINT*) &rect.left);
+    ClientToScreen(window, (POINT*) &rect.right);
+    s32 x = rect.left + (s32)(window_size.x * 0.5f);
+    s32 y = rect.top  + (s32)(window_size.y * 0.5f);
+    SetCursorPos(x, y);
+}
+
+FUNCTION void win32_disable_cursor(HWND window)
+{
+    win32_get_cursor_position(window,
+                              &_win32.restore_cursor_pos_x,
+                              &_win32.restore_cursor_pos_y);
+    win32_hide_cursor();
+    win32_center_cursor(window);
+    win32_capture_cursor(window);
+}
+
+FUNCTION void win32_enable_cursor(HWND window)
+{
+    win32_release_cursor();
+    win32_show_cursor();
+    win32_set_cursor_position(window,
+                              _win32.restore_cursor_pos_x,
+                              _win32.restore_cursor_pos_y);
+}
+
 FUNCTION void win32_toggle_fullscreen(HWND window)
 {
     LOCAL_PERSIST WINDOWPLACEMENT last_window_placement = {
@@ -119,11 +211,6 @@ FUNCTION void win32_toggle_fullscreen(HWND window)
     }
 }
 
-FUNCTION void win32_print_to_debug_output(String8 text)
-{
-    OutputDebugStringA((LPCSTR)text.data);
-}
-
 FUNCTION void win32_build_paths()
 {
     GetModuleFileNameA(0, _win32.exe_full_path, sizeof(_win32.exe_full_path));
@@ -157,92 +244,38 @@ FUNCTION void win32_build_paths()
 #endif
 }
 
-FUNCTION void win32_show_window(HWND window)
-{
-    ShowWindow(window, SW_SHOWDEFAULT);
-}
-
-FUNCTION void win32_focus_window(HWND window)
-{
-    BringWindowToTop(window);
-    SetForegroundWindow(window);
-    SetFocus(window);
-}
-
-FUNCTION void win32_get_cursor_position(HWND window, s32 *x, s32 *y)
-{
-    // Return pos in client window space.
-    POINT pos; 
-    if (GetCursorPos(&pos)) {
-        ScreenToClient(window, &pos);
-        if (x) *x = pos.x;
-        if (y) *y = pos.y;
-    }
-}
-FUNCTION void win32_set_cursor_position(HWND window, s32 x, s32 y)
-{
-    // Pass pos in client window space.
-    POINT pos = {x, y};
-    ClientToScreen(window, &pos);
-    SetCursorPos(pos.x, pos.y);
-}
-
-FUNCTION void win32_show_cursor()
-{
-    while (ShowCursor(TRUE) < 0);
-}
-FUNCTION void win32_hide_cursor()
-{
-    while (ShowCursor(FALSE) >= 0);
-}
-
-FUNCTION void win32_capture_cursor()
-{
-    // Confine cursor position within client window rect.
-    RECT clip_rect;
-    GetClientRect(_win32.window, &clip_rect);
-    ClientToScreen(_win32.window, (POINT*) &clip_rect.left);
-    ClientToScreen(_win32.window, (POINT*) &clip_rect.right);
-    ClipCursor(&clip_rect);
-}
-FUNCTION void win32_release_cursor()
-{
-    ClipCursor(NULL);
-}
-
-FUNCTION void win32_center_cursor()
-{
-    // Set cursor pos to center of window rect. 
-    RECT window_rect;
-    GetClientRect(_win32.window, &window_rect);
-    ClientToScreen(_win32.window, (POINT*) &window_rect.left);
-    ClientToScreen(_win32.window, (POINT*) &window_rect.right);
-    s32 x = window_rect.left + (s32)(_win32.state.window_size.x * 0.5f);
-    s32 y = window_rect.top  + (s32)(_win32.state.window_size.y * 0.5f);
-    SetCursorPos(x, y);
-}
-
-FUNCTION void win32_disable_cursor()
-{
-    win32_get_cursor_position(_win32.window,
-                              &_win32.restore_cursor_pos_x,
-                              &_win32.restore_cursor_pos_y);
-    win32_hide_cursor();
-    win32_center_cursor();
-    _win32.keep_cursor_centered = TRUE;
-    win32_capture_cursor();
-}
-FUNCTION void win32_enable_cursor()
-{
-    win32_release_cursor();
-    _win32.keep_cursor_centered = FALSE;
-    win32_show_cursor();
-    win32_set_cursor_position(_win32.window,
-                              _win32.restore_cursor_pos_x,
-                              _win32.restore_cursor_pos_y);
-}
-
 ////////////////////////////////
+//~ OS State API
+
+//~ Misc
+FUNCTION void win32_print_to_debug_output(String8 text)
+{
+    OutputDebugStringA((LPCSTR)text.data);
+}
+
+//~ Memory
+FUNCTION void* win32_reserve(u64 size)
+{
+    void *memory = VirtualAlloc(0, size, MEM_RESERVE, PAGE_NOACCESS);
+    return memory;
+}
+
+FUNCTION void  win32_release(void *memory)
+{
+    VirtualFree(memory, 0, MEM_RELEASE);
+}
+
+FUNCTION b32  win32_commit(void *memory, u64 size)
+{
+    b32 result = (VirtualAlloc(memory, size, MEM_COMMIT, PAGE_READWRITE) != 0);
+    return result;
+}
+
+FUNCTION void  win32_decommit(void *memory, u64 size)
+{
+    VirtualFree(memory, size, MEM_DECOMMIT);
+}
+
 //~ File IO
 FUNCTION void win32_free_file_memory(void *memory)
 {
@@ -258,13 +291,13 @@ FUNCTION String8 win32_read_entire_file(String8 full_path)
     HANDLE file_handle = CreateFile((char*)full_path.data, GENERIC_READ, FILE_SHARE_READ, 0, 
                                     OPEN_EXISTING, 0, 0);
     if (file_handle == INVALID_HANDLE_VALUE) {
-        debug_print("OS Error: read_entire_file() INVALID_HANDLE_VALUE!\n");
+        win32_print_to_debug_output(S8LIT("OS Error: read_entire_file() INVALID_HANDLE_VALUE!\n"));
         return result;
     }
     
     LARGE_INTEGER file_size64;
     if (GetFileSizeEx(file_handle, &file_size64) == 0) {
-        debug_print("OS Error: read_entire_file() GetFileSizeEx() failed!\n");
+        win32_print_to_debug_output(S8LIT("OS Error: read_entire_file() GetFileSizeEx() failed!\n"));
     }
     
     u32 file_size32 = (u32)file_size64.QuadPart;
@@ -272,14 +305,14 @@ FUNCTION String8 win32_read_entire_file(String8 full_path)
                                       PAGE_READWRITE);
     
     if (!result.data) {
-        debug_print("OS Error: read_entire_file() VirtualAlloc() returned 0!\n");
+        win32_print_to_debug_output(S8LIT("OS Error: read_entire_file() VirtualAlloc() returned 0!\n"));
     }
     
     DWORD bytes_read;
     if (ReadFile(file_handle, result.data, file_size32, &bytes_read, 0) && (file_size32 == bytes_read)) {
         result.count = file_size32;
     } else {
-        debug_print("OS Error: read_entire_file() ReadFile() failed!\n");
+        win32_print_to_debug_output(S8LIT("OS Error: read_entire_file() ReadFile() failed!\n"));
         
         win32_free_file_memory(result.data);
         result.data = 0;
@@ -296,14 +329,14 @@ FUNCTION b32 win32_write_entire_file(String8 full_path, String8 data)
     
     HANDLE file_handle = CreateFile((char*)full_path.data, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
     if (file_handle == INVALID_HANDLE_VALUE) {
-        debug_print("OS Error: write_entire_file() INVALID_HANDLE_VALUE!\n");
+        win32_print_to_debug_output(S8LIT("OS Error: write_entire_file() INVALID_HANDLE_VALUE!\n"));
     }
     
     DWORD bytes_written;
     if (WriteFile(file_handle, data.data, (DWORD)data.count, &bytes_written, 0) && (bytes_written == data.count)) {
         result = TRUE;
     } else {
-        debug_print("OS Error: write_entire_file() WriteFile() failed!\n");
+        win32_print_to_debug_output(S8LIT("OS Error: write_entire_file() WriteFile() failed!\n"));
     }
     
     CloseHandle(file_handle);
@@ -341,28 +374,59 @@ FUNCTION File_Group win32_get_all_files_in_path(Arena *arena, String8 path_wildc
     return result;
 }
 
-////////////////////////////////
-//~ Memory
-FUNCTION void* win32_reserve(u64 size)
+//~ Modes / Config / Settings
+FUNCTION b32 win32_set_display_mode(Display_Mode mode)
 {
-    void *memory = VirtualAlloc(0, size, MEM_RESERVE, PAGE_NOACCESS);
-    return memory;
+    if (_win32.state.display_mode == mode)
+        return FALSE;
+    
+    _win32.state.display_mode = mode;
+    
+    // @Important!
+    // @Note: This only works because we only have two states.
+    win32_toggle_fullscreen(_win32.window);
+    
+    return TRUE;
 }
 
-FUNCTION void  win32_release(void *memory)
+FUNCTION b32 win32_set_cursor_mode(Cursor_Mode mode)
 {
-    VirtualFree(memory, 0, MEM_RELEASE);
-}
-
-FUNCTION b32  win32_commit(void *memory, u64 size)
-{
-    b32 result = (VirtualAlloc(memory, size, MEM_COMMIT, PAGE_READWRITE) != 0);
-    return result;
-}
-
-FUNCTION void  win32_decommit(void *memory, u64 size)
-{
-    VirtualFree(memory, size, MEM_DECOMMIT);
+    if (_win32.state.cursor_mode == mode)
+        return FALSE;
+    
+    s32 old_mode = _win32.state.cursor_mode;
+    _win32.state.cursor_mode = mode;
+    
+    HWND window = _win32.window;
+    
+    if (win32_window_focused(_win32.window))
+    {
+        if (mode == CursorMode_DISABLED)
+        {
+            win32_get_cursor_position(_win32.window,
+                                      &_win32.restore_cursor_pos_x,
+                                      &_win32.restore_cursor_pos_y);
+            win32_center_cursor(window);
+        }
+        
+        if (mode == CursorMode_DISABLED || mode == CursorMode_CAPTURED)
+            win32_capture_cursor(window);
+        else
+            win32_release_cursor();
+        
+        if (mode == CursorMode_DISABLED || mode == CursorMode_HIDDEN)
+            win32_hide_cursor();
+        else
+            win32_show_cursor();
+        
+        if (old_mode == CursorMode_DISABLED) {
+            win32_set_cursor_position(_win32.window,
+                                      _win32.restore_cursor_pos_x,
+                                      _win32.restore_cursor_pos_y);
+        }
+    }
+    
+    return TRUE;
 }
 
 ////////////////////////////////
@@ -448,8 +512,13 @@ FUNCTION void win32_process_pending_messages(HWND window)
                 array_add(&_win32.state.inputs_to_process, input);
             } break;
             
-            // @Note: Process registered raw input devices!
+            // Process registered raw input devices!
             case WM_INPUT: {
+                
+                // @Note: Do raw mouse motion ONLY when window is in focus.
+                if (!win32_window_focused(window))
+                    break;
+                
                 UINT size = sizeof(RAWINPUT);
                 LOCAL_PERSIST RAWINPUT raw[sizeof(RAWINPUT)];
                 
@@ -496,6 +565,34 @@ FUNCTION void win32_process_pending_messages(HWND window)
     }
 }
 
+FUNCTION void win32_input_kill_focus()
+{
+    // Ignore queued up inputs.
+    array_reset(&_win32.state.inputs_to_process);
+    
+    _win32.state.tick_input.mouse_delta_raw = {};
+    _win32.state.tick_input.mouse_delta     = {};
+    _win32.state.tick_input.mouse_wheel_raw = {};
+    
+    _win32.state.frame_input.mouse_delta_raw = {};
+    _win32.state.frame_input.mouse_delta     = {};
+    _win32.state.frame_input.mouse_wheel_raw = {};
+    
+    for (s32 key = 0; key < Key_COUNT; key++) {
+        if (_win32.state.tick_input.held[key]) {
+            _win32.state.tick_input.pressed [key] = FALSE;
+            _win32.state.tick_input.held    [key] = FALSE;
+            _win32.state.tick_input.released[key] = TRUE;
+        }
+        
+        if (_win32.state.frame_input.held[key]) {
+            _win32.state.frame_input.pressed [key] = FALSE;
+            _win32.state.frame_input.held    [key] = FALSE;
+            _win32.state.frame_input.released[key] = TRUE;
+        }
+    }
+}
+
 FUNCTION LRESULT CALLBACK win32_wndproc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 #if DEVELOPER
@@ -506,10 +603,23 @@ FUNCTION LRESULT CALLBACK win32_wndproc(HWND window, UINT message, WPARAM wparam
     LRESULT result = 0;
     
     switch (message) {
-        case WM_ACTIVATE:
-        case WM_ACTIVATEAPP: {
-            clear_input(&_win32.state.tick_input);
-            clear_input(&_win32.state.frame_input);
+        case WM_SETFOCUS: {
+            if (_win32.state.cursor_mode == CursorMode_DISABLED)
+                win32_disable_cursor(window);
+            if (_win32.state.cursor_mode == CursorMode_CAPTURED)
+                win32_capture_cursor(window);
+            
+            return 0;
+        } break;
+        case WM_KILLFOCUS: {
+            if (_win32.state.cursor_mode == CursorMode_DISABLED)
+                win32_enable_cursor(window);
+            if (_win32.state.cursor_mode == CursorMode_CAPTURED)
+                win32_release_cursor();
+            
+            win32_input_kill_focus();
+            
+            return 0;
         } break;
         
         case WM_CLOSE: 
@@ -546,7 +656,7 @@ FUNCTION void win32_process_inputs(HWND window)
     
 #if DEVELOPER
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    //debug_print("Want keyboard? %b     Want mouse? %b \n", io.WantCaptureKeyboard, io.WantCaptureMouse);
+    //win32_print_to_debug_output(S8LIT("Want keyboard? %b     Want mouse? %b \n"), io.WantCaptureKeyboard, io.WantCaptureMouse);
     if (io.WantCaptureKeyboard || io.WantCaptureMouse) {
         clear_input(&_win32.state.tick_input);
         clear_input(&_win32.state.frame_input);
@@ -726,12 +836,6 @@ FUNCTION HWND win32_create_window(int window_width, int window_height, LPCSTR wi
     win32_show_window(window);
     win32_focus_window(window);
     
-#if DEVELOPER
-    win32_show_cursor();
-#else
-    win32_hide_cursor();
-#endif
-    
     return window;
 }
 
@@ -749,7 +853,7 @@ FUNCTION Sound win32_sound_load(String8 full_path, u32 sample_rate)
     
     String8 file = win32_read_entire_file(full_path);
     if (!file.data) {
-        debug_print("Couldn't load sound file %S\n", full_path);
+        win32_print_to_debug_output(S8LIT("Couldn't load sound file %S\n", full_path));
         
         Sound dummy = {};
         return dummy;
@@ -760,7 +864,7 @@ FUNCTION Sound win32_sound_load(String8 full_path, u32 sample_rate)
     s32 count = stb_vorbis_decode_memory(file.data, (s32)file.count, &chan, &samplerate, &out);
     
     if (count == -1) {
-        debug_print("STB Error: Couldn't load sound file %S\n", full_path);
+        win32_print_to_debug_output(S8LIT("STB Error: Couldn't load sound file %S\n", full_path));
         
         Sound dummy = {};
         return dummy;
@@ -808,14 +912,16 @@ FUNCTION void win32_os_state_init(HWND window)
     _win32.state.data_folder       = str8_cstring(_win32.data_folder);
     
     // Options.
-#if DEVELOPER
-    _win32.state.fullscreen        = FALSE;
-#else
-    _win32.state.fullscreen        = TRUE;
-    win32_toggle_fullscreen(window);
-#endif
     _win32.state.exit              = FALSE;
-    
+    _win32.state.display_mode      = DisplayMode_BORDER;
+    _win32.state.cursor_mode       = CursorMode_NORMAL;
+#if DEVELOPER
+    win32_set_display_mode(DisplayMode_BORDER);
+    win32_set_cursor_mode(CursorMode_NORMAL);
+#else
+    win32_set_display_mode(DisplayMode_FULLSCREEN);
+    win32_set_cursor_mode(CursorMode_HIDDEN);
+#endif
     _win32.state.vsync             = TRUE;
     _win32.state.fix_aspect_ratio  = TRUE;
     _win32.state.render_size       = {1920, 1080};
@@ -830,20 +936,20 @@ FUNCTION void win32_os_state_init(HWND window)
     _win32.state.time              = 0.0f;
     
     // Functions.
-    _win32.state.disable_cursor        = win32_disable_cursor;
-    _win32.state.enable_cursor         = win32_enable_cursor;
+    _win32.state.print_to_debug_output = win32_print_to_debug_output;
     _win32.state.reserve               = win32_reserve;
     _win32.state.release               = win32_release;
     _win32.state.commit                = win32_commit;
     _win32.state.decommit              = win32_decommit;
-    _win32.state.print_to_debug_output = win32_print_to_debug_output;
     _win32.state.read_entire_file      = win32_read_entire_file;
     _win32.state.write_entire_file     = win32_write_entire_file;
-    _win32.state.get_all_files_in_path = win32_get_all_files_in_path;
     _win32.state.free_file_memory      = win32_free_file_memory;
+    _win32.state.get_all_files_in_path = win32_get_all_files_in_path;
 #ifdef INCLUDE_WASAPI
     _win32.state.sound_load            = win32_sound_load;
 #endif
+    _win32.state.set_display_mode      = win32_set_display_mode;
+    _win32.state.set_cursor_mode       = win32_set_cursor_mode;
     
     // Arenas.
     _win32.state.permanent_arena  = arena_init();
@@ -917,6 +1023,6 @@ FUNCTION void win32_update_window_events(HWND window)
     win32_update_drawing_region(window);
     win32_process_inputs(window);
     
-    if (_win32.keep_cursor_centered)
-        win32_center_cursor();
+    if ((_win32.state.cursor_mode == CursorMode_DISABLED) && win32_window_focused(window))
+        win32_center_cursor(window);
 }

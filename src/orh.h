@@ -1,4 +1,4 @@
-/* orh.h - v0.85 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.86 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.86 - added clamp_axis(), normalize_axis(), normalize_half_axis(). Added Cursor_Mode and Display_Mode
 0.85 - added raw input for mouse deltas. Added enable and disable cursor. Added get_euler() from quat.
 0.84 - added V4s type. Added M3x3 type. Added some M4x4 helper functions. Removed operator*(M4x4, V3). Added FUNCDEF/inline to definitions as well.
 0.83 - fixed array_remove_range() assert. Added "found" parameter to table_find().
@@ -638,6 +639,12 @@ FUNCDEF inline f32 _arccos_turns(f32 x);         // Returns angle in turns.
 FUNCDEF inline f32 _arctan_turns(f32 x);         // Returns angle in turns.
 FUNCDEF inline f32 _arctan2_turns(f32 y, f32 x); // Returns angle in turns.
 
+FUNCDEF inline f32 clamp_axis(f32 radians);          // Maps angle to [0, TAU) range.
+FUNCDEF inline f32 normalize_axis(f32 radians);      // Maps angle to (-pi, pi] range.
+FUNCDEF inline f32 normalize_half_axis(f32 radians); // Maps angle to (-pi/2, pi/2] range.
+
+FUNCDEF inline V3 get_euler(Quaternion q); // Returns angles in (-pi, pi] range.
+
 FUNCDEF inline V2 pow(V2 v, f32 y);
 FUNCDEF inline V3 pow(V3 v, f32 y);
 FUNCDEF inline V2 clamp(V2 min, V2 x, V2 max);
@@ -729,11 +736,6 @@ FUNCDEF inline f32        dot(Quaternion a, Quaternion b);
 FUNCDEF inline f32        length(Quaternion q);
 FUNCDEF inline Quaternion normalize(Quaternion q);
 FUNCDEF inline Quaternion normalize_or_identity(Quaternion q);
-
-FUNCDEF inline f32        get_pitch(Quaternion const &q);
-FUNCDEF inline f32        get_yaw  (Quaternion const &q);
-FUNCDEF inline f32        get_roll (Quaternion const &q);
-FUNCDEF inline V3         get_euler(Quaternion const &q);
 
 FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w);
 FUNCDEF inline Quaternion quaternion(V3 v, f32 w);
@@ -2011,6 +2013,20 @@ struct File_Group
     File_Info *first_file_info;
 };
 
+enum Cursor_Mode
+{
+    CursorMode_NORMAL,
+    CursorMode_DISABLED, // Hide, capture, and always center the mouse cursor.
+    CursorMode_CAPTURED, // Capture/trap the mouse cursor to window rect.
+    CursorMode_HIDDEN,   // Hide the mouse cursor.
+};
+
+enum Display_Mode
+{
+    DisplayMode_BORDER,
+    DisplayMode_FULLSCREEN, // Borderless.
+};
+
 struct OS_State
 {
     // Meta-data.
@@ -2042,9 +2058,12 @@ struct OS_State
     u32  samples_to_write;   // Number of samples we want to write. 
     u32  samples_to_advance; // Number of samples that were actually submitted last time (not necessarily all of what we intended, which was samples_to_write). Advance sound playback positions by this amount, i.e. pass to sound_update().
     
+    // @Todo: Bit field instead of a bunch of b32s.
+    //
     // Options.
     volatile b32 exit;
-    b32 fullscreen;
+    Display_Mode display_mode;
+    Cursor_Mode  cursor_mode;
     b32 vsync;
     b32 fix_aspect_ratio;
     V2u render_size;         // Determines aspect ratio.
@@ -2055,18 +2074,18 @@ struct OS_State
     f64 time;                // Incremented by dt at the end of each update.
     
     // Functions.
-    void       (*disable_cursor)();
-    void       (*enable_cursor)();
+    void       (*print_to_debug_output)(String8 text);
     void*      (*reserve) (u64 size);
     void       (*release) (void *memory);
     b32        (*commit)  (void *memory, u64 size);
     void       (*decommit)(void *memory, u64 size);
-    void       (*print_to_debug_output)(String8 text);
-    void       (*free_file_memory)(void *memory);  // @Redundant: Does same thing as release().
     String8    (*read_entire_file)(String8 full_path);
     b32        (*write_entire_file)(String8 full_path, String8 data);
+    void       (*free_file_memory)(void *memory);  // @Redundant: Does same thing as release().
     File_Group (*get_all_files_in_path)(Arena *arena, String8 path_wildcard);
     Sound      (*sound_load)(String8 full_path, u32 sample_rate);
+    b32        (*set_display_mode)(Display_Mode mode);
+    b32        (*set_cursor_mode)(Cursor_Mode mode);
 };
 extern OS_State *os;
 
@@ -2282,6 +2301,62 @@ FUNCDEF inline f32 _arctan_turns(f32 x)
 FUNCDEF inline f32 _arctan2_turns(f32 y, f32 x)
 {
     return _arctan2(y, x) * RADS_TO_TURNS;
+}
+
+FUNCDEF inline f32 clamp_axis(f32 radians)
+{
+    // Maps angle to [0, TAU) range.
+    
+    // Make angle in range (-TAU, TAU)
+    f32 result = _mod(radians, TAU32);
+    if (result < 0.0f)
+        result += TAU32; // Shift to range [0, TAU)
+    return result;
+}
+FUNCDEF inline f32 normalize_axis(f32 radians)
+{
+    // Maps angle to (-pi, pi] range.
+    
+    // Make angle in range [0, TAU).
+    f32 result = clamp_axis(radians);
+    if (result > PI32)
+        result -= TAU32; // Shift to range (-pi, pi]
+    return result;
+}
+FUNCDEF inline f32 normalize_half_axis(f32 radians)
+{
+    // Maps angle to (-pi/2, pi/2] range.
+    
+    // Make angle in range (-pi, pi].
+    f32 result = normalize_axis(radians);
+    if (ABS(result) > (PI32 * 0.5f))
+        result += -SIGN(result) * PI32; // Shift to range (-pi/2, pi/2]
+    return result;
+}
+
+FUNCDEF inline V3 get_euler(Quaternion q)
+{
+    // Returns angles in (-pi, pi] range.
+    
+    q = normalize_or_identity(q);
+    
+    // x-axis rotation.
+    f32 sinr_cosp = 2 * (q.w * q.x + q.y * q.z);
+    f32 cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+    f32 pitch     = _arctan2(sinr_cosp, cosr_cosp);
+    
+    // y-axis rotation.
+    f32 sinp      = _sqrt(1 + 2 * (q.w * q.y - q.x * q.z));
+    f32 cosp      = _sqrt(1 - 2 * (q.w * q.y - q.x * q.z));
+    f32 yaw       = 2 * _arctan2(sinp, cosp) - PI32 / 2.0f;
+    
+    // z-axis rotation.
+    f32 siny_cosp = 2 * (q.w * q.z + q.x * q.y);
+    f32 cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+    f32 roll      = _arctan2(siny_cosp, cosy_cosp);
+    
+    V3 result = {pitch, yaw, roll};
+    return result;
 }
 
 FUNCDEF inline V2 pow(V2 v, f32 y)
@@ -2717,39 +2792,6 @@ FUNCDEF inline Quaternion normalize_or_identity(Quaternion q)
 {
     f32 len = length(q);
     return len > 0 ? (q * 1.0f/len) : quaternion_identity();
-}
-
-FUNCDEF inline f32 get_pitch(Quaternion const &q)
-{
-    // x-axis rotation
-    f32 sinr_cosp = 2 * (q.w * q.x + q.y * q.z);
-    f32 cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y);
-    f32 result    = _arctan2(sinr_cosp, cosr_cosp);
-    return result;
-}
-FUNCDEF inline f32 get_yaw(Quaternion const &q)
-{
-    // y-axis rotation)
-    f32 sinp   = _sqrt(1 + 2 * (q.w * q.y - q.x * q.z));
-    f32 cosp   = _sqrt(1 - 2 * (q.w * q.y - q.x * q.z));
-    f32 result = 2 * _arctan2(sinp, cosp) - PI32 / 2.0f;
-    return result;
-}
-FUNCDEF inline f32 get_roll(Quaternion const &q)
-{
-    // z-axis rotation
-    f32 siny_cosp = 2 * (q.w * q.z + q.x * q.y);
-    f32 cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
-    f32 result    = _arctan2(siny_cosp, cosy_cosp);
-    return result;
-}
-FUNCDEF inline V3 get_euler(Quaternion const &q)
-{
-    f32 x = get_pitch(q);
-    f32 y = get_yaw(q);
-    f32 z = get_roll(q);
-    V3 result = {x, y, z};
-    return result;
 }
 
 FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w) 
