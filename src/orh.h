@@ -1,4 +1,4 @@
-/* orh.h - v0.86 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.87 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
 0.86 - added clamp_axis(), normalize_axis(), normalize_half_axis(). Added Cursor_Mode and Display_Mode
 0.85 - added raw input for mouse deltas. Added enable and disable cursor. Added get_euler() from quat.
 0.84 - added V4s type. Added M3x3 type. Added some M4x4 helper functions. Removed operator*(M4x4, V3). Added FUNCDEF/inline to definitions as well.
@@ -504,10 +505,12 @@ union V2s
 
 union V3
 {
+    // @Note: pitch around right (x-axis); yaw around up (y-axis); roll around forward (-z-axis)
     struct { f32 x, y, z; };
     struct { V2 xy; f32 ignored0_; };
     struct { f32 ignored1_; V2 yz; };
     struct { f32 r, g, b; };
+    struct { f32 pitch, yaw, roll; };
     f32 I[3];
 };
 extern const V3 V3_ZERO;
@@ -741,6 +744,7 @@ FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w);
 FUNCDEF inline Quaternion quaternion(V3 v, f32 w);
 FUNCDEF inline Quaternion quaternion_identity();
 
+FUNCDEF inline Quaternion quaternion_from_euler(V3 euler);
 FUNCDEF        Quaternion quaternion_from_m3x3(M3x3 const &affine);
 FUNCDEF inline Quaternion quaternion_from_m4x4(M4x4 const &affine);
 FUNCDEF inline Quaternion quaternion_look_at(V3 direction, V3 up);
@@ -1852,10 +1856,10 @@ FUNCDEF void sound_mix(const Sound *sound, f32 volume, f32 *samples_out, u32 sam
 
 // Configs.
 //
-// @Note I reversed engineer this value from CS2 by setting in-game sesitivity to 1.0 and figuring out
-// how much yaw the minimum mouse movement applied to the character. CS2 "setang" command uses degrees.
-// The result ended up being (0.022 degrees). I converted this value to radians and viola!
-#define BASE_MOUSE_RESOLUTION 0.00038397244f
+// Based on m_yaw/m_pitch in source engine; use for FPS games.
+#define BASE_MOUSE_RESOLUTION_SOURCE (0.022 * DEGS_TO_RADS)
+// Based on Unreal Engine's mouse sensitivity; use for third-person games.
+#define BASE_MOUSE_RESOLUTION_UNREAL (0.070 * DEGS_TO_RADS)
 
 // Keyboards keys and mouse buttons.
 //
@@ -1944,7 +1948,7 @@ struct Input_State
     b32 held    [Key_COUNT];
     b32 released[Key_COUNT];
     V2s mouse_delta_raw;     // The raw mouse delta as reported by the os.
-    V2  mouse_delta;         // The raw mouse delta scaled by BASE_MOUSE_RESOLUTION.
+    V2  mouse_delta;         // The raw mouse delta scaled by os->base_mouse_resolution.
     s32 mouse_wheel_raw;     // The raw mouse wheel value as reported by os - +1 up, -1 down.
 };
 
@@ -2061,6 +2065,7 @@ struct OS_State
     // @Todo: Bit field instead of a bunch of b32s.
     //
     // Options.
+    f32          base_mouse_resolution;
     volatile b32 exit;
     Display_Mode display_mode;
     Cursor_Mode  cursor_mode;
@@ -2810,6 +2815,35 @@ FUNCDEF inline Quaternion quaternion_identity()
     return result;
 }
 
+FUNCDEF inline Quaternion quaternion_from_euler(V3 euler)
+{
+    // From:
+    // https://www.euclideanspace.com/maths/geometry/rotations/conversions/eulerToQuaternion/index.htm
+    //
+    // attitude (x), heading (y), bank (z)
+    // pitch    (x), yaw     (y), roll (z)
+    //
+    // The order of applying euler rotations is: yaw -> pitch -> roll
+    
+    euler.pitch = _mod(euler.pitch, TAU32);
+    euler.yaw   = _mod(euler.yaw,   TAU32);
+    euler.roll  = _mod(euler.roll,  TAU32);
+    
+    f32 cp = _cos(euler.pitch * 0.5f);;
+    f32 cy = _cos(euler.yaw   * 0.5f);
+    f32 cr = _cos(euler.roll  * 0.5f);
+    f32 sp = _sin(euler.pitch * 0.5f);
+    f32 sy = _sin(euler.yaw   * 0.5f);
+    f32 sr = _sin(euler.roll  * 0.5f);
+    
+    Quaternion result;
+    result.x = sp*cy*cr - cp*sy*sr;
+    result.y = cp*sy*cr + sp*cy*sr;
+    result.z = sp*sy*cr + cp*cy*sr;
+    result.w = cp*cy*cr - sp*sy*sr;
+    
+    return result;
+}
 Quaternion quaternion_from_m3x3(M3x3 const &affine)
 {
     // @Note: From GLM. I think this implementation is based on the paper:

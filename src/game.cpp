@@ -84,7 +84,7 @@ FUNCTION void control_camera(Camera *cam)
 {
     V2 delta_mouse = os->tick_input.mouse_delta;
     f32 dt         = os->dt;
-    f32 turn_speed = 15.0f;
+    f32 turn_speed = 1.0f;//12.0f;
     
     Entity *player   = get_player(&game->entity_manager);
     V3 cam_r         = get_right(cam->object_to_world);
@@ -93,18 +93,27 @@ FUNCTION void control_camera(Camera *cam)
     if (cam->mode == CameraMode_GAME) {
         V3 target = (player->position + 2.0f*V3U);
         
-        Quaternion q_yaw = quaternion_from_axis_angle(V3U, -turn_speed*delta_mouse.x);
-        cam->position  = rotate_point_around_pivot(cam->position, target, q_yaw);
-        
-        Quaternion q_pitch = quaternion_from_axis_angle(cam_r, -turn_speed*delta_mouse.y);
+        //
+        // @Todo: Proper camera movement,
+        //
+        LOCAL_PERSIST V3 euler_ = {};
+        euler_.yaw   += -delta_mouse.x;
         
         // Limit the pitch angle!
         f32 pitch_min = -70 * DEGS_TO_RADS;
         f32 pitch_max = +30 * DEGS_TO_RADS;
-        f32 pitch     = normalize_half_axis(get_euler(q_pitch * cam->orientation).x);
+        f32 pitch     = normalize_half_axis(-delta_mouse.y);
         if(pitch > pitch_min && pitch < pitch_max) {
-            cam->position = rotate_point_around_pivot(cam->position, target, q_pitch);
+            euler_.pitch += -delta_mouse.y;
         }
+        
+        //debug_print("euler: %v3\n", euler_ * RADS_TO_DEGS);
+        
+        Quaternion q = quaternion_from_euler(euler_);
+        cam->position = rotate_point_around_pivot(cam->position, target, q);
+        
+        // reset rotation.
+        euler_ = {};
         
         // Make camera always maintain desired distance from target.
         f32 desired_distance      = 5.0f; // In units.

@@ -1,14 +1,12 @@
+[] Proper rotations. How is Unreal's camera so fast when we're adding same value?
+[] Fix visual bug1: For some reason, ResolveSubresource is causing seams.
+[] Fix visual bug2: Stretching near corners.
 
-[] Add M_YAW and M_PITCH and ability to change them? Maybe in os_state.
 
 [] Add "game modes"  Game + Debug and remove mode from camera!
 	Disable mouse picking when in GAME mode.
 
 [] Gizmo translation and rotation snapping.
-
-[] Fix visual bug1: For some reason, ResolveSubresource is causing seams.
-[] Fix visual bug2: Stretching near corners.
-
 
 
 [] Cleanup blender exporters and current state of animation system.

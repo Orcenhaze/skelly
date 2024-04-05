@@ -531,10 +531,10 @@ FUNCTION void win32_process_pending_messages(HWND window)
                     s32 raw_y = raw->data.mouse.lLastY;
                     
                     _win32.state.tick_input.mouse_delta_raw  = {raw_x, raw_y};
-                    _win32.state.tick_input.mouse_delta      = v2((f32)raw_x, (f32)raw_y) * BASE_MOUSE_RESOLUTION;
+                    _win32.state.tick_input.mouse_delta      = v2((f32)raw_x, (f32)raw_y) * _win32.state.base_mouse_resolution;
                     
                     _win32.state.frame_input.mouse_delta_raw = {raw_x, raw_y};
-                    _win32.state.frame_input.mouse_delta     = v2((f32)raw_x, (f32)raw_y) * BASE_MOUSE_RESOLUTION;
+                    _win32.state.frame_input.mouse_delta     = v2((f32)raw_x, (f32)raw_y) * _win32.state.base_mouse_resolution;
                     
                     if (raw->data.mouse.usButtonFlags & RI_MOUSE_WHEEL) {
                         s32 raw_wheel = (*(short*)&raw->data.mouse.usButtonData) / WHEEL_DELTA;
@@ -912,6 +912,7 @@ FUNCTION void win32_os_state_init(HWND window)
     _win32.state.data_folder       = str8_cstring(_win32.data_folder);
     
     // Options.
+    _win32.state.base_mouse_resolution = BASE_MOUSE_RESOLUTION_UNREAL;
     _win32.state.exit              = FALSE;
     _win32.state.display_mode      = DisplayMode_BORDER;
     _win32.state.cursor_mode       = CursorMode_NORMAL;
