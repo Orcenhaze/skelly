@@ -1,8 +1,9 @@
-/* orh_d3d11.cpp - v0.08 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.09 - C++ D3D11 immediate mode renderer.
 
 REVISION HISTORY:
-    0.08 - fixed pixel_to_ndc(); now accounts for viewport TopLeftX & TopLeftY and added V3 version for z-depth.
-    0.07 - added ndc_to_pixel() and V3 version of world_to_ndc() for z-depth.
+0.09 - debug breaks on dxgi as well.
+0.08 - fixed pixel_to_ndc(); now accounts for viewport TopLeftX & TopLeftY and added V3 version for z-depth.
+0.07 - added ndc_to_pixel() and V3 version of world_to_ndc() for z-depth.
 0.06 - set_object_to_world() now takes scale and calculates TRS matrix properly.
 0.05 - added d3d11_clear_depth() to clear depth only. Added immediate_rect_3d().
 0.04 - removed ability to pass sRGB bool to load_texture(). Now we always create 4-bpp non-sRGB texture.
@@ -34,6 +35,10 @@ linear --> sRGB:    pow(color, 1.0/2.2)    make numbers bigger     (RenderTarget
 #include <d3d11.h>       // D3D interface
 #include <dxgi1_3.h>     // DirectX driver interface
 #include <d3dcompiler.h> // Shader compiler
+
+#if DEVELOPER
+#include <dxgidebug.h>
+#endif
 
 //#pragma comment(lib, "dxgi.lib")        
 #pragma comment(lib, "d3d11.lib")       // direct3D library
@@ -452,7 +457,7 @@ FUNCTION void d3d11_compile_shader(String8 hlsl, D3D11_INPUT_ELEMENT_DESC elemen
     //String8 file = os->read_entire_file(hlsl_path);
     
     UINT flags = D3DCOMPILE_PACK_MATRIX_ROW_MAJOR | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS;
-#if defined(_DEBUG)
+#if DEVELOPER
     flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #else
     flags |= D3DCOMPILE_OPTIMIZATION_LEVEL3;
@@ -612,7 +617,7 @@ FUNCTION void d3d11_init(HWND window)
     // Create device and context.
     {
         UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_SINGLETHREADED;
-#if defined(_DEBUG)
+#if DEVELOPER
         flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
         D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0};
@@ -621,11 +626,11 @@ FUNCTION void d3d11_init(HWND window)
         ASSERT_HR(hr);
     }
     
-#if defined(_DEBUG)
+#if DEVELOPER
     //
     // Enable debug break on API errors.
     {
-        ID3D11InfoQueue* info;
+        ID3D11InfoQueue *info;
         HRESULT hr = device->QueryInterface(__uuidof(ID3D11InfoQueue), (void**) &info);
         ASSERT_HR(hr);
         hr         = info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
@@ -634,6 +639,17 @@ FUNCTION void d3d11_init(HWND window)
         ASSERT_HR(hr);
         info->Release();
     }
+    
+    // enable debug break for DXGI too.
+    {
+        IDXGIInfoQueue *dxgi_info;
+        HRESULT hr = DXGIGetDebugInterface1(0, __uuidof(IDXGIInfoQueue), (void**)&dxgi_info);
+        ASSERT_HR(hr);
+        dxgi_info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+        dxgi_info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
+        dxgi_info->Release();
+    }
+    
     // after this there's no need to check for any errors on device functions manually
     // so all HRESULT return values in this code will be ignored
     // debugger will break on errors anyway

@@ -1,4 +1,4 @@
-/* orh.h - v0.88 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.89 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.89 - added str8_contains().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
 0.86 - added clamp_axis(), normalize_axis(), normalize_half_axis(). Added Cursor_Mode and Display_Mode
@@ -1356,7 +1357,8 @@ FUNCDEF u64        str8_length(const char *c_string);
 FUNCDEF String8    str8_copy(Arena *arena, String8 s);
 FUNCDEF String8    str8_cat(Arena *arena, String8 a, String8 b);
 FUNCDEF inline b32 str8_empty(String8 s);
-FUNCDEF b32        str8_match(String8 a, String8 b);
+FUNCDEF b32        str8_match(String8 a, String8 b, b32 case_insensitive = FALSE);
+FUNCDEF b32        str8_contains(String8 src, String8 key, b32 case_insensitive = FALSE);
 
 inline b32 operator==(String8 lhs, String8 rhs)
 {
@@ -1383,7 +1385,9 @@ FUNCDEF inline b32  is_whitespace(char c);
 FUNCDEF inline b32  is_alpha(char c);
 FUNCDEF inline b32  is_numeric(char c);
 FUNCDEF inline b32  is_alphanumeric(char c);
-FUNCDEF inline b32  is_file_slash(char c);
+FUNCDEF inline b32  is_slash(char c);
+FUNCDEF inline char to_upper(char c);
+FUNCDEF inline char to_lower(char c);
 
 //~ String path helpers
 // @Note: Assumes passed strings are immutable! We won't allocate memory for the result string!
@@ -4133,14 +4137,41 @@ FUNCDEF b32 str8_empty(String8 s)
     b32 result = (!s.data || !s.count);
     return result;
 }
-FUNCDEF b32 str8_match(String8 a, String8 b)
+FUNCDEF b32 str8_match(String8 a, String8 b, b32 case_insensitive /*= FALSE*/)
 {
     if (a.count != b.count) return FALSE;
-    for(u64 i = 0; i < a.count; i++)
-    {
-        if (a.data[i] != b.data[i]) return FALSE;
+    for (u64 i = 0; i < a.count; i++) {
+        char c1 = a.data[i];
+        char c2 = b.data[i];
+        if (case_insensitive) {
+            c1 = to_upper(c1);
+            c2 = to_upper(c2);
+        }
+        if (c1 != c2) return FALSE;
     }
     return TRUE;
+}
+FUNCDEF b32 str8_contains(String8 src, String8 key, b32 case_insensitive /*= FALSE*/)
+{
+    for (u64 i = 0; i < src.count; i++) {
+        char c1 = src.data[i];
+        char c2 = key.data[0];
+        if (case_insensitive) {
+            c1 = to_upper(c1);
+            c2 = to_upper(c2);
+        }
+        
+        if (c1 == c2) {
+            u64 count_left_in_src = src.count - i;
+            if (key.count > count_left_in_src)
+                return FALSE;
+            
+            String8 s = {src.data + i, key.count};
+            if (str8_match(s, key, case_insensitive))
+                return TRUE;
+        }
+    }
+    return FALSE;
 }
 
 /////////////////////////////////////////
@@ -4197,6 +4228,16 @@ FUNCDEF inline b32 is_alphanumeric(char c)
 FUNCDEF inline b32 is_slash(char c)
 {
     b32 result = ((c == '\\') || (c == '/'));
+    return result;
+}
+FUNCDEF inline char to_upper(char c)
+{
+    char result = ((c >= 'a') && (c <= 'z'))? c-=32: c;
+    return result;
+}
+FUNCDEF inline char to_lower(char c)
+{
+    char result = ((c >= 'A') && (c <= 'Z'))? c+=32: c;
     return result;
 }
 

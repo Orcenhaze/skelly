@@ -38,7 +38,7 @@ if not exist ..\build mkdir ..\build
 pushd ..\build
 
 REM Debug build
-cl /Od /MTd /DDEVELOPER=1 /Fe%APPNAME%_dev.exe %CF% ..\src\win32_main.cpp /link /MANIFEST:EMBED /MANIFESTINPUT:../src/%APPNAME%.manifest /entry:WinMainCRTStartup /subsystem:windows %LF%
+cl /Od /MTd /DDEVELOPER=1 /Fe%APPNAME%_dev.exe %CF% ..\src\win32_main.cpp /link /MANIFEST:EMBED /MANIFESTINPUT:../src/%APPNAME%.manifest /entry:WinMainCRTStartup /subsystem:windows %LF% DXGI.lib
 
 REM Release build
 cl /O2 /MT  /DDEVELOPER=0 /DNDEBUG /Fe%APPNAME%.exe %CF% ..\src\win32_main.cpp /link /MANIFEST:EMBED /MANIFESTINPUT:../src/%APPNAME%.manifest /entry:WinMainCRTStartup /subsystem:windows %LF%
