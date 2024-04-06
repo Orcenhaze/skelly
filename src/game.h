@@ -16,19 +16,23 @@ GLOBAL V3 V3R    = V3_RIGHT;
 #include "editor.h"
 #endif
 
-enum Camera_Mode
+enum Game_Mode
 {
-    CameraMode_GAME,
-    CameraMode_DEBUG,
+    GameMode_GAME,
+    GameMode_MENU,
+    
+    GameMode_DEBUG,
 };
 
 struct Camera
 {
-    V3         position;
-    Quaternion orientation;
     M4x4       object_to_world;
-    
-    s32 mode;
+#if DEVELOPER
+    Quaternion orientation;
+#endif
+    V3         euler;
+    V3         position;     // Current position.
+    V3         start_offset; // Offset from player.
 };
 
 FUNCTION inline Point_Light default_point_light()
@@ -60,6 +64,7 @@ struct Game_State
     
     Camera camera;
     V3 mouse_world;
+    Game_Mode mode;
     
     s32               num_point_lights;
     Point_Light       point_lights[MAX_POINT_LIGHTS];

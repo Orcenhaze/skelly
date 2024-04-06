@@ -530,16 +530,21 @@ FUNCTION void win32_process_pending_messages(HWND window)
                     s32 raw_x = raw->data.mouse.lLastX;
                     s32 raw_y = raw->data.mouse.lLastY;
                     
-                    _win32.state.tick_input.mouse_delta_raw  = {raw_x, raw_y};
-                    _win32.state.tick_input.mouse_delta      = v2((f32)raw_x, (f32)raw_y) * _win32.state.base_mouse_resolution;
+                    // @Note:
+                    // We will += these values because we could be getting multiple WM_INPUTs this frame.
+                    // All the delta values below should be reset at the end of their lifetime, i.e.,
+                    // frame end or end of accum loop.
                     
-                    _win32.state.frame_input.mouse_delta_raw = {raw_x, raw_y};
-                    _win32.state.frame_input.mouse_delta     = v2((f32)raw_x, (f32)raw_y) * _win32.state.base_mouse_resolution;
+                    _win32.state.tick_input.mouse_delta_raw  += {raw_x, raw_y};
+                    _win32.state.tick_input.mouse_delta      += v2((f32)raw_x, (f32)-raw_y) * _win32.state.base_mouse_resolution;
+                    
+                    _win32.state.frame_input.mouse_delta_raw += {raw_x, raw_y};
+                    _win32.state.frame_input.mouse_delta     += v2((f32)raw_x, (f32)-raw_y) * _win32.state.base_mouse_resolution;
                     
                     if (raw->data.mouse.usButtonFlags & RI_MOUSE_WHEEL) {
                         s32 raw_wheel = (*(short*)&raw->data.mouse.usButtonData) / WHEEL_DELTA;
-                        _win32.state.tick_input.mouse_wheel_raw = raw_wheel;
-                        _win32.state.frame_input.mouse_wheel_raw = raw_wheel;
+                        _win32.state.tick_input.mouse_wheel_raw  += raw_wheel;
+                        _win32.state.frame_input.mouse_wheel_raw += raw_wheel;
                     }
                 }
             } break;

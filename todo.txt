@@ -1,11 +1,13 @@
-[] Proper rotations. How is Unreal's camera so fast when we're adding same value?
+[] Fix camera!
 [] Fix visual bug1: For some reason, ResolveSubresource is causing seams.
-[] Fix visual bug2: Stretching near corners.
+	Fix exporter: CALC TANGETN + BITANGENT FOR SMOOTH SHADED STUFF
+	INDICES... are they same as blender's?
+	UV_WRAP for uv discontinuities on spheres? Check Martins' comment.
 
+[] Correctness check: use z-axis as normal, pass it to calc_tangents(), we should get Tangent as x axis, BiTangent as y axis.
+	does D3D11 float3x3(t, b, n) put them in expected places?
 
-[] Add "game modes"  Game + Debug and remove mode from camera!
-	Disable mouse picking when in GAME mode.
-
+[] Gizmo clicking draws axes from CENTER, not click point..
 [] Gizmo translation and rotation snapping.
 
 

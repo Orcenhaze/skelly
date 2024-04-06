@@ -204,6 +204,8 @@ float4 ps(PS_Input input) : SV_TARGET
 	float  roughness_ = roughness         < 0.0f? roughness_map.Sample(sampler0, input.uv).r   : roughness;
 	float  ao_        = ambient_occlusion < 0.0f? ao_map       .Sample(sampler0, input.uv).r   : ambient_occlusion;
 
+	return float4(max(normal_, float3(0,0,0)), 1.0);
+
 	// Convert from sRGB to linear space.
 	albedo_ = pow(albedo_, 2.2);
 

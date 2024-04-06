@@ -1,4 +1,4 @@
-/* orh.h - v0.87 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.88 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
 0.86 - added clamp_axis(), normalize_axis(), normalize_half_axis(). Added Cursor_Mode and Display_Mode
 0.85 - added raw input for mouse deltas. Added enable and disable cursor. Added get_euler() from quat.
@@ -181,6 +182,12 @@ ori = q * ori;
 ori = ori * q;
 
 This is also true of matrix multiplication.
+
+=== === ===
+
+About euler angles:
+
+ The order of applying euler rotations is: yaw -> pitch -> roll
 
 === === ===
 
@@ -462,6 +469,13 @@ auto GLUE(__defer_, __COUNTER__) = MakeDeferScope([&](){code;})
 #define TURNS_TO_RADS (TAU32  / 1.0f)
 #define TURNS_TO_DEGS (360.0f / 1.0f)
 
+#define SMALL_NUMBER              (1.e-8f)
+#define KINDA_SMALL_NUMBER        (1.e-4f)
+#define BIG_NUMBER                (3.4e+38f)
+#define DOUBLE_SMALL_NUMBER       (1.e-8)
+#define DOUBLE_KINDA_SMALL_NUMBER (1.e-4)
+#define DOUBLE_BIG_NUMBER         (3.4e+38)
+
 #define MIN(A, B)              ((A < B) ? (A) : (B))
 #define MAX(A, B)              ((A > B) ? (A) : (B))
 #define MIN3(A, B, C)          MIN(MIN(A, B), C)
@@ -505,7 +519,7 @@ union V2s
 
 union V3
 {
-    // @Note: pitch around right (x-axis); yaw around up (y-axis); roll around forward (-z-axis)
+    // @Note: pitch around right (x-axis); yaw around up (y-axis); roll around -forward (z-axis)
     struct { f32 x, y, z; };
     struct { V2 xy; f32 ignored0_; };
     struct { f32 ignored1_; V2 yz; };
@@ -620,6 +634,14 @@ struct Rect3 { V3  min, max; };
 #    pragma warning(pop)
 #endif
 
+FUNCDEF inline f32 clamp_axis(f32 radians);                    // Maps angle to range [0, 360).
+FUNCDEF inline f32 normalize_axis(f32 radians);                // Maps angle to range (-180, 180].
+FUNCDEF inline f32 normalize_half_axis(f32 radians);           // Maps angle to range (-90, 90].
+FUNCDEF inline f32 clamp_angle(f32 min, f32 radians, f32 max); // Returns clamped angle in range -180..180.
+FUNCDEF inline V3  clamp_euler(V3 euler);
+FUNCDEF inline V3  normalize_euler(V3 euler);
+FUNCDEF inline V3  normalize_half_euler(V3 euler);
+
 FUNCDEF inline f32 _pow(f32 x, f32 y); // x^y
 FUNCDEF inline f32 _mod(f32 x, f32 y); // x%y
 FUNCDEF inline f32 _sqrt(f32 x);
@@ -630,7 +652,7 @@ FUNCDEF inline f32 _tan(f32 radians);
 FUNCDEF inline f32 _arcsin(f32 x);
 FUNCDEF inline f32 _arccos(f32 x);
 FUNCDEF inline f32 _arctan(f32 x);
-FUNCDEF inline f32 _arctan2(f32 y, f32 x);
+FUNCDEF inline f32 _arctan2(f32 y, f32 x); // Returns angle in range -180..180.
 FUNCDEF inline f32 _round(f32 x); // Towards nearest integer.
 FUNCDEF inline f32 _floor(f32 x); // Towards negative infinity.
 FUNCDEF inline f32 _ceil(f32 x);  // Towards positive infinity.
@@ -641,12 +663,6 @@ FUNCDEF inline f32 _arcsin_turns(f32 x);         // Returns angle in turns.
 FUNCDEF inline f32 _arccos_turns(f32 x);         // Returns angle in turns.
 FUNCDEF inline f32 _arctan_turns(f32 x);         // Returns angle in turns.
 FUNCDEF inline f32 _arctan2_turns(f32 y, f32 x); // Returns angle in turns.
-
-FUNCDEF inline f32 clamp_axis(f32 radians);          // Maps angle to [0, TAU) range.
-FUNCDEF inline f32 normalize_axis(f32 radians);      // Maps angle to (-pi, pi] range.
-FUNCDEF inline f32 normalize_half_axis(f32 radians); // Maps angle to (-pi/2, pi/2] range.
-
-FUNCDEF inline V3 get_euler(Quaternion q); // Returns angles in (-pi, pi] range.
 
 FUNCDEF inline V2 pow(V2 v, f32 y);
 FUNCDEF inline V3 pow(V3 v, f32 y);
@@ -667,7 +683,7 @@ FUNCDEF inline f32 safe_div(f32 x, f32 y, f32 n);
 FUNCDEF inline f32 safe_div0(f32 x, f32 y);
 FUNCDEF inline f32 safe_div1(f32 x, f32 y);
 
-FUNCDEF inline b32 nearly_zero(f32 x);
+FUNCDEF inline b32 nearly_zero(f32 x, f32 tolerance = SMALL_NUMBER);
 
 FUNCDEF inline V2 v2(f32 x, f32 y);
 FUNCDEF inline V2 v2(f32 c);
@@ -744,6 +760,7 @@ FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w);
 FUNCDEF inline Quaternion quaternion(V3 v, f32 w);
 FUNCDEF inline Quaternion quaternion_identity();
 
+FUNCDEF inline V3         get_euler(Quaternion q); // Returns euler angles in range (-180, 180].
 FUNCDEF inline Quaternion quaternion_from_euler(V3 euler);
 FUNCDEF        Quaternion quaternion_from_m3x3(M3x3 const &affine);
 FUNCDEF inline Quaternion quaternion_from_m4x4(M4x4 const &affine);
@@ -1947,8 +1964,10 @@ struct Input_State
     b32 pressed [Key_COUNT];
     b32 held    [Key_COUNT];
     b32 released[Key_COUNT];
+    
+    // Delta values since last frame.
     V2s mouse_delta_raw;     // The raw mouse delta as reported by the os.
-    V2  mouse_delta;         // The raw mouse delta scaled by os->base_mouse_resolution.
+    V2  mouse_delta;         // The raw mouse delta scaled by os->base_mouse_resolution with y negated.
     s32 mouse_wheel_raw;     // The raw mouse wheel value as reported by os - +1 up, -1 down.
 };
 
@@ -2135,6 +2154,82 @@ const V3 V3_RIGHT   =  V3_X_AXIS;
 const V3 V3_UP      =  V3_Y_AXIS;
 const V3 V3_FORWARD = -V3_Z_AXIS;
 
+FUNCDEF inline f32 clamp_axis(f32 radians)
+{
+    // From Unreal Engine:
+    // Maps angle to range [0, 360).
+    
+    // Make angle in range (-360, 360)
+    f32 result = _mod(radians, TAU32);
+    if (result < 0.0f)
+        result += TAU32; // Shift to range [0, 360)
+    return result;
+}
+FUNCDEF inline f32 normalize_axis(f32 radians)
+{
+    // From Unreal Engine:
+    // Maps angle to range (-180, 180].
+    
+    // Make angle in range [0, 360).
+    f32 result = clamp_axis(radians);
+    if (result > PI32)
+        result -= TAU32; // Shift to range (-180, 180]
+    return result;
+}
+FUNCDEF inline f32 normalize_half_axis(f32 radians)
+{
+    // From Unreal Engine:
+    // Maps angle to range (-90, 90].
+    
+    // Make angle in range (-180, 180].
+    f32 result = normalize_axis(radians);
+    if (ABS(result) > (PI32 * 0.5f))
+        result += -SIGN(result) * PI32; // Shift to range (-90, 90]
+    return result;
+}
+FUNCDEF inline f32 clamp_angle(f32 min, f32 radians, f32 max)
+{
+    // From Unreal Engine:
+    // Returns clamped angle in range -180..180.
+    
+    f32 max_delta         = clamp_axis(max - min) * 0.5f;		   // 0..180
+    f32 range_center      = clamp_axis(min + max_delta);			// 0..360
+    f32 delta_from_center = normalize_axis(radians - range_center); // -180..180
+    
+    // maybe clamp to nearest edge
+    if (delta_from_center > max_delta)
+        return normalize_axis(range_center + max_delta);
+    else if (delta_from_center < -max_delta)
+        return normalize_axis(range_center - max_delta);
+    
+    // already in range, just return it
+    return normalize_axis(radians);
+}
+FUNCDEF inline V3 clamp_euler(V3 euler)
+{
+    V3 result;
+    result.pitch = clamp_axis(euler.pitch);
+    result.yaw   = clamp_axis(euler.yaw);
+    result.roll  = clamp_axis(euler.roll);
+    return result;
+}
+FUNCDEF inline V3 normalize_euler(V3 euler)
+{
+    V3 result;
+    result.pitch = normalize_axis(euler.pitch);
+    result.yaw   = normalize_axis(euler.yaw);
+    result.roll  = normalize_axis(euler.roll);
+    return result;
+}
+FUNCDEF inline V3 normalize_half_euler(V3 euler)
+{
+    V3 result;
+    result.pitch = normalize_half_axis(euler.pitch);
+    result.yaw   = normalize_half_axis(euler.yaw);
+    result.roll  = normalize_half_axis(euler.roll);
+    return result;
+}
+
 #if !defined(ORH_NO_STD_MATH) || COMPILER_CL
 #include <math.h>
 FUNCDEF inline f32 _pow(f32 x, f32 y)     
@@ -2305,63 +2400,7 @@ FUNCDEF inline f32 _arctan_turns(f32 x)
 }
 FUNCDEF inline f32 _arctan2_turns(f32 y, f32 x)
 {
-    return _arctan2(y, x) * RADS_TO_TURNS;
-}
-
-FUNCDEF inline f32 clamp_axis(f32 radians)
-{
-    // Maps angle to [0, TAU) range.
-    
-    // Make angle in range (-TAU, TAU)
-    f32 result = _mod(radians, TAU32);
-    if (result < 0.0f)
-        result += TAU32; // Shift to range [0, TAU)
-    return result;
-}
-FUNCDEF inline f32 normalize_axis(f32 radians)
-{
-    // Maps angle to (-pi, pi] range.
-    
-    // Make angle in range [0, TAU).
-    f32 result = clamp_axis(radians);
-    if (result > PI32)
-        result -= TAU32; // Shift to range (-pi, pi]
-    return result;
-}
-FUNCDEF inline f32 normalize_half_axis(f32 radians)
-{
-    // Maps angle to (-pi/2, pi/2] range.
-    
-    // Make angle in range (-pi, pi].
-    f32 result = normalize_axis(radians);
-    if (ABS(result) > (PI32 * 0.5f))
-        result += -SIGN(result) * PI32; // Shift to range (-pi/2, pi/2]
-    return result;
-}
-
-FUNCDEF inline V3 get_euler(Quaternion q)
-{
-    // Returns angles in (-pi, pi] range.
-    
-    q = normalize_or_identity(q);
-    
-    // x-axis rotation.
-    f32 sinr_cosp = 2 * (q.w * q.x + q.y * q.z);
-    f32 cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y);
-    f32 pitch     = _arctan2(sinr_cosp, cosr_cosp);
-    
-    // y-axis rotation.
-    f32 sinp      = _sqrt(1 + 2 * (q.w * q.y - q.x * q.z));
-    f32 cosp      = _sqrt(1 - 2 * (q.w * q.y - q.x * q.z));
-    f32 yaw       = 2 * _arctan2(sinp, cosp) - PI32 / 2.0f;
-    
-    // z-axis rotation.
-    f32 siny_cosp = 2 * (q.w * q.z + q.x * q.y);
-    f32 cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
-    f32 roll      = _arctan2(siny_cosp, cosy_cosp);
-    
-    V3 result = {pitch, yaw, roll};
-    return result;
+    return clamp_axis(_arctan2(y, x)) * RADS_TO_TURNS;
 }
 
 FUNCDEF inline V2 pow(V2 v, f32 y)
@@ -2477,9 +2516,9 @@ FUNCDEF inline f32 safe_div1(f32 x, f32 y)
     return result;
 }
 
-FUNCDEF inline b32 nearly_zero(f32 x)
+FUNCDEF inline b32 nearly_zero(f32 x, f32 tolerance /*= SMALL_NUMBER*/)
 {
-    b32 result = (x < 9.99999944E-11f);
+    b32 result = (ABS(x) <= tolerance);
     return result;
 }
 
@@ -2815,15 +2854,44 @@ FUNCDEF inline Quaternion quaternion_identity()
     return result;
 }
 
+
+FUNCDEF inline V3 get_euler(Quaternion q)
+{
+    // From:
+    // https://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToEuler/
+    //
+    // Returns euler angles in (-180, 180] range.
+    
+    q = normalize_or_identity(q);
+    
+    const f32 SINGULARITY_THRESHOLD = 0.4999995f;
+    f32 singularity_test            = q.z*q.y + q.x*q.w;
+    f32 pitch, yaw, roll;
+	
+	if (singularity_test < -SINGULARITY_THRESHOLD) { // singularity at south pole
+		pitch = -PI32 / 2.0f;
+		yaw   = -2.0f * _arctan2(q.z,q.w);
+		roll  = 0.0f;
+	} if (singularity_test > SINGULARITY_THRESHOLD) { // singularity at north pole
+		pitch = PI32/2;
+		yaw   = 2.0f * _arctan2(q.z,q.w);
+		roll  = 0.0f;
+	} else {
+        f32 sqz = q.z*q.z;
+        f32 sqy = q.y*q.y;
+        f32 sqx = q.x*q.x;
+        pitch = _arcsin (2.0f*singularity_test);
+        yaw   = _arctan2(2.0f*q.y*q.w-2.0f*q.z*q.x , 1.0f - 2.0f*sqy - 2.0f*sqx);
+        roll  = _arctan2(2.0f*q.z*q.w-2.0f*q.y*q.x , 1.0f - 2.0f*sqz - 2.0f*sqx);
+    }
+    
+    V3 result = {pitch, yaw, roll};
+    return result;
+}
 FUNCDEF inline Quaternion quaternion_from_euler(V3 euler)
 {
     // From:
     // https://www.euclideanspace.com/maths/geometry/rotations/conversions/eulerToQuaternion/index.htm
-    //
-    // attitude (x), heading (y), bank (z)
-    // pitch    (x), yaw     (y), roll (z)
-    //
-    // The order of applying euler rotations is: yaw -> pitch -> roll
     
     euler.pitch = _mod(euler.pitch, TAU32);
     euler.yaw   = _mod(euler.yaw,   TAU32);
