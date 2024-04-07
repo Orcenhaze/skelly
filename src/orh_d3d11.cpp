@@ -1,6 +1,7 @@
-/* orh_d3d11.cpp - v0.09 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.10 - C++ D3D11 immediate mode renderer.
 
 REVISION HISTORY:
+0.10 - loaded textures now use mip-mapping.
 0.09 - debug breaks on dxgi as well.
 0.08 - fixed pixel_to_ndc(); now accounts for viewport TopLeftX & TopLeftY and added V3 version for z-depth.
 0.07 - added ndc_to_pixel() and V3 version of world_to_ndc() for z-depth.
@@ -275,25 +276,43 @@ FUNCTION void d3d11_load_texture(Texture *texture, String8 full_path)
         //
         // Create texture as shader resource and create view.
         D3D11_TEXTURE2D_DESC desc = {};
-        desc.Width      = texture->width;
-        desc.Height     = texture->height;
-        desc.MipLevels  = 1;
-        desc.ArraySize  = 1;
         
         // @Note: We won't use _SRGB here; You should manually convert to linear space in the shader.
         desc.Format     = DXGI_FORMAT_R8G8B8A8_UNORM;
-        
+        desc.Width      = texture->width;
+        desc.Height     = texture->height;
+        desc.MipLevels  = 0; // @Hack: Automatically generate mipmaps.
+        desc.ArraySize  = 1;
         desc.SampleDesc = {1, 0};
-        desc.Usage      = D3D11_USAGE_IMMUTABLE;
-        desc.BindFlags  = D3D11_BIND_SHADER_RESOURCE;
+        //desc.Usage      = D3D11_USAGE_IMMUTABLE;
+        desc.Usage      = D3D11_USAGE_DEFAULT;
+        desc.BindFlags  = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+        desc.MiscFlags  = D3D11_RESOURCE_MISC_GENERATE_MIPS;
         
-        D3D11_SUBRESOURCE_DATA data = {};
-        data.pSysMem     = color_data;
-        data.SysMemPitch = texture->width * forced_bpp;
+        /*         
+                D3D11_SUBRESOURCE_DATA data = {};
+                data.pSysMem     = color_data;
+                data.SysMemPitch = texture->width * forced_bpp;
+                 */
         
         ID3D11Texture2D *texture2d;
-        device->CreateTexture2D(&desc, &data, &texture2d);
-        device->CreateShaderResourceView(texture2d, 0, &texture->view);
+        device->CreateTexture2D(&desc, NULL, &texture2d);
+        
+        // Copy texture data to GPU.
+        device_context->UpdateSubresource(texture2d, 0, NULL, color_data, texture->width * forced_bpp, 0);
+        
+        // Create shader resource view
+        D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+        srv_desc.Format                    = desc.Format;
+        srv_desc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
+        srv_desc.Texture2D.MostDetailedMip = 0;
+        srv_desc.Texture2D.MipLevels       = (UINT)-1; // Use all mipmap levels.
+        
+        device->CreateShaderResourceView(texture2d, &srv_desc, &texture->view);
+        
+        // Generate mipmaps.
+        device_context->GenerateMips(texture->view);
+        
         texture2d->Release();
     } else {
         debug_print("STBI ERROR: failed to load image %S\n", texture->full_path);
@@ -778,6 +797,8 @@ FUNCTION void d3d11_init(HWND window)
         
         D3D11_SAMPLER_DESC desc2 = desc;
         desc2.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        desc2.MinLOD = 0;
+        desc2.MaxLOD = D3D11_FLOAT32_MAX;
         
         device->CreateSamplerState(&desc2, &sampler_linear);
     }

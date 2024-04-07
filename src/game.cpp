@@ -93,19 +93,16 @@ FUNCTION void control_camera(Camera *cam)
         // Camera will focus on this point.
         V3 target = (player->position + 2.0f*V3U);
         
-        // @Debug:
-        // @Todo: Fix angle range?
-        //
-        
         // Add camera rotation, and clamp pitch to min and max.
         cam->euler.yaw   += -delta_mouse.x;
         cam->euler.pitch +=  delta_mouse.y;
         cam->euler.pitch  = clamp_angle(-70.0f * DEGS_TO_RADS, cam->euler.pitch, 30.0f * DEGS_TO_RADS);
+        cam->euler        = clamp_euler(cam->euler);
         
         Quaternion q      = quaternion_from_euler(cam->euler);
         cam->position     = rotate_point_around_pivot(cam->start_offset, target, q);
         
-        debug_print("camera: %v3\n", cam->euler * RADS_TO_DEGS);
+        //debug_print("camera: %v3\n", cam->euler * RADS_TO_DEGS);
         
         Quaternion q_look = quaternion_look_at(target - cam->position, V3U);
         cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, q_look, v3(1));
@@ -184,19 +181,28 @@ FUNCTION void game_init()
     load_meshes(os->permanent_arena, &game->mesh_catalog);
     load_animations(os->permanent_arena, &game->animation_catalog);
     
-    // Set initial default dir light.
-    game->num_dir_lights = 1;
-    game->dir_lights[0]  = default_dir_light();
+    game->rng = random_seed(1234);
     
     Triangle_Mesh *player_mesh = find(&game->mesh_catalog, S8LIT("guy"));
     entity_manager_init(&game->entity_manager, player_mesh);
+    
+    // @Temporary: Spawn floor.
+    Triangle_Mesh *grass = find(&game->mesh_catalog, S8LIT("floor"));
+    register_new_entity(&game->entity_manager, grass);
+    
+    // @Temporary: Spawn random trees:
+    Triangle_Mesh *tree = find(&game->mesh_catalog, S8LIT("tree"));
+    for (s32 i = 0; i < 15; i++) {
+        V3 pos = random_range_v3(&game->rng, v3(-100.0f, 0.0f, -100.0f), v3(100.0f, 0.0f, 100.0f));
+        register_new_entity(&game->entity_manager, tree, S8ZERO, pos);
+    }
     
     // Init camera.
     game->camera = {};
 #if DEVELOPER
     game->camera.orientation  = quaternion_identity();
 #endif
-    game->camera.start_offset = {0.0f, 4.0f, 4.0f};
+    game->camera.start_offset = {0.0f, 2.0f, 4.0f};
     control_camera(&game->camera);
     
     set_view_to_proj();
@@ -207,6 +213,10 @@ FUNCTION void game_init()
     //set_game_mode(GameMode_MENU);
     set_game_mode(GameMode_GAME);
 #endif
+    
+    // Set initial default dir light.
+    game->num_dir_lights = 1;
+    game->dir_lights[0]  = default_dir_light();
 }
 
 FUNCTION void game_update()
@@ -345,6 +355,7 @@ FUNCTION void game_update()
 FUNCTION void game_render()
 {
     Entity_Manager *manager = &game->entity_manager;
+    Entity *player = get_player(manager);
     
 #if DEVELOPER
     // Draw simple wireframe quad instead of viewport grid for now.
@@ -353,7 +364,6 @@ FUNCTION void game_render()
     immediate_rect_3d({}, V3U, 200.0f, {0.8f, 0.8f, 0.8f, 1.0f});
     immediate_end();
     
-    Entity *player = get_player(manager);
     immediate_begin();
     V3 o = player->position;
     V3 x = get_right(player->object_to_world_matrix.forward);
@@ -370,6 +380,26 @@ FUNCTION void game_render()
         Entity *e = find_entity(manager, manager->all_entities[i]);
         draw_entity(e);
     }
+    
+    
+#if 1
+    // Draw TBN.
+    if (str8_contains(player->mesh->name, S8LIT("cube"))) {
+        for (s32 i = 0; i < (player->mesh->vertices.count); i++) {
+            immediate_begin();
+            set_object_to_world(player->position, player->orientation, v3(1));
+            V3 v = player->mesh->vertices[i];
+            V3 t = player->mesh->tbns[i].tangent;
+            V3 b = player->mesh->tbns[i].bitangent;
+            V3 n = player->mesh->tbns[i].normal;
+            immediate_arrow(v, t, 0.5f, v4(1, 0, 0, 1), 0.02f);
+            immediate_arrow(v, b, 0.5f, v4(0, 1, 0, 1), 0.02f);
+            immediate_arrow(v, n, 0.5f, v4(0, 0, 1, 1), 0.02f);
+            immediate_end();
+        }
+    }
+#endif
+    
     
     
 #if DEVELOPER

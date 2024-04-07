@@ -60,11 +60,13 @@ struct Game_State
     Catalog<Triangle_Mesh>     mesh_catalog;
     Catalog<Sampled_Animation> animation_catalog;
     
+    Random_PCG rng;
     Entity_Manager entity_manager;
     
     Camera camera;
     V3 mouse_world;
     Game_Mode mode;
+    
     
     s32               num_point_lights;
     Point_Light       point_lights[MAX_POINT_LIGHTS];
