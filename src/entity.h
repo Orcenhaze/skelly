@@ -4,20 +4,31 @@
 // @Todo: We are using poor man's id generation.
 GLOBAL u32 entity_id_counter;
 
+enum Entity_Type
+{
+    EntityType_NONE,
+    
+    EntityType_PLAYER,
+    EntityType_BOT_CIRCLE,
+    EntityType_BOT_LEVITATE,
+};
+
 struct Entity
 {
-    String8 name;
-    u32 id;
-    
-    V3           position;
-    Quaternion   orientation;
-    V3           scale;
     M4x4_Inverse object_to_world_matrix;
-    
+    String8 name;
     Triangle_Mesh *mesh;
     
     // @Note: Every entity with an animated mesh must have an animation player.
     Animation_Player *animation_player;
+    
+    Quaternion orientation;
+    V3         position;
+    V3         scale;
+    V3         velocity;
+    
+    Entity_Type type;
+    u32 id;
 };
 
 struct Entity_Manager

@@ -1,3 +1,5 @@
+[] Why is run animation inverted?
+
 [] Fix visual bug: For some reason, rasterizer is causing seams when triangles meet.
 [] Fix mesh exporter! 
 	AVERAGING TANGENTS AND BITANGENTS FOR SMOOTH SURFACES.

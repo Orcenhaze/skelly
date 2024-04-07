@@ -9,7 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
-0.89 - added str8_contains(). Fixed quaternion_from_euler().
+0.89 - added str8_contains(). Fixed quaternion_from_euler(). Added equal() for nearly equal comparison. Added rotate_towards().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
 0.86 - added clamp_axis(), normalize_axis(), normalize_half_axis(). Added Cursor_Mode and Display_Mode
@@ -685,6 +685,11 @@ FUNCDEF inline f32 safe_div0(f32 x, f32 y);
 FUNCDEF inline f32 safe_div1(f32 x, f32 y);
 
 FUNCDEF inline b32 nearly_zero(f32 x, f32 tolerance = SMALL_NUMBER);
+FUNCDEF inline b32 equal(f32 a, f32 b, f32 tolerance = SMALL_NUMBER);
+FUNCDEF inline b32 equal(V2 const &a, V2 const &b, f32 tolerance = SMALL_NUMBER);
+FUNCDEF inline b32 equal(V3 const &a, V3 const &b, f32 tolerance = SMALL_NUMBER);
+FUNCDEF inline b32 equal(V4 const &a, V4 const &b, f32 tolerance = SMALL_NUMBER);
+FUNCDEF inline b32 equal(Quaternion const &a, Quaternion const &b, f32 tolerance = SMALL_NUMBER);
 
 FUNCDEF inline V2 v2(f32 x, f32 y);
 FUNCDEF inline V2 v2(f32 c);
@@ -749,6 +754,7 @@ FUNCDEF inline V4 normalize_or_zero(V4 v);
 FUNCDEF inline V3 normalize_or_x_axis(V3 v);
 FUNCDEF inline V3 normalize_or_y_axis(V3 v);
 FUNCDEF inline V3 normalize_or_z_axis(V3 v);
+FUNCDEF inline V3 normalize_or_forward(V3 v);
 
 FUNCDEF inline V3 reflect(V3 incident, V3 normal);
 
@@ -778,6 +784,7 @@ FUNCDEF inline Quaternion quaternion_inverse(Quaternion q);
 FUNCDEF inline V3         quaternion_get_axis(Quaternion q);
 FUNCDEF inline f32        quaternion_get_angle(Quaternion q);
 FUNCDEF inline f32        quaternion_get_angle_turns(Quaternion q);
+FUNCDEF inline f32        angle_between(Quaternion const &a, Quaternion const &b);
 
 FUNCDEF inline M3x3 m3x3_identity();
 FUNCDEF inline M3x3 m3x3(M4x4 const &m);
@@ -845,6 +852,7 @@ FUNCDEF inline f32 smoother_step(f32 edge0, f32 x, f32 edge1); // Output in rang
 FUNCDEF        f32 move_towards(f32 current, f32 target, f32 delta_time, f32 speed);
 FUNCDEF        V2  move_towards(V2 current, V2 target, f32 delta_time, f32 speed);
 FUNCDEF        V3  move_towards(V3 current, V3 target, f32 delta_time, f32 speed);
+FUNCDEF        Quaternion rotate_towards(Quaternion const &current, Quaternion const &target, f32 delta_time, f32 speed); 
 FUNCDEF inline V2  rotate_point_around_pivot(V2 point, V2 pivot, Quaternion q);
 FUNCDEF inline V3  rotate_point_around_pivot(V3 point, V3 pivot, Quaternion q);
 
@@ -2525,6 +2533,40 @@ FUNCDEF inline b32 nearly_zero(f32 x, f32 tolerance /*= SMALL_NUMBER*/)
     b32 result = (ABS(x) <= tolerance);
     return result;
 }
+FUNCDEF inline b32 equal(f32 a, f32 b, f32 tolerance /*= SMALL_NUMBER*/)
+{
+    b32 result = (ABS(a-b) <= tolerance);
+    return result;
+}
+FUNCDEF inline b32 equal(V2 const &a, V2 const &b, f32 tolerance /*= SMALL_NUMBER*/)
+{
+    b32 result = ((ABS(a.x-b.x) <= tolerance) && 
+                  (ABS(a.y-b.y) <= tolerance));
+    return result;
+}
+FUNCDEF inline b32 equal(V3 const &a, V3 const &b, f32 tolerance /*= SMALL_NUMBER*/)
+{
+    b32 result = ((ABS(a.x-b.x) <= tolerance) && 
+                  (ABS(a.y-b.y) <= tolerance) &&
+                  (ABS(a.z-b.z) <= tolerance));
+    return result;
+}
+FUNCDEF inline b32 equal(V4 const &a, V4 const &b, f32 tolerance /*= SMALL_NUMBER*/)
+{
+    b32 result = ((ABS(a.x-b.x) <= tolerance) && 
+                  (ABS(a.y-b.y) <= tolerance) &&
+                  (ABS(a.z-b.z) <= tolerance) &&
+                  (ABS(a.w-b.w) <= tolerance));
+    return result;
+}
+FUNCDEF inline b32 equal(Quaternion const &a, Quaternion const &b, f32 tolerance /*= SMALL_NUMBER*/)
+{
+    b32 result = ((ABS(a.x-b.x) <= tolerance) && 
+                  (ABS(a.y-b.y) <= tolerance) &&
+                  (ABS(a.z-b.z) <= tolerance) &&
+                  (ABS(a.w-b.w) <= tolerance));
+    return result;
+}
 
 FUNCDEF inline V2 v2(f32 x, f32 y)
 {
@@ -2814,6 +2856,11 @@ FUNCDEF inline V3 normalize_or_z_axis(V3 v)
     f32 len = length(v);
     return len > 0 ? v/len : V3_Z_AXIS;
 }
+FUNCDEF inline V3 normalize_or_forward(V3 v)
+{
+    f32 len = length(v);
+    return len > 0 ? v/len : V3_FORWARD;
+}
 
 FUNCDEF inline V3 reflect(V3 incident, V3 normal)
 {
@@ -2823,7 +2870,7 @@ FUNCDEF inline V3 reflect(V3 incident, V3 normal)
 
 FUNCDEF inline f32 dot(Quaternion a, Quaternion b) 
 {
-    f32 result = dot(a.xyz, b.xyz) + a.w*b.w; 
+    f32 result = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w; 
     return result;
 }
 FUNCDEF inline f32 length(Quaternion q)            
@@ -3064,6 +3111,14 @@ FUNCDEF inline f32 quaternion_get_angle(Quaternion q)
 FUNCDEF inline f32 quaternion_get_angle_turns(Quaternion q)
 {
     f32 result = quaternion_get_angle(q) * RADS_TO_TURNS;
+    return result;
+}
+FUNCDEF inline f32 angle_between(Quaternion const &a, Quaternion const &b)
+{
+    // Calculate angular distance between two quaternions.
+    // Why are we mapping from -1..1 to 0..1 (by doing cos*cos), then re-mapping back to -1..1??
+    f32 inner  = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w;
+    f32 result = _arccos((2.0f * SQUARE(inner)) - 1.0f);
     return result;
 }
 
@@ -3527,7 +3582,7 @@ FUNCDEF inline f32 smoother_step(f32 edge0, f32 x, f32 edge1)
     return x;
 }
 
-f32 move_towards(f32 current, f32 target, f32 delta_time, f32 speed)
+FUNCDEF f32 move_towards(f32 current, f32 target, f32 delta_time, f32 speed)
 {
     f32 max_distance = delta_time * speed;
     f32 delta        = target - current;
@@ -3536,7 +3591,7 @@ f32 move_towards(f32 current, f32 target, f32 delta_time, f32 speed)
     
     return current + SIGN(delta) * max_distance;
 }
-V2 move_towards(V2 current, V2 target, f32 delta_time, f32 speed)
+FUNCDEF V2 move_towards(V2 current, V2 target, f32 delta_time, f32 speed)
 {
     f32 max_distance = delta_time * speed;
     V2 delta         = target - current;
@@ -3548,7 +3603,7 @@ V2 move_towards(V2 current, V2 target, f32 delta_time, f32 speed)
     f32 ratio = max_distance / _sqrt(distance2);
     return current + (delta * ratio);
 }
-V3 move_towards(V3 current, V3 target, f32 delta_time, f32 speed)
+FUNCDEF V3 move_towards(V3 current, V3 target, f32 delta_time, f32 speed)
 {
     f32 max_distance = delta_time * speed;
     V3 delta         = target - current;
@@ -3559,6 +3614,18 @@ V3 move_towards(V3 current, V3 target, f32 delta_time, f32 speed)
     
     f32 ratio = max_distance / _sqrt(distance2);
     return current + (delta * ratio);
+}
+FUNCDEF Quaternion rotate_towards(Quaternion const &current, Quaternion const &target, f32 delta_time, f32 speed)
+{
+    // From Unreal.
+    if (speed <= 0.0f) return target;
+    if (equal(current, target)) return target;
+    
+    f32 delta_speed = CLAMP01(delta_time * speed);
+    f32 delta_angle = CLAMP_LOWER(angle_between(current, target), SMALL_NUMBER);
+    f32 alpha       = CLAMP01(delta_speed / delta_angle);
+    Quaternion result = nlerp(current, alpha, target);
+    return result;
 }
 FUNCDEF inline V2 rotate_point_around_pivot(V2 point, V2 pivot, Quaternion q)
 {

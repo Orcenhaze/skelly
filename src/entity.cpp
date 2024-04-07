@@ -1,4 +1,16 @@
 
+FUNCTION Entity* find_entity(Entity_Manager *manager, u32 entity_id)
+{
+    Entity *e = table_find_pointer(&manager->entity_table, entity_id);
+    return e;
+}
+
+FUNCTION Entity* get_player(Entity_Manager *manager)
+{
+    Entity *e = table_find_pointer(&manager->entity_table, 0U);
+    return e;
+}
+
 FUNCTION void update_entity_transform(Entity *entity)
 {
     V3 pos         = entity->position;
@@ -18,6 +30,7 @@ FUNCTION Animation_Player* create_animation_player_for_entity(Entity *e)
     
     Animation_Player *new_player = (Animation_Player *) malloc(sizeof(Animation_Player));
     ASSERT(new_player);
+    MEMORY_ZERO(new_player, sizeof(Animation_Player));
     init(new_player);
     set_mesh(new_player, e->mesh);
     
@@ -45,14 +58,16 @@ FUNCTION void set_mesh_on_entity(Entity *entity, Triangle_Mesh *mesh)
 }
 
 FUNCTION u32 register_new_entity(Entity_Manager *manager, Triangle_Mesh *mesh, 
-                                 String8 name   = S8ZERO,
-                                 V3 pos         = V3ZERO, 
-                                 Quaternion ori = quaternion_identity(), 
-                                 V3 scale       = v3(1.0f))
+                                 Entity_Type type = EntityType_NONE,
+                                 String8 name     = S8ZERO,
+                                 V3 pos           = V3ZERO, 
+                                 Quaternion ori   = quaternion_identity(), 
+                                 V3 scale         = v3(1.0f))
 {
     ASSERT(mesh);
     
     Entity entity = {};
+    entity.type        = type;
     entity.position    = pos;
     entity.orientation = ori;
     entity.scale       = scale;
@@ -79,24 +94,13 @@ FUNCTION void entity_manager_init(Entity_Manager *manager, Triangle_Mesh *player
     array_init(&manager->all_entities);
     
     // Create player entity.
-    register_new_entity(manager, player_mesh, S8LIT("player"));
+    register_new_entity(manager, player_mesh, EntityType_PLAYER, S8LIT("player"));
+    Entity *player = find_entity(manager, 0);
     
 #if DEVELOPER
     array_init(&manager->selected_entities);
     manager->selected_entity = 0;
 #endif
-}
-
-FUNCTION Entity* find_entity(Entity_Manager *manager, u32 entity_id)
-{
-    Entity *e = table_find_pointer(&manager->entity_table, entity_id);
-    return e;
-}
-
-FUNCTION Entity* get_player(Entity_Manager *manager)
-{
-    Entity *e = table_find_pointer(&manager->entity_table, 0U);
-    return e;
 }
 
 FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b32 loop = TRUE, f64 blend_duration = 0.2)
@@ -132,6 +136,84 @@ FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b
     new_channel->is_looping     = loop;
     
     return new_channel;
+}
+
+FUNCTION void update_entity(Entity *e)
+{
+    Input_State *input = &os->tick_input;
+    f32 dt = os->dt;
+    
+    switch (e->type) {
+        case EntityType_PLAYER: {
+            
+            //~ Movement
+            V2 move = {};
+            
+            if (key_held(input, Key_S)) move.y = -1;
+            if (key_held(input, Key_W)) move.y =  1;
+            if (key_held(input, Key_A)) move.x = -1;
+            if (key_held(input, Key_D)) 
+                move.x = 1;
+            
+#if DEVELOPER
+            if (game->mode == GameMode_DEBUG) move = {};
+#endif
+            
+            // We will move along the camera's forward and right vectors.
+            V3 r = get_right(game->camera.object_to_world);
+            V3 f = get_forward(game->camera.object_to_world);
+            
+            // Ignore pitch of camera forward.
+            f.y  = 0.0f;
+            f    = normalize_or_forward(f);
+            
+            // Apply movement speed and friction.
+            V3 acceleration = f*move.y + r*move.x; 
+            acceleration    = normalize_or_zero(acceleration);
+            acceleration   *= 80.0f; // @Hack: Movement speed.
+            acceleration   += -7.0f*e->velocity; // @Hack: Friction.
+            
+            V3 move_delta = e->velocity*dt + 0.5f*acceleration*SQUARE(dt);
+            e->velocity  += acceleration*dt;
+            e->position  += move_delta;
+            
+            // Orient rotation to movement.
+            Quaternion target_ori = quaternion_from_two_vectors(V3F, e->velocity);
+            e->orientation        = rotate_towards(e->orientation, target_ori, dt, 10.0f);
+            
+            // Also add a bit of yaw to the camera we moving left/right.
+            // Only if we're not trying to turn the camera ourselves.
+            if (!os->tick_input.mouse_delta.x)
+                game->camera.euler.yaw += 2.0f * -move.x * dt;
+            
+            
+            //~ Animation.
+            
+            Sampled_Animation *anim_to_play = find(&game->animation_catalog, S8LIT("guy_idle"));
+            if (key_pressed(input, Key_MLEFT))
+                anim_to_play = find(&game->animation_catalog, S8LIT("guy_hit"));
+            else if (move.x || move.y)
+                anim_to_play = find(&game->animation_catalog, S8LIT("guy_run"));
+            
+            b32 loop = anim_to_play->name != S8LIT("guy_hit");
+            if (anim_to_play)
+                play_animation(e, anim_to_play, loop);
+            
+        } break;
+        
+        case EntityType_BOT_CIRCLE: {
+            
+        } break;
+        
+        case EntityType_BOT_LEVITATE: {
+            
+        } break;
+    }
+    
+    update_entity_transform(e);
+    
+    advance_time(e->animation_player, os->dt);
+    eval(e->animation_player);
 }
 
 #if DEVELOPER

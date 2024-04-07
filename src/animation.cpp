@@ -264,6 +264,7 @@ FUNCTION Animation_Channel* add_animation_channel(Animation_Player *player)
 {
     Animation_Channel *channel = (Animation_Channel *) malloc(sizeof(Animation_Channel));
     ASSERT(channel);
+    MEMORY_ZERO(channel, sizeof(Animation_Channel));
     init(channel);
     array_add(&player->channels, channel);
     

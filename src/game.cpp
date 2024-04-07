@@ -94,15 +94,26 @@ FUNCTION void control_camera(Camera *cam)
         V3 target = (player->position + 2.0f*V3U);
         
         // Add camera rotation, and clamp pitch to min and max.
-        cam->euler.yaw   += -delta_mouse.x;
-        cam->euler.pitch +=  delta_mouse.y;
-        cam->euler.pitch  = clamp_angle(-70.0f * DEGS_TO_RADS, cam->euler.pitch, 30.0f * DEGS_TO_RADS);
-        cam->euler        = clamp_euler(cam->euler);
+        f32 turn_speed    = 1.5f;
+        cam->euler.yaw   += -delta_mouse.x * turn_speed;
+        cam->euler.pitch +=  delta_mouse.y * turn_speed;
+        cam->euler.pitch  = clamp_angle(-65.0f * DEGS_TO_RADS, cam->euler.pitch, 30.0f * DEGS_TO_RADS);
+        //cam->euler        = clamp_euler(cam->euler);
+        cam->euler        = normalize_euler(cam->euler);
         
         Quaternion q      = quaternion_from_euler(cam->euler);
-        cam->position     = rotate_point_around_pivot(cam->start_offset, target, q);
+        cam->position     = rotate_point_around_pivot(target + cam->start_offset, target, q);
         
-        //debug_print("camera: %v3\n", cam->euler * RADS_TO_DEGS);
+        debug_print("camera: %v3\n", cam->euler * RADS_TO_DEGS);
+        
+        // Always maintain some distance from player.
+        /* 
+                f32 desired_dist2 = length2(cam->start_offset);
+                f32 current_dist2 = length2(cam->position - target);
+                if (current_dist2 > desired_dist2) {
+                    cam->position = move_towards(cam->position, target, dt, 8.0f);
+                }
+         */
         
         Quaternion q_look = quaternion_look_at(target - cam->position, V3U);
         cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, q_look, v3(1));
@@ -150,6 +161,11 @@ FUNCTION void set_game_mode(Game_Mode mode)
     Game_Mode current_mode = game->mode;
     
     if (mode == GameMode_GAME) {
+#if DEVELOPER
+        clear_entity_selection(&game->entity_manager);
+        gizmo_clear();
+#endif
+        
         os->set_cursor_mode(CursorMode_DISABLED);
     }
 #if DEVELOPER
@@ -194,7 +210,7 @@ FUNCTION void game_init()
     Triangle_Mesh *tree = find(&game->mesh_catalog, S8LIT("tree"));
     for (s32 i = 0; i < 15; i++) {
         V3 pos = random_range_v3(&game->rng, v3(-100.0f, 0.0f, -100.0f), v3(100.0f, 0.0f, 100.0f));
-        register_new_entity(&game->entity_manager, tree, S8ZERO, pos);
+        register_new_entity(&game->entity_manager, tree, EntityType_NONE, S8ZERO, pos);
     }
     
     // Init camera.
@@ -202,7 +218,7 @@ FUNCTION void game_init()
 #if DEVELOPER
     game->camera.orientation  = quaternion_identity();
 #endif
-    game->camera.start_offset = {0.0f, 2.0f, 4.0f};
+    game->camera.start_offset = {0.0f, 2.0f, 5.0f};
     control_camera(&game->camera);
     
     set_view_to_proj();
@@ -242,10 +258,7 @@ FUNCTION void game_update()
     //
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
-        update_entity_transform(e);
-        
-        advance_time(e->animation_player, os->dt);
-        eval(e->animation_player);
+        update_entity(e);
     }
     
 #if DEVELOPER
@@ -281,7 +294,7 @@ FUNCTION void game_update()
                     s32 end_index = (s32)manager->selected_entities.count - 1;
                     for (s32 i = 0; i < (end_index + 1); i++) {
                         Entity *e = find_entity(manager, manager->selected_entities[i]);
-                        u32 new_entity_id = register_new_entity(&game->entity_manager, e->mesh, e->name, e->position, e->orientation);
+                        u32 new_entity_id = register_new_entity(&game->entity_manager, e->mesh, e->type, e->name, e->position, e->orientation);
                         add_entity_selection(manager, new_entity_id);
                     }
                     
@@ -364,15 +377,17 @@ FUNCTION void game_render()
     immediate_rect_3d({}, V3U, 200.0f, {0.8f, 0.8f, 0.8f, 1.0f});
     immediate_end();
     
-    immediate_begin();
-    V3 o = player->position;
-    V3 x = get_right(player->object_to_world_matrix.forward);
-    V3 y = get_up(player->object_to_world_matrix.forward);
-    V3 z = -get_forward(player->object_to_world_matrix.forward);
-    immediate_arrow(o, x, 2, v4(1, 0, 0, 1), 0.02f);
-    immediate_arrow(o, y, 2, v4(0, 1, 0, 1), 0.02f);
-    immediate_arrow(o, z, 2, v4(0, 0, 1, 1), 0.02f);
-    immediate_end();
+    /*     
+        immediate_begin();
+        V3 o = V3U * 3.0f;
+        V3 r = get_right(game->camera.object_to_world);
+        V3 u = get_up(game->camera.object_to_world);
+        V3 f = get_forward(game->camera.object_to_world);
+        immediate_arrow(o, r, 2, v4(1, 0, 0, 1), 0.02f);
+        immediate_arrow(o, u, 2, v4(0, 1, 0, 1), 0.02f);
+        immediate_arrow(o, f, 2, v4(0, 0, 1, 1), 0.02f);
+        immediate_arrow(o, normalize(v3(f.x, 0.0f, f.z)), 2, v4(1, 1, 1, 1), 0.02f);
+         */
 #endif
     
     // Render all entities.
