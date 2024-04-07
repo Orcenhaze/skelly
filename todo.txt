@@ -1,8 +1,9 @@
-[] Fix camera!
-[] Fix visual bug1: For some reason, ResolveSubresource is causing seams.
-	Fix exporter: CALC TANGETN + BITANGENT FOR SMOOTH SHADED STUFF
-	INDICES... are they same as blender's?
-	UV_WRAP for uv discontinuities on spheres? Check Martins' comment.
+[] Fix visual bug: For some reason, rasterizer is causing seams when triangles meet.
+[] Fix mesh exporter! 
+	AVERAGING TANGENTS AND BITANGENTS FOR SMOOTH SURFACES.
+	BETTER HASHING.
+	ARE WE RE-USING VERTS? ARE THE INDICES USELESS?
+	SMOOTH CUBE SHOULD EXPORT 8 VERTS ONLY!!!!!!!
 
 [] Correctness check: use z-axis as normal, pass it to calc_tangents(), we should get Tangent as x axis, BiTangent as y axis.
 	does D3D11 float3x3(t, b, n) put them in expected places?

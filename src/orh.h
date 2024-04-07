@@ -9,7 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
-0.89 - added str8_contains().
+0.89 - added str8_contains(). Fixed quaternion_from_euler().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
 0.86 - added clamp_axis(), normalize_axis(), normalize_half_axis(). Added Cursor_Mode and Display_Mode
@@ -2896,6 +2896,9 @@ FUNCDEF inline Quaternion quaternion_from_euler(V3 euler)
 {
     // From:
     // https://www.euclideanspace.com/maths/geometry/rotations/conversions/eulerToQuaternion/index.htm
+    //
+    // Re-derived the equation based on our convention, by solving:
+    // (q_yaw * q_pitch) * q_roll
     
     euler.pitch = _mod(euler.pitch, TAU32);
     euler.yaw   = _mod(euler.yaw,   TAU32);
@@ -2909,10 +2912,10 @@ FUNCDEF inline Quaternion quaternion_from_euler(V3 euler)
     f32 sr = _sin(euler.roll  * 0.5f);
     
     Quaternion result;
-    result.x = sp*cy*cr - cp*sy*sr;
-    result.y = cp*sy*cr + sp*cy*sr;
-    result.z = sp*sy*cr + cp*cy*sr;
-    result.w = cp*cy*cr - sp*sy*sr;
+    result.x = sp*cy*cr + cp*sy*sr;
+    result.y = cp*sy*cr - sp*cy*sr;
+    result.z = cp*cy*sr - sp*sy*cr;
+    result.w = cp*cy*cr + sp*sy*sr;
     
     return result;
 }

@@ -9,6 +9,8 @@ extension = ".mesh"
 version = 2
 
 """
+    blender_mesh_exporter.py - v0.01
+
     IMPORTANT:
     !! Make sure to always use front-view (Numpad1) when modeling the front side of the object; we automatically apply a matrix transform to make the object comply with our engine coordinates. !!
     
