@@ -17,8 +17,8 @@ FUNCTION void update_entity_transform(Entity *entity)
     Quaternion ori = entity->orientation;
     V3 scale       = entity->scale;
     
-    entity->object_to_world_matrix.forward = m4x4_from_translation_rotation_scale(pos, ori, scale);
-    invert(entity->object_to_world_matrix.forward, &entity->object_to_world_matrix.inverse);
+    entity->object_to_world.forward = m4x4_from_translation_rotation_scale(pos, ori, scale);
+    invert(entity->object_to_world.forward, &entity->object_to_world.inverse);
 }
 
 FUNCTION Animation_Player* create_animation_player_for_entity(Entity *e)
@@ -146,6 +146,10 @@ FUNCTION void update_entity(Entity *e)
     switch (e->type) {
         case EntityType_PLAYER: {
             
+#if DEVELOPER
+            if (game->mode == GameMode_DEBUG) break;
+#endif
+            
             //~ Movement
             V2 move = {};
             
@@ -154,10 +158,6 @@ FUNCTION void update_entity(Entity *e)
             if (key_held(input, Key_A)) move.x = -1;
             if (key_held(input, Key_D)) 
                 move.x = 1;
-            
-#if DEVELOPER
-            if (game->mode == GameMode_DEBUG) move = {};
-#endif
             
             // We will move along the camera's forward and right vectors.
             V3 r = get_right(game->camera.object_to_world);
@@ -170,16 +170,23 @@ FUNCTION void update_entity(Entity *e)
             // Apply movement speed and friction.
             V3 acceleration = f*move.y + r*move.x; 
             acceleration    = normalize_or_zero(acceleration);
+            
+            V3 facing_dir   = acceleration;
+            
             acceleration   *= 80.0f; // @Hack: Movement speed.
-            acceleration   += -7.0f*e->velocity; // @Hack: Friction.
+            acceleration   += -8.0f*e->velocity; // @Hack: Friction.
             
             V3 move_delta = e->velocity*dt + 0.5f*acceleration*SQUARE(dt);
             e->velocity  += acceleration*dt;
             e->position  += move_delta;
             
             // Orient rotation to movement.
-            Quaternion target_ori = quaternion_from_two_vectors(V3F, e->velocity);
-            e->orientation        = rotate_towards(e->orientation, target_ori, dt, 10.0f);
+            if (length2(facing_dir) > KINDA_SMALL_NUMBER) {
+                // yaw starts from z-axis NOT forward, so negate facing direction.
+                f32 yaw               = get_euler(-facing_dir).yaw;
+                Quaternion target_ori = quaternion_from_axis_angle(V3U, yaw);
+                e->orientation        = rotate_towards(e->orientation, target_ori, dt, 10.0f);
+            }
             
             // Also add a bit of yaw to the camera we moving left/right.
             // Only if we're not trying to turn the camera ourselves.
@@ -198,15 +205,33 @@ FUNCTION void update_entity(Entity *e)
             b32 loop = anim_to_play->name != S8LIT("guy_hit");
             if (anim_to_play)
                 play_animation(e, anim_to_play, loop);
-            
         } break;
         
         case EntityType_BOT_CIRCLE: {
+            // Move in circular motion.
+            V3 centripetal_accel = normalize_or_zero(e->pivot - e->position) * 10.0f;
+            V3 forward_accel     = normalize_or_zero(e->velocity) * 60.0f;
+            V3 acceleration      = forward_accel + centripetal_accel;
+            acceleration        += -8.0f*e->velocity; // @Hack: Friction.
             
+            V3 delta     = e->velocity*dt + 0.5f*acceleration*SQUARE(dt);
+            e->velocity += acceleration*dt;
+            e->position += delta;
+            
+            // Orient rotation to movement.
+            if (length2(e->velocity) > KINDA_SMALL_NUMBER) {
+                // yaw starts from z-axis NOT forward, so negate facing direction.
+                f32 yaw               = get_euler(-e->velocity).yaw;
+                Quaternion target_ori = quaternion_from_axis_angle(V3U, yaw);
+                e->orientation        = rotate_towards(e->orientation, target_ori, dt, 10.0f);
+            }
         } break;
         
         case EntityType_BOT_LEVITATE: {
-            
+            f32 yaw          = 20.0f * DEGS_TO_RADS;
+            Quaternion q_yaw = quaternion_from_axis_angle(V3U, yaw * dt);
+            e->orientation   = q_yaw * e->orientation;
+            e->position      = move_towards(e->position, e->position + V3U*5000.0f, dt, 1.0f);
         } break;
     }
     

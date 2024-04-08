@@ -1,11 +1,9 @@
-[] Why is run animation inverted?
-
-[] Fix visual bug: For some reason, rasterizer is causing seams when triangles meet.
+[] Fix visual bug: For some reason, when using when using 4x MSAA, rasterizer is causing seams when triangles meet.
 [] Fix mesh exporter! 
-	AVERAGING TANGENTS AND BITANGENTS FOR SMOOTH SURFACES.
-	BETTER HASHING.
-	ARE WE RE-USING VERTS? ARE THE INDICES USELESS?
-	SMOOTH CUBE SHOULD EXPORT 8 VERTS ONLY!!!!!!!
+	Averaging tangents and bitangents for smooth surfaces.
+	Better hashing.
+	Are we re-using verts? are the indices useless?
+	Should a smooth cube export 8 verts only?
 
 [] Correctness check: use z-axis as normal, pass it to calc_tangents(), we should get Tangent as x axis, BiTangent as y axis.
 	does D3D11 float3x3(t, b, n) put them in expected places?

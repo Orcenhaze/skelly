@@ -86,8 +86,6 @@ FUNCTION void control_camera(Camera *cam)
     f32 dt         = os->dt;
     
     Entity *player = get_player(&game->entity_manager);
-    V3 cam_r       = get_right(cam->object_to_world);
-    V3 cam_f       = get_forward(cam->object_to_world);
     
     if (game->mode == GameMode_GAME) {
         // Camera will focus on this point.
@@ -104,7 +102,7 @@ FUNCTION void control_camera(Camera *cam)
         Quaternion q      = quaternion_from_euler(cam->euler);
         cam->position     = rotate_point_around_pivot(target + cam->start_offset, target, q);
         
-        debug_print("camera: %v3\n", cam->euler * RADS_TO_DEGS);
+        //debug_print("camera: %v3\n", cam->euler * RADS_TO_DEGS);
         
         // Always maintain some distance from player.
         /* 
@@ -126,17 +124,19 @@ FUNCTION void control_camera(Camera *cam)
             move_speed *= 3.0f;
         
         if (key_held(&os->tick_input, Key_MMIDDLE)) {
-            Quaternion q_yaw   = quaternion_from_axis_angle(V3U,   turn_speed * -delta_mouse.x);
-            Quaternion q_pitch = quaternion_from_axis_angle(cam_r, turn_speed *  delta_mouse.y);
-            cam->orientation   = q_yaw * cam->orientation;
-            if(ABS(dot(V3U, q_pitch*cam_f)) < 0.98f)
-                cam->orientation = q_pitch * cam->orientation;
+            Quaternion q_yaw     = quaternion_from_axis_angle(V3U,   turn_speed * -delta_mouse.x);
+            cam->orientation     = q_yaw * cam->orientation;
+            cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, cam->orientation, v3(1));
+            
+            Quaternion q_pitch = quaternion_from_axis_angle(get_right(cam->object_to_world), turn_speed *  delta_mouse.y);
+            if(ABS(dot(V3U, q_pitch*get_forward(cam->object_to_world))) < 0.98f) {
+                cam->orientation     = q_pitch * cam->orientation;
+                cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, cam->orientation, v3(1));
+            }
         }
         
-        cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, cam->orientation, v3(1));
-        
-        cam_r = get_right(cam->object_to_world);
-        cam_f = get_forward(cam->object_to_world);
+        V3 cam_r = get_right(cam->object_to_world);
+        V3 cam_f = get_forward(cam->object_to_world);
         
         if (key_held(&os->tick_input, Key_W)) 
             cam->position +=  cam_f * move_speed * dt;
@@ -150,6 +150,8 @@ FUNCTION void control_camera(Camera *cam)
             cam->position +=  V3U * move_speed * dt;
         if (key_held(&os->tick_input, Key_Q))
             cam->position += -V3U * move_speed * dt;
+        
+        cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, cam->orientation, v3(1));
     }
 #endif
     
@@ -176,6 +178,8 @@ FUNCTION void set_game_mode(Game_Mode mode)
         }
         
         os->set_cursor_mode(CursorMode_NORMAL);
+        
+        game->camera.orientation = quaternion_from_m4x4(game->camera.object_to_world);
     } 
 #endif
     
@@ -197,7 +201,7 @@ FUNCTION void game_init()
     load_meshes(os->permanent_arena, &game->mesh_catalog);
     load_animations(os->permanent_arena, &game->animation_catalog);
     
-    game->rng = random_seed(1234);
+    game->rng = random_seed(123);
     
     Triangle_Mesh *player_mesh = find(&game->mesh_catalog, S8LIT("guy"));
     entity_manager_init(&game->entity_manager, player_mesh);
@@ -208,9 +212,37 @@ FUNCTION void game_init()
     
     // @Temporary: Spawn random trees:
     Triangle_Mesh *tree = find(&game->mesh_catalog, S8LIT("tree"));
-    for (s32 i = 0; i < 15; i++) {
-        V3 pos = random_range_v3(&game->rng, v3(-100.0f, 0.0f, -100.0f), v3(100.0f, 0.0f, 100.0f));
-        register_new_entity(&game->entity_manager, tree, EntityType_NONE, S8ZERO, pos);
+    for (s32 i = 0; i < 33; i++) {
+        V3 pos = random_range_v3(&game->rng, v3(-80.0f, 0.0f, -80.0f), v3(80.0f, 0.0f, 80.0f));
+        register_new_entity(&game->entity_manager, tree, EntityType_NONE, S8ZERO, pos, quaternion_identity(), v3(1.3f));
+    }
+    
+    // @Temporary: Spawn some BOT_CIRCLES
+    Sampled_Animation *run_anim = find(&game->animation_catalog, S8LIT("guy_run"));
+    for (s32 i = 0; i < 1; i++) {
+        V3 pos    = random_range_v3(&game->rng, v3(-80.0f, 0.0f, -80.0f), v3(80.0f, 0.0f, 80.0f));
+        V3 color  = random_range_v3(&game->rng, v3(0.2f), v3(0.8f));
+        u32 id    = register_new_entity(&game->entity_manager, player_mesh, EntityType_BOT_CIRCLE, S8ZERO, pos);
+        Entity *e = find_entity(&game->entity_manager, id);
+        e->color  = v4(color, 1.0f);
+        f32 r     = random_rangef(&game->rng, 5.0f, 20.0f);
+        e->pivot  = e->position + v3(r, 0.0f, 0.0f);
+        e->velocity = V3F; // Initial velocity.
+        if (run_anim)
+            play_animation(e, run_anim);
+    }
+    
+    // @Temporary: Spawn some BOT_LEVITATE
+    Sampled_Animation *idle_anim = find(&game->animation_catalog, S8LIT("guy_idle"));
+    for (s32 i = 0; i < 33; i++) {
+        V3 pos    = random_range_v3(&game->rng, v3(-50.0f, 0.0f, -50.0f), v3(50.0f, 0.0f, 50.0f));
+        //V3 color  = random_range_v3(&game->rng, v3(0.2f), v3(0.8f));
+        V3 color  = v3(0.1f);
+        u32 id    = register_new_entity(&game->entity_manager, player_mesh, EntityType_BOT_LEVITATE, S8ZERO, pos);
+        Entity *e = find_entity(&game->entity_manager, id);
+        e->color  = v4(color, 1.0f);
+        if (run_anim)
+            play_animation(e, idle_anim);
     }
     
     // Init camera.
@@ -328,8 +360,8 @@ FUNCTION void game_update()
                  
         */
                 
-                V3 o = transform_point(e->object_to_world_matrix.inverse, camera_ray.origin);
-                V3 d = transform_vector(e->object_to_world_matrix.inverse, camera_ray.direction);
+                V3 o = transform_point(e->object_to_world.inverse, camera_ray.origin);
+                V3 d = transform_vector(e->object_to_world.inverse, camera_ray.direction);
                 
                 // camera ray in object space of entity mesh.
                 Ray ray_object = {o, normalize(d)};
@@ -372,11 +404,14 @@ FUNCTION void game_render()
     
 #if DEVELOPER
     // Draw simple wireframe quad instead of viewport grid for now.
-    immediate_begin(TRUE);
-    set_texture(0);
-    immediate_rect_3d({}, V3U, 200.0f, {0.8f, 0.8f, 0.8f, 1.0f});
-    immediate_end();
+    /* 
+        immediate_begin(TRUE);
+        set_texture(0);
+        immediate_rect_3d({}, V3U, 200.0f, {0.8f, 0.8f, 0.8f, 1.0f});
+        immediate_end();
+     */
     
+    // Draw basis vectors of camera.
     /*     
         immediate_begin();
         V3 o = V3U * 3.0f;
@@ -394,10 +429,20 @@ FUNCTION void game_render()
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
         draw_entity(e);
+        
+#if 0
+        if (e->type == EntityType_BOT_CIRCLE) {
+            immediate_begin();
+            immediate_cube(e->pivot, 0.2f, v4(1,0,1,1));
+            immediate_arrow(e->position, e->velocity, length(e->velocity), v4(1,0,1,1));
+            immediate_end();
+        }
+        
+#endif
     }
     
     
-#if 1
+#if 0
     // Draw TBN.
     if (str8_contains(player->mesh->name, S8LIT("cube"))) {
         for (s32 i = 0; i < (player->mesh->vertices.count); i++) {

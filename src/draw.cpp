@@ -19,8 +19,8 @@ FUNCTION void draw_entity(Entity *e)
     // Vertex Shader.
     // Upload vs constants.
     PBR_VS_Constants vs_constants = {};
-    vs_constants.object_to_proj_matrix  = view_to_proj_matrix.forward * world_to_view_matrix.forward * e->object_to_world_matrix.forward;
-    vs_constants.object_to_world_matrix = e->object_to_world_matrix.forward;
+    vs_constants.object_to_proj_matrix  = view_to_proj_matrix.forward * world_to_view_matrix.forward * e->object_to_world.forward;
+    vs_constants.object_to_world_matrix = e->object_to_world.forward;
     if (e->animation_player && (e->mesh->flags & MeshFlags_ANIMATED)) {
         u64 matrix_count = e->animation_player->skinning_matrices.count;
         ASSERT(matrix_count <= MAX_JOINTS);
@@ -74,7 +74,7 @@ FUNCTION void draw_entity(Entity *e)
         Material_Info *m         = &mesh->material_info[list->material_index];
         
         b32 use_normal_map = FALSE;
-        V4 base_color      = m->base_color;
+        V4 base_color      = !nearly_zero(e->color)? e->color : m->base_color;
         f32 metallic       = m->metallic;
         f32 roughness      = m->roughness;
         f32 ao             = m->ambient_occlusion;
@@ -130,8 +130,8 @@ FUNCTION void draw_entity_wireframe(Entity *e)
     // Vertex Shader.
     // Upload vs constants.
     PBR_VS_Constants vs_constants = {};
-    vs_constants.object_to_proj_matrix  = view_to_proj_matrix.forward * world_to_view_matrix.forward * e->object_to_world_matrix.forward;
-    vs_constants.object_to_world_matrix = e->object_to_world_matrix.forward;
+    vs_constants.object_to_proj_matrix  = view_to_proj_matrix.forward * world_to_view_matrix.forward * e->object_to_world.forward;
+    vs_constants.object_to_world_matrix = e->object_to_world.forward;
     if (e->animation_player && (e->mesh->flags & MeshFlags_ANIMATED)) {
         u64 matrix_count = e->animation_player->skinning_matrices.count;
         ASSERT(matrix_count <= MAX_JOINTS);
@@ -243,7 +243,7 @@ FUNCTION void draw_skeleton(Entity *e)
             invert(skeleton->joint_info[i].object_to_joint_matrix, &inv);
             V3 p = get_translation(player->skinning_matrices[i] * inv);
             
-            V3 p_ndc   = world_to_ndc(transform_point(e->object_to_world_matrix.forward, p));
+            V3 p_ndc   = world_to_ndc(transform_point(e->object_to_world.forward, p));
             V3 p_pixel = ndc_to_pixel(p_ndc);
             String8 joint_name = skeleton->joint_info[i].name;
             

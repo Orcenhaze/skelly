@@ -685,6 +685,9 @@ FUNCDEF inline f32 safe_div0(f32 x, f32 y);
 FUNCDEF inline f32 safe_div1(f32 x, f32 y);
 
 FUNCDEF inline b32 nearly_zero(f32 x, f32 tolerance = SMALL_NUMBER);
+FUNCDEF inline b32 nearly_zero(V2 v, f32 tolerance = SMALL_NUMBER);
+FUNCDEF inline b32 nearly_zero(V3 v, f32 tolerance = SMALL_NUMBER);
+FUNCDEF inline b32 nearly_zero(V4 v, f32 tolerance = SMALL_NUMBER);
 FUNCDEF inline b32 equal(f32 a, f32 b, f32 tolerance = SMALL_NUMBER);
 FUNCDEF inline b32 equal(V2 const &a, V2 const &b, f32 tolerance = SMALL_NUMBER);
 FUNCDEF inline b32 equal(V3 const &a, V3 const &b, f32 tolerance = SMALL_NUMBER);
@@ -767,6 +770,7 @@ FUNCDEF inline Quaternion quaternion(f32 x, f32 y, f32 z, f32 w);
 FUNCDEF inline Quaternion quaternion(V3 v, f32 w);
 FUNCDEF inline Quaternion quaternion_identity();
 
+FUNCDEF inline V3         get_euler(V3 v); // Returns euler that corresponds to direction of v.
 FUNCDEF inline V3         get_euler(Quaternion q); // Returns euler angles in range (-180, 180].
 FUNCDEF inline Quaternion quaternion_from_euler(V3 euler);
 FUNCDEF        Quaternion quaternion_from_m3x3(M3x3 const &affine);
@@ -825,26 +829,26 @@ FUNCDEF inline V3   transform_vector(M4x4 const &m, V3 v);
 
 // Linear interpolation. Returns value between a and b based on fraction t.
 FUNCDEF inline f32 lerp(f32 a, f32 t, f32 b);
-FUNCDEF inline V2  lerp(V2 a, f32 t, V2 b);
-FUNCDEF inline V3  lerp(V3 a, f32 t, V3 b);
-FUNCDEF inline V4  lerp(V4 a, f32 t, V4 b);
+FUNCDEF inline V2  lerp(V2 const &a, f32 t, V2 const &b);
+FUNCDEF inline V3  lerp(V3 const &a, f32 t, V3 const &b);
+FUNCDEF inline V4  lerp(V4 const &a, f32 t, V4 const &b);
 
 // Inverse of lerp. Returns fraction t, based on a value between a and b.
 FUNCDEF inline f32 unlerp(f32 a, f32 value, f32 b);
-FUNCDEF inline f32 unlerp(V2 a, V2 v, V2 b);
-FUNCDEF inline f32 unlerp(V3 a, V3 v, V3 b);
-FUNCDEF inline f32 unlerp(V4 a, V4 v, V4 b);
+FUNCDEF inline f32 unlerp(V2 const &a, V2 const &v, V2 const &b);
+FUNCDEF inline f32 unlerp(V3 const &a, V3 const &v, V3 const &b);
+FUNCDEF inline f32 unlerp(V4 const &a, V4 const &v, V4 const &b);
 
 // Remaps value from input range to output range.
 FUNCDEF inline f32 remap(f32 value, f32 imin, f32 imax, f32 omin, f32 omax);
-FUNCDEF inline V2  remap(V2 value, V2 imin, V2 imax, V2 omin, V2 omax);
-FUNCDEF inline V3  remap(V3 value, V3 imin, V3 imax, V3 omin, V3 omax);
-FUNCDEF inline V4  remap(V4 value, V4 imin, V4 imax, V4 omin, V4 omax);
+FUNCDEF inline V2  remap(V2 const &value, V2 const &imin, V2 const &imax, V2 const &omin, V2 const &omax);
+FUNCDEF inline V3  remap(V3 const &value, V3 const &imin, V3 const &imax, V3 const &omin, V3 const &omax);
+FUNCDEF inline V4  remap(V4 const &value, V4 const &imin, V4 const &imax, V4 const &omin, V4 const &omax);
 
-FUNCDEF inline Quaternion   lerp(Quaternion a, f32 t, Quaternion b);
-FUNCDEF inline f32        unlerp(Quaternion a, Quaternion q, Quaternion b);
-FUNCDEF inline Quaternion  nlerp(Quaternion a, f32 t, Quaternion b);
-FUNCDEF        Quaternion  slerp(Quaternion a, f32 t, Quaternion b);
+FUNCDEF inline Quaternion   lerp(Quaternion const &a,               f32 t, Quaternion const &b);
+FUNCDEF inline f32        unlerp(Quaternion const &a, Quaternion const &q, Quaternion const &b);
+FUNCDEF inline Quaternion  nlerp(Quaternion const &a,               f32 t, Quaternion const &b);
+FUNCDEF        Quaternion  slerp(Quaternion const &a,               f32 t, Quaternion const &b);
 
 FUNCDEF inline f32 smooth_step  (f32 edge0, f32 x, f32 edge1); // Output in range [0, 1]
 FUNCDEF inline f32 smoother_step(f32 edge0, f32 x, f32 edge1); // Output in range [0, 1]
@@ -1165,9 +1169,9 @@ inline Quaternion operator+(Quaternion v)
     Quaternion result = v;
     return result;
 }
-inline Quaternion operator-(Quaternion v)                
+inline Quaternion operator-(Quaternion q)
 { 
-    Quaternion result = {-v.x, -v.y, -v.z, -v.w};
+    Quaternion result = {-q.x, -q.y, -q.z, -q.w};
     return result;
 }
 inline Quaternion operator+(Quaternion a, Quaternion b)  
@@ -2533,6 +2537,27 @@ FUNCDEF inline b32 nearly_zero(f32 x, f32 tolerance /*= SMALL_NUMBER*/)
     b32 result = (ABS(x) <= tolerance);
     return result;
 }
+FUNCDEF inline b32 nearly_zero(V2 v, f32 tolerance /*= SMALL_NUMBER*/)
+{
+    b32 result = ((ABS(v.x) <= tolerance) &&
+                  (ABS(v.y) <= tolerance));
+    return result;
+}
+FUNCDEF inline b32 nearly_zero(V3 v, f32 tolerance /*= SMALL_NUMBER*/)
+{
+    b32 result = ((ABS(v.x) <= tolerance) &&
+                  (ABS(v.y) <= tolerance) &&
+                  (ABS(v.z) <= tolerance));
+    return result;
+}
+FUNCDEF inline b32 nearly_zero(V4 v, f32 tolerance /*= SMALL_NUMBER*/)
+{
+    b32 result = ((ABS(v.x) <= tolerance) &&
+                  (ABS(v.y) <= tolerance) &&
+                  (ABS(v.z) <= tolerance) &&
+                  (ABS(v.w) <= tolerance));
+    return result;
+}
 FUNCDEF inline b32 equal(f32 a, f32 b, f32 tolerance /*= SMALL_NUMBER*/)
 {
     b32 result = (ABS(a-b) <= tolerance);
@@ -2906,6 +2931,15 @@ FUNCDEF inline Quaternion quaternion_identity()
 }
 
 
+FUNCDEF inline V3 get_euler(V3 v)
+{
+    // Returns euler that corresponds to direction of v.
+    V3 result;
+    result.pitch = _arctan2(v.yaw, _sqrt(v.roll*v.roll + v.pitch*v.pitch));
+    result.yaw   = _arctan2(v.pitch, v.roll);
+    result.roll  = 0.0f;
+    return result;
+}
 FUNCDEF inline V3 get_euler(Quaternion q)
 {
     // From:
@@ -3118,7 +3152,8 @@ FUNCDEF inline f32 angle_between(Quaternion const &a, Quaternion const &b)
     // Calculate angular distance between two quaternions.
     // Why are we mapping from -1..1 to 0..1 (by doing cos*cos), then re-mapping back to -1..1??
     f32 inner  = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w;
-    f32 result = _arccos((2.0f * SQUARE(inner)) - 1.0f);
+    f32 x      = CLAMP(-1.0f, ((2.0f * inner * inner) - 1.0f), 1.0f);
+    f32 result = _arccos(x);
     return result;
 }
 
@@ -3462,17 +3497,17 @@ FUNCDEF inline f32 lerp(f32 a, f32 t, f32 b)
     f32 result = a*(1.0f - t) + b*t; 
     return result;
 }
-FUNCDEF inline V2 lerp(V2 a, f32 t, V2 b) 
+FUNCDEF inline V2 lerp(V2 const &a, f32 t, V2 const &b) 
 {
     V2 result = a*(1.0f - t) + b*t; 
     return result;
 }
-FUNCDEF inline V3 lerp(V3 a, f32 t, V3 b) 
+FUNCDEF inline V3 lerp(V3 const &a, f32 t, V3 const &b) 
 {
     V3 result = a*(1.0f - t) + b*t; 
     return result;
 }
-FUNCDEF inline V4 lerp(V4 a, f32 t, V4 b) 
+FUNCDEF inline V4 lerp(V4 const &a, f32 t, V4 const &b) 
 {
     V4 result = a*(1.0f - t) + b*t; 
     return result;
@@ -3483,19 +3518,19 @@ FUNCDEF inline f32 unlerp(f32 a, f32 value, f32 b)
     f32 t = (value - a) / (b - a);
     return t;
 }
-FUNCDEF inline f32 unlerp(V2 a, V2 v, V2 b)
+FUNCDEF inline f32 unlerp(V2 const &a, V2 const &v, V2 const &b)
 {
     V2 av = v-a, ab = b-a;
     f32 t = dot(av, ab) / dot(ab, ab);
     return t;
 }
-FUNCDEF inline f32 unlerp(V3 a, V3 v, V3 b)
+FUNCDEF inline f32 unlerp(V3 const &a, V3 const &v, V3 const &b)
 {
     V3 av = v-a, ab = b-a;
     f32 t = dot(av, ab) / dot(ab, ab);
     return t;
 }
-FUNCDEF inline f32 unlerp(V4 a, V4 v, V4 b)
+FUNCDEF inline f32 unlerp(V4 const &a, V4 const &v, V4 const &b)
 {
     V4 av = v-a, ab = b-a;
     f32 t = dot(av, ab) / dot(ab, ab);
@@ -3508,42 +3543,44 @@ FUNCDEF inline f32 remap(f32 value, f32 imin, f32 imax, f32 omin, f32 omax)
     f32 result = lerp(omin, t, omax);
     return result;
 }
-FUNCDEF inline V2 remap(V2 value, V2 imin, V2 imax, V2 omin, V2 omax)
+FUNCDEF inline V2 remap(V2 const &value, V2 const &imin, V2 const &imax, V2 const &omin, V2 const &omax)
 {
     f32 t     = unlerp(imin, value, imax);
     V2 result = lerp(omin, t, omax);
     return result;
 }
-FUNCDEF inline V3 remap(V3 value, V3 imin, V3 imax, V3 omin, V3 omax)
+FUNCDEF inline V3 remap(V3 const &value, V3 const &imin, V3 const &imax, V3 const &omin, V3 const &omax)
 {
     f32 t     = unlerp(imin, value, imax);
     V3 result = lerp(omin, t, omax);
     return result;
 }
-FUNCDEF inline V4 remap(V4 value, V4 imin, V4 imax, V4 omin, V4 omax)
+FUNCDEF inline V4 remap(V4 const &value, V4 const &imin, V4 const &imax, V4 const &omin, V4 const &omax)
 {
     f32 t     = unlerp(imin, value, imax);
     V4 result = lerp(omin, t, omax);
     return result;
 }
 
-FUNCDEF inline Quaternion lerp(Quaternion a, f32 t, Quaternion b)
+FUNCDEF inline Quaternion lerp(Quaternion const &a, f32 t, Quaternion const &b)
 {
-    Quaternion q;
-    q.xyzw = lerp(a.xyzw, t, b.xyzw);
-    return q;
+    // @Note: Neighborhood operator: if the dot product of two quaternions is negative, it will 
+    // take the long route around the sphere. So we negate one of them.
+    f32 bias          = (dot(a, b) < 0)? -1.0f : 1.0f;
+    Quaternion result = a*(1.0f - t) + b*bias*t;
+    return result;
 }
-FUNCDEF inline f32 unlerp(Quaternion a, Quaternion q, Quaternion b)
+FUNCDEF inline f32 unlerp(Quaternion const &a, Quaternion const &q, Quaternion const &b)
 {
     Quaternion aq = q-a, ab = b-a;
     f32 t = dot(aq, ab) / dot(ab, ab);
     return t;
 }
-FUNCDEF inline Quaternion nlerp(Quaternion a, f32 t, Quaternion b)
+FUNCDEF inline Quaternion nlerp(Quaternion const &a, f32 t, Quaternion const &b)
 {
     return normalize_or_identity(lerp(a, t, b));
 }
-Quaternion slerp(Quaternion a, f32 t, Quaternion b)
+Quaternion slerp(Quaternion const &a, f32 t, Quaternion const &b)
 {
     // Quaternion slerp according to wiki:
     // result = (b * q0^-1)^t * q0
@@ -3552,18 +3589,19 @@ Quaternion slerp(Quaternion a, f32 t, Quaternion b)
     Quaternion result;
     
     f32 cos_theta = dot(a, b);
+    f32 bias      = 1.0f;
     if (cos_theta < 0.0f) {
-        b         = -b;
+        bias      = -1.0f;
         cos_theta = -cos_theta;
     }
     
     // When cos_theta is 1.0f, sin_theta is 0.0f. 
     // Avoid the slerp formula when we get close to 1.0f and do a lerp() instead.
     if (cos_theta > 1.0f - 1.192092896e-07F) {
-        result = lerp(a, t, b);
+        result = lerp(a, t, b*bias);
     } else {
         f32 theta = _arccos(cos_theta);
-        result    = (_sin((1-t)*theta)*a + _sin(t*theta)*b) / _sin(theta);
+        result    = (_sin((1-t)*theta)*a + _sin(t*theta)*(b*bias)) / _sin(theta);
     }
     
     return result;
@@ -3618,13 +3656,15 @@ FUNCDEF V3 move_towards(V3 current, V3 target, f32 delta_time, f32 speed)
 FUNCDEF Quaternion rotate_towards(Quaternion const &current, Quaternion const &target, f32 delta_time, f32 speed)
 {
     // From Unreal.
-    if (speed <= 0.0f) return target;
-    if (equal(current, target)) return target;
+    if (speed <= 0.0f) 
+        return target;
+    if (equal(current, target)) 
+        return target;
     
     f32 delta_speed = CLAMP01(delta_time * speed);
     f32 delta_angle = CLAMP_LOWER(angle_between(current, target), SMALL_NUMBER);
     f32 alpha       = CLAMP01(delta_speed / delta_angle);
-    Quaternion result = nlerp(current, alpha, target);
+    Quaternion result = slerp(current, alpha, target);
     return result;
 }
 FUNCDEF inline V2 rotate_point_around_pivot(V2 point, V2 pivot, Quaternion q)

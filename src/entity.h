@@ -15,7 +15,7 @@ enum Entity_Type
 
 struct Entity
 {
-    M4x4_Inverse object_to_world_matrix;
+    M4x4_Inverse object_to_world;
     String8 name;
     Triangle_Mesh *mesh;
     
@@ -26,6 +26,10 @@ struct Entity
     V3         position;
     V3         scale;
     V3         velocity;
+    
+    // @Temporary: For BOTs
+    V4         color;
+    V3         pivot; // Circles around this.
     
     Entity_Type type;
     u32 id;
