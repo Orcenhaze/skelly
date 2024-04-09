@@ -22,6 +22,14 @@ version = 1
     - DOES NOT support non-uniform scaling (the scale value for joints are exported as float NOT Vector3).
     - DOES NOT support rigify rigs; metarigs hierarchy seems fine, but as soon as you generate the rig, the bone hierarchy gets messed up.
     
+    NOTE: Exporting from Mixamo:
+    - Import one Mixamo FBX with skin, the others should just be armatures with no skin.
+    - Click Armature -> apply all transforms -> go to animation tab -> go to graph editor: 
+        Filter by location -> cursor x = 1, y = 0 -> pivot point = 2D cursor -> make sure armature is in pose mode + pose postion -> press "a" in viewport to select all bones -> 
+        click "a" in graph editor to select all location keys -> click "s + 0.01 + enter" to scale by 0.01 and apply.
+    - Go back to layout -> select armature -> export armature to GLTF -> import GLTF:
+    - Make sure shading tab is using materals as expected, make sure all anim actions of GLTF armature are used by someone, use exporters like usual.
+    
     @Cleanup: The export_joints_meta_data maneuver might be unnecessary, not sure...
     @Cleanup:
     @Cleanup:

@@ -24,7 +24,17 @@ version = 2
         MESH origin and ARMATURE origin must match!
     
     TODO:
+    - Smooth TBNs.
     - We need to merge all vertices by distance before exporting. Not doing so may cause issues...
+    
+    NOTE: Exporting from Mixamo:
+    - Import one Mixamo FBX with skin, the others should just be armatures with no skin.
+    - Click Armature -> apply all transforms -> go to animation tab -> go to graph editor: 
+        Filter by location -> cursor x = 1, y = 0 -> pivot point = 2D cursor -> make sure armature is in pose mode + pose postion -> press "a" in viewport to select all bones -> 
+        click "a" in graph editor to select all location keys -> click "s + 0.01 + enter" to scale by 0.01 and apply.
+    - Go back to layout -> select armature -> export armature to GLTF -> import GLTF:
+    - Make sure shading tab is using materals as expected, make sure all anim actions of GLTF armature are used by someone, use exporters like usual.
+    
     
     @Cleanup: This file is super messy!
     @Cleanup:

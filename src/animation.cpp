@@ -151,7 +151,7 @@ FUNCTION void advance_time(Animation_Channel *channel, f64 dt)
     
 }
 
-FUNCTION void get_lerped_joints(Sampled_Animation *anim, f64 time, Array<SQT> joints_out)
+FUNCTION void get_lerped_joints(Sampled_Animation *anim, f64 time, Array<SQT> *joints_out)
 {
     // @Todo: max_index parameter? What is it for? To ignore some joint children?
     
@@ -182,12 +182,12 @@ FUNCTION void get_lerped_joints(Sampled_Animation *anim, f64 time, Array<SQT> jo
     for (s32 i = 0; i < num_joints; i++) {
         Pose_Joint_Info *joint = &anim->joints[i];
         if (DISABLE_LERPS) {
-            joints_out[i] = joint->matrices[base_index];
+            joints_out->data[i] = joint->matrices[base_index];
         } else {
             SQT a = joint->matrices[base_index + 0];
             SQT b = joint->matrices[base_index + 1];
             
-            joints_out[i] = lerp(a, (f32)fraction, b);
+            joints_out->data[i] = lerp(a, (f32)fraction, b);
         }
     }
     
@@ -205,7 +205,7 @@ FUNCTION b32 eval(Animation_Channel *channel)
         return false;
     
     ASSERT(channel->lerped_joints_relative.count == channel->animation->joints.count);
-    get_lerped_joints(channel->animation, channel->current_time, channel->lerped_joints_relative);
+    get_lerped_joints(channel->animation, channel->current_time, &channel->lerped_joints_relative);
     
     return true;
 }
