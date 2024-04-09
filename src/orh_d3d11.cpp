@@ -172,7 +172,7 @@ struct Vertex_XTBNUCJW
     V4  weights;
 };
 
-#define MAX_JOINTS 64
+#define MAX_JOINTS 65
 #define VSConstantsFlags_SHOULD_SKIN 0x1
 struct PBR_VS_Constants
 {
@@ -535,6 +535,7 @@ FUNCTION void create_immediate_shader()
         desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
         desc.Usage          = D3D11_USAGE_DYNAMIC;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        ASSERT(desc.ByteWidth <= 16*D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT);
         
         device->CreateBuffer(&desc, 0, &immediate_vs_cbuffer);
     }
@@ -608,11 +609,13 @@ FUNCTION void create_pbr_shader()
         desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
         desc.Usage          = D3D11_USAGE_DYNAMIC;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        ASSERT(desc.ByteWidth <= 16*D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT);
         
         device->CreateBuffer(&desc, 0, &pbr_vs_cbuffer);
         
         D3D11_BUFFER_DESC desc2 = desc;
         desc2.ByteWidth = ALIGN_UP(sizeof(PBR_PS_Constants), 16);
+        ASSERT(desc2.ByteWidth <= 16*D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT);
         
         device->CreateBuffer(&desc2, 0, &pbr_ps_cbuffer);
     }

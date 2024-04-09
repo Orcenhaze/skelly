@@ -24,7 +24,7 @@ struct PS_Input
 };
 
 #define MAX_JOINTS_PER_VERTEX 4
-#define MAX_JOINTS 64
+#define MAX_JOINTS 65
 #define VSConstantsFlags_SHOULD_SKIN 0x1
 cbuffer VS_Constants : register(b0)
 {
