@@ -9,8 +9,8 @@ enum Entity_Type
     EntityType_NONE,
     
     EntityType_PLAYER,
-    EntityType_BOT_CIRCLE,
-    EntityType_BOT_LEVITATE,
+    EntityType_BOT,
+    EntityType_CLAW,
 };
 
 struct Entity

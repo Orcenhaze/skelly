@@ -3483,12 +3483,12 @@ FUNCDEF inline V4 transform(M4x4 const &m, V4 v)
 }
 FUNCDEF inline V3 transform_point(M4x4 const &m, V3 p)
 {
-    V3 result = transform(m, {p.x, p.y, p.z, 1.0f}).xyz;
+    V3 result = transform(m, V4{p.x, p.y, p.z, 1.0f}).xyz;
     return result;
 }
 FUNCDEF inline V3 transform_vector(M4x4 const &m, V3 v)
 {
-    V3 result = transform(m, {v.x, v.y, v.z, 0.0f}).xyz;
+    V3 result = transform(m, V4{v.x, v.y, v.z, 0.0f}).xyz;
     return result;
 }
 

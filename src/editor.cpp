@@ -53,7 +53,7 @@ FUNCTION void draw_main_editor_window()
                 //
                 V3  axis  = quaternion_get_axis(e->orientation);
                 f32 angle = quaternion_get_angle(e->orientation);
-                ImGui::Text("Axis: [%.3f, %.3f, %.3f], Angle: %.3f", axis.x, axis.y, axis.y, angle);
+                ImGui::Text("Axis: [%.3f, %.3f, %.3f], Angle: %.3f", axis.x, axis.y, axis.y, angle*RADS_TO_DEGS);
                 
                 //
                 // Scale

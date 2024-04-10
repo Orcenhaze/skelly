@@ -22,6 +22,9 @@ version = 1
     - DOES NOT support non-uniform scaling (the scale value for joints are exported as float NOT Vector3).
     - DOES NOT support rigify rigs; metarigs hierarchy seems fine, but as soon as you generate the rig, the bone hierarchy gets messed up.
     
+    TODO:
+    - Why limit to one root?
+    
     NOTE: Exporting from Mixamo:
     - Import one Mixamo FBX with skin, the others should just be armatures with no skin.
     - Click Armature -> apply all transforms -> go to animation tab -> go to graph editor: 

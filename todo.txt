@@ -1,15 +1,14 @@
+[] Organizing shaders: Skybox, instancing, PBR, animated, shader folder, -Ishaders/ compiler flag.
 [] Fix visual bug: For some reason, when using when using 4x MSAA, rasterizer is causing seams when triangles meet.
 [] Fix mesh exporter! 
 	Averaging tangents and bitangents for smooth surfaces.
 	Better hashing.
 	Are we re-using verts? are the indices useless?
-	Should a smooth cube export 8 verts only?
 
 [] Correctness check: use z-axis as normal, pass it to calc_tangents(), we should get Tangent as x axis, BiTangent as y axis.
 	does D3D11 float3x3(t, b, n) put them in expected places?
 
-[] Gizmo clicking draws axes from CENTER, not click point..
-[] Gizmo translation and rotation snapping.
+[] Gizmo rotation snapping.
 
 
 [] Cleanup blender exporters and current state of animation system.

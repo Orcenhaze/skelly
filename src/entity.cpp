@@ -138,6 +138,13 @@ FUNCTION Animation_Channel* play_animation(Entity *e, Sampled_Animation *anim, b
     return new_channel;
 }
 
+FUNCTION inline b32 is_grounded(Entity *e)
+{
+    // @Hack:
+    b32 result = nearly_zero(e->position.y, 0.01f);
+    return result;
+}
+
 FUNCTION void update_entity(Entity *e)
 {
     Input_State *input = &os->tick_input;
@@ -173,12 +180,16 @@ FUNCTION void update_entity(Entity *e)
             
             V3 facing_dir   = acceleration;
             
-            acceleration   *= 80.0f; // @Hack: Movement speed.
-            acceleration   += -8.0f*e->velocity; // @Hack: Friction.
+            acceleration   *= 60.0f; // @Hack: Movement speed.
+            acceleration   += -15.0f*e->velocity; // @Hack: Friction.
+            acceleration   += -252.0f*V3U; // @Hack: Gravity.
             
             V3 move_delta = e->velocity*dt + 0.5f*acceleration*SQUARE(dt);
             e->velocity  += acceleration*dt;
             e->position  += move_delta;
+            
+            // @Hack: "Collide" with floor.
+            e->position.y = CLAMP_LOWER(e->position.y, 0.0f);
             
             // Orient rotation to movement.
             if (length2(facing_dir) > KINDA_SMALL_NUMBER) {
@@ -191,47 +202,18 @@ FUNCTION void update_entity(Entity *e)
             // Also add a bit of yaw to the camera we moving left/right.
             // Only if we're not trying to turn the camera ourselves.
             if (!os->tick_input.mouse_delta.x)
-                game->camera.euler.yaw += 2.0f * -move.x * dt;
+                game->camera.euler.yaw += DEGS_TO_RADS * 45.0f * -move.x * dt;
             
             
             //~ Animation.
             
-            Sampled_Animation *anim_to_play = find(&game->animation_catalog, S8LIT("guy_idle"));
-            if (key_pressed(input, Key_MLEFT))
-                anim_to_play = find(&game->animation_catalog, S8LIT("guy_hit"));
-            else if (move.x || move.y)
-                anim_to_play = find(&game->animation_catalog, S8LIT("guy_run"));
-            
-            b32 loop = anim_to_play->name != S8LIT("guy_hit");
-            if (anim_to_play)
-                play_animation(e, anim_to_play, loop);
-        } break;
-        
-        case EntityType_BOT_CIRCLE: {
-            // Move in circular motion.
-            V3 centripetal_accel = normalize_or_zero(e->pivot - e->position) * 10.0f;
-            V3 forward_accel     = normalize_or_zero(e->velocity) * 60.0f;
-            V3 acceleration      = forward_accel + centripetal_accel;
-            acceleration        += -8.0f*e->velocity; // @Hack: Friction.
-            
-            V3 delta     = e->velocity*dt + 0.5f*acceleration*SQUARE(dt);
-            e->velocity += acceleration*dt;
-            e->position += delta;
-            
-            // Orient rotation to movement.
-            if (length2(e->velocity) > KINDA_SMALL_NUMBER) {
-                // yaw starts from z-axis NOT forward, so negate facing direction.
-                f32 yaw               = get_euler(-e->velocity).yaw;
-                Quaternion target_ori = quaternion_from_axis_angle(V3U, yaw);
-                e->orientation        = rotate_towards(e->orientation, target_ori, dt, 10.0f);
+            Sampled_Animation *anim_to_play = find(&game->animation_catalog, S8LIT("bot_fall"));
+            if (is_grounded(e)) {
+                anim_to_play = find(&game->animation_catalog, S8LIT("bot_idle"));
+                if (move.x || move.y)
+                    anim_to_play = find(&game->animation_catalog, S8LIT("bot_run"));
             }
-        } break;
-        
-        case EntityType_BOT_LEVITATE: {
-            f32 yaw          = 20.0f * DEGS_TO_RADS;
-            Quaternion q_yaw = quaternion_from_axis_angle(V3U, yaw * dt);
-            e->orientation   = q_yaw * e->orientation;
-            e->position      = move_towards(e->position, e->position + V3U*5000.0f, dt, 1.0f);
+            play_animation(e, anim_to_play);
         } break;
     }
     

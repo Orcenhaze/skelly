@@ -96,22 +96,12 @@ FUNCTION void control_camera(Camera *cam)
         cam->euler.yaw   += -delta_mouse.x * turn_speed;
         cam->euler.pitch +=  delta_mouse.y * turn_speed;
         cam->euler.pitch  = clamp_angle(-65.0f * DEGS_TO_RADS, cam->euler.pitch, 30.0f * DEGS_TO_RADS);
-        //cam->euler        = clamp_euler(cam->euler);
         cam->euler        = normalize_euler(cam->euler);
         
         Quaternion q      = quaternion_from_euler(cam->euler);
         cam->position     = rotate_point_around_pivot(target + cam->start_offset, target, q);
         
         //debug_print("camera: %v3\n", cam->euler * RADS_TO_DEGS);
-        
-        // Always maintain some distance from player.
-        /* 
-                f32 desired_dist2 = length2(cam->start_offset);
-                f32 current_dist2 = length2(cam->position - target);
-                if (current_dist2 > desired_dist2) {
-                    cam->position = move_towards(cam->position, target, dt, 8.0f);
-                }
-         */
         
         Quaternion q_look = quaternion_look_at(target - cam->position, V3U);
         cam->object_to_world = m4x4_from_translation_rotation_scale(cam->position, q_look, v3(1));
@@ -203,46 +193,44 @@ FUNCTION void game_init()
     
     game->rng = random_seed(123);
     
-    Triangle_Mesh *player_mesh = find(&game->mesh_catalog, S8LIT("guy"));
-    entity_manager_init(&game->entity_manager, player_mesh);
+    Triangle_Mesh *bot_mesh = find(&game->mesh_catalog, S8LIT("bot"));
+    entity_manager_init(&game->entity_manager, bot_mesh);
     
     // @Temporary: Spawn floor.
-    Triangle_Mesh *grass = find(&game->mesh_catalog, S8LIT("floor"));
-    register_new_entity(&game->entity_manager, grass);
+    Triangle_Mesh *floor_mesh = find(&game->mesh_catalog, S8LIT("floor"));
+    register_new_entity(&game->entity_manager, floor_mesh);
+    Entity *player   = get_player(&game->entity_manager);
+    player->position = {0.0f, 10.0f, 0.0f};
     
-    // @Temporary: Spawn random trees:
-    Triangle_Mesh *tree = find(&game->mesh_catalog, S8LIT("tree"));
-    for (s32 i = 0; i < 33; i++) {
-        V3 pos = random_range_v3(&game->rng, v3(-80.0f, 0.0f, -80.0f), v3(80.0f, 0.0f, 80.0f));
-        register_new_entity(&game->entity_manager, tree, EntityType_NONE, S8ZERO, pos, quaternion_identity(), v3(1.3f));
+    // @Temporary: Line up some bots.
+    Sampled_Animation *bot_idle = find(&game->animation_catalog, S8LIT("bot_idle"));
+    for (s32 r = 0; r < 5; r++) {
+        for (s32 c = 0; c < 3; c++) {
+            if (r == 2 && c == 1) continue;
+            f32 x     = -3.0f + c * 3.0f;
+            f32 z     = -6.0f + r * 3.0f;
+            u32 id    = register_new_entity(&game->entity_manager, bot_mesh, EntityType_BOT, S8ZERO, v3(x,0,z));
+            Entity *e = find_entity(&game->entity_manager, id);
+            play_animation(e, bot_idle);
+        }
     }
     
-    // @Temporary: Spawn some BOT_CIRCLES
-    Sampled_Animation *run_anim = find(&game->animation_catalog, S8LIT("guy_run"));
-    for (s32 i = 0; i < 1; i++) {
-        V3 pos    = random_range_v3(&game->rng, v3(-80.0f, 0.0f, -80.0f), v3(80.0f, 0.0f, 80.0f));
-        V3 color  = random_range_v3(&game->rng, v3(0.2f), v3(0.8f));
-        u32 id    = register_new_entity(&game->entity_manager, player_mesh, EntityType_BOT_CIRCLE, S8ZERO, pos);
-        Entity *e = find_entity(&game->entity_manager, id);
-        e->color  = v4(color, 1.0f);
-        f32 r     = random_rangef(&game->rng, 5.0f, 20.0f);
-        e->pivot  = e->position + v3(r, 0.0f, 0.0f);
-        e->velocity = V3F; // Initial velocity.
-        if (run_anim)
-            play_animation(e, run_anim);
-    }
-    
-    // @Temporary: Spawn some BOT_LEVITATE
-    Sampled_Animation *idle_anim = find(&game->animation_catalog, S8LIT("guy_idle"));
-    for (s32 i = 0; i < 33; i++) {
-        V3 pos    = random_range_v3(&game->rng, v3(-50.0f, 0.0f, -50.0f), v3(50.0f, 0.0f, 50.0f));
-        //V3 color  = random_range_v3(&game->rng, v3(0.2f), v3(0.8f));
-        V3 color  = v3(0.1f);
-        u32 id    = register_new_entity(&game->entity_manager, player_mesh, EntityType_BOT_LEVITATE, S8ZERO, pos);
-        Entity *e = find_entity(&game->entity_manager, id);
-        e->color  = v4(color, 1.0f);
-        if (run_anim)
-            play_animation(e, idle_anim);
+    // @Temporary: Spawn some claws.
+    String8 claw_anims[]     = {S8LIT("claw_variation0"), S8LIT("claw_variation1"), S8LIT("claw_variation2"), S8LIT("claw_variation3"), S8LIT("claw_variation4")};
+    Triangle_Mesh *claw_mesh = find(&game->mesh_catalog, S8LIT("claw"));
+    for (s32 r = 0; r < 31; r++) {
+        for (s32 c = 0; c < 21; c++) {
+            if (!(r==0 || r==30 || c==0 || c==20)) continue;
+            f32 x = -5.0f + c * 0.5f;
+            f32 z = -8.0f + r * 0.5f;
+            f32 y        = random_rangef(&game->rng, 0.0f, TAU32);
+            Quaternion q = quaternion_from_axis_angle(V3U, y);
+            u32 id       = register_new_entity(&game->entity_manager, claw_mesh, EntityType_CLAW, S8ZERO, v3(x,0,z), q, v3(0.25f));
+            Entity *e    = find_entity(&game->entity_manager, id);
+            u32 rand     = random_range(&game->rng, 0, ARRAY_COUNT(claw_anims));
+            Sampled_Animation *anim = find(&game->animation_catalog, claw_anims[rand]);
+            play_animation(e, anim);
+        }
     }
     
     // Init camera.
@@ -250,7 +238,7 @@ FUNCTION void game_init()
 #if DEVELOPER
     game->camera.orientation  = quaternion_identity();
 #endif
-    game->camera.start_offset = {0.0f, 2.0f, 5.0f};
+    game->camera.start_offset = {0.0f, 1.0f, 3.0f};
     control_camera(&game->camera);
     
     set_view_to_proj();
@@ -429,16 +417,6 @@ FUNCTION void game_render()
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
         draw_entity(e);
-        
-#if 0
-        if (e->type == EntityType_BOT_CIRCLE) {
-            immediate_begin();
-            immediate_cube(e->pivot, 0.2f, v4(1,0,1,1));
-            immediate_arrow(e->position, e->velocity, length(e->velocity), v4(1,0,1,1));
-            immediate_end();
-        }
-        
-#endif
     }
     
     
@@ -470,16 +448,11 @@ FUNCTION void game_render()
         for (s32 i = 0; i < manager->selected_entities.count; i++) {
             Entity *e = find_entity(manager, manager->selected_entities[i]);
             draw_entity_wireframe(e);
+            draw_skeleton(e);
         }
         
         // Render gizmos.
         gizmo_render();
-    }
-    
-    // Draw skeleton lines and joint names
-    for (s32 i = 0; i < manager->all_entities.count; i++) {
-        Entity *e = find_entity(manager, manager->all_entities[i]);
-        draw_skeleton(e);
     }
 #endif
 }

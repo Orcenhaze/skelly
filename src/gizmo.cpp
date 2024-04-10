@@ -2,10 +2,8 @@
 
 // @Note: This file is NOT independant. It's using the engine's types, collision routines and immediate-mode renderer.
     
-// @Incomplete: Add scale gizmo!
-
-// @Debug: First frame drawing with last rendering params state? 
-// We should probably get rid of rendering params when we deselect.
+// @Incomplete: Add rotation snapping!
+// @Incomplete: Add scale gizmo + snapping!
 
 */ 
 
@@ -69,13 +67,18 @@ struct Gizmo_Geometry
 GLOBAL b32            gizmo_is_active; // Whether we are interacting with the gizmo. True when we find the best gizmo element candidate and press the left mouse button.
 GLOBAL Gizmo_Element  gizmo_element;   // The current best candidate (could be none) based on distance and intersection with corresponding geometry of the element. 
 GLOBAL Gizmo_Mode     gizmo_mode;
-GLOBAL const f32      gizmo_max_t = 300.0f; // Max limit for camera_ray.t when intersecting.
+GLOBAL const f32      GIZMO_MAX_T = 300.0f; // Max limit for camera_ray.t when intersecting.
 
 GLOBAL Gizmo_Geometry         geometry;
 GLOBAL Gizmo_Rendering_Params params;
 
+GLOBAL const f32              TRANSLATION_SNAP = 0.1f;
+GLOBAL const f32              ROTATION_SNAP    = 15.0f * DEGS_TO_RADS;
+GLOBAL const f32              SCALE_SNAP       = 0.25f;
+
 GLOBAL V3                     current_point;  // Intersection point of gizmo_element's geometry in current frame.
 GLOBAL V3                     previous_point; // Intersection point of gizmo_element's geometry in previous frame.
+GLOBAL V3                     click_origin;   // The origin of the gizmo in first frame where gizmo became active.
 GLOBAL V3                     click_point;    // Intersection point of gizmo_element's geometry in first frame where gizmo became active.
 GLOBAL V3                     click_offset;   // The vector from gizmo_origin to click_point in first frame where gizmo became active.
 
@@ -149,19 +152,19 @@ FUNCTION void gizmo_render()
             if (gizmo_element <= GizmoElement_TRANSLATE_Z) {
                 s32 index = gizmo_element - GizmoElement_TRANSLATE_X;
                 Ray axis  = geometry.axes[index];
-                V3 p0     = click_point - axis.d * 2000.0f;
-                V3 p1     = click_point + axis.d * 2000.0f;
+                V3 p0     = click_origin - axis.d * 2000.0f;
+                V3 p1     = click_origin + axis.d * 2000.0f;
                 immediate_line_3d(p0, p1, colors[gizmo_element], 0.01f);
             } else if (gizmo_element <= GizmoElement_TRANSLATE_XY) {
                 // When interacting with a plane, draw the other two axes.
                 s32 index = gizmo_element - GizmoElement_TRANSLATE_YZ;
                 Ray axis  = geometry.axes[(index + 1) % 3];
-                V3 p0     = click_point - axis.d * 2000.0f;
-                V3 p1     = click_point + axis.d * 2000.0f;
+                V3 p0     = click_origin - axis.d * 2000.0f;
+                V3 p1     = click_origin + axis.d * 2000.0f;
                 immediate_line_3d(p0, p1, colors[(index + 1) % 3 + 1], 0.01f);
                 axis      = geometry.axes[(index + 2) % 3];
-                p0        = click_point - axis.d * 2000.0f;
-                p1        = click_point + axis.d * 2000.0f;
+                p0        = click_origin - axis.d * 2000.0f;
+                p1        = click_origin + axis.d * 2000.0f;
                 immediate_line_3d(p0, p1, colors[(index + 2) % 3 + 1], 0.01f);
             }
         }
@@ -270,18 +273,20 @@ FUNCTION void gizmo_execute(Ray camera_ray, V3 gizmo_origin,
             calculate_tangents(axis.d, &plane_normal, &ignored);
             Plane plane = {gizmo_origin, plane_normal};
             b32 is_hit  = ray_plane_intersect(&camera_ray, plane);
-            if (is_hit && (camera_ray.t < gizmo_max_t)) {
+            if (is_hit && (camera_ray.t < GIZMO_MAX_T)) {
                 V3 on_plane   = camera_ray.o + camera_ray.t*camera_ray.d;
                 current_point = plane.center + axis.d * dot(on_plane - plane.center, axis.d);
+                current_point = round(current_point / TRANSLATION_SNAP) * TRANSLATION_SNAP;
             }
         } else if (gizmo_element <= GizmoElement_TRANSLATE_XY) {
             // The element is a plane.
             s32 index   = gizmo_element - GizmoElement_TRANSLATE_YZ;
             Plane plane = geometry.planes[index];
             b32 is_hit  = ray_plane_intersect(&camera_ray, plane);
-            if (is_hit && (camera_ray.t < gizmo_max_t)) {
+            if (is_hit && (camera_ray.t < GIZMO_MAX_T)) {
                 V3 on_plane   = camera_ray.o + camera_ray.t*camera_ray.d;
                 current_point = on_plane;
+                current_point = round(current_point / TRANSLATION_SNAP) * TRANSLATION_SNAP;
             }
         } else if (gizmo_element <= GizmoElement_ROTATE_C) {
             // The element is a torus/ring.
@@ -289,10 +294,9 @@ FUNCTION void gizmo_execute(Ray camera_ray, V3 gizmo_origin,
             V3  center = geometry.circles[index].center;
             f32 radius = geometry.circles[index].radius;
             V3  normal = geometry.circles[index].normal;
-            
             Plane circle_plane = {center, normal};
             b32 is_hit         = ray_plane_intersect(&camera_ray, circle_plane);
-            if (is_hit && (camera_ray.t < gizmo_max_t)) {
+            if (is_hit && (camera_ray.t < GIZMO_MAX_T)) {
                 V3 on_plane   = camera_ray.o + camera_ray.t*camera_ray.d;
                 V3 on_circle  = center + radius*normalize(on_plane - center);
                 current_point = on_circle;
@@ -305,6 +309,8 @@ FUNCTION void gizmo_execute(Ray camera_ray, V3 gizmo_origin,
     //
     if (is_close && key_pressed(&os->tick_input, Key_MLEFT)) {
         gizmo_is_active = TRUE;
+        
+        click_origin = gizmo_origin;
         
         click_point  = current_point;
         click_offset = click_point - gizmo_origin;
