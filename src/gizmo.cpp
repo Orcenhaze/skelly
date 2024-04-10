@@ -2,7 +2,6 @@
 
 // @Note: This file is NOT independant. It's using the engine's types, collision routines and immediate-mode renderer.
     
-// @Incomplete: Add rotation snapping!
 // @Incomplete: Add scale gizmo + snapping!
 
 */ 
@@ -300,6 +299,18 @@ FUNCTION void gizmo_execute(Ray camera_ray, V3 gizmo_origin,
                 V3 on_plane   = camera_ray.o + camera_ray.t*camera_ray.d;
                 V3 on_circle  = center + radius*normalize(on_plane - center);
                 current_point = on_circle;
+                
+                // Snap rotation as we move.
+                if (gizmo_is_active) {
+                    V3 to_click   = normalize(click_point - center);
+                    V3 to_circle  = normalize(on_circle - center);
+                    f32 cos       = dot(to_click, to_circle);
+                    f32 sin       = dot(cross(to_click, to_circle), normal);
+                    f32 theta     = _arctan2(sin, cos);
+                    theta         = _round(theta / ROTATION_SNAP) * ROTATION_SNAP;
+                    Quaternion q  = quaternion_from_axis_angle(normal, theta);
+                    current_point = rotate_point_around_pivot(click_point, center, q);
+                }
             }
         }
     }
