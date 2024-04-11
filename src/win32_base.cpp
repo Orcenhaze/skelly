@@ -445,10 +445,17 @@ FUNCTION void win32_process_pending_messages(HWND window)
                 b32 was_down = (message.lParam & (1 << 30)) == 1;
                 b32 is_down  = (message.lParam & (1 << 31)) == 0;
                 
-                if((vkcode == VK_F4) && alt_down)
-                {
-                    _win32.state.exit = TRUE;
-                    return;
+                if (is_down) {
+                    if((vkcode == VK_F4) && alt_down) {
+                        _win32.state.exit = TRUE;
+                        return;
+                    } else if ((vkcode == VK_RETURN) && alt_down) {
+                        if (_win32.state.display_mode != DisplayMode_FULLSCREEN)
+                            win32_set_display_mode(DisplayMode_FULLSCREEN);
+                        else
+                            win32_set_display_mode(DisplayMode_BORDER);
+                        break;
+                    }
                 }
                 
                 s32 key = Key_NONE;

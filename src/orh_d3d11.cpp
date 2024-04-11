@@ -856,7 +856,7 @@ FUNCTION void d3d11_resize()
             desc.MipLevels  = 1;
             desc.ArraySize  = 1;
             desc.Format     = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
-            desc.SampleDesc = {1, 0};
+            desc.SampleDesc = {4, 0};
             desc.BindFlags  = D3D11_BIND_RENDER_TARGET;
             
             ID3D11Texture2D *texture;
@@ -874,7 +874,7 @@ FUNCTION void d3d11_resize()
             desc.MipLevels  = 1;
             desc.ArraySize  = 1;
             desc.Format     = DXGI_FORMAT_D32_FLOAT; // Use DXGI_FORMAT_D32_FLOAT_S8X24_UINT if you need stencil.
-            desc.SampleDesc = {1, 0};
+            desc.SampleDesc = {4, 0};
             desc.Usage      = D3D11_USAGE_DEFAULT;
             desc.BindFlags  = D3D11_BIND_DEPTH_STENCIL;
             

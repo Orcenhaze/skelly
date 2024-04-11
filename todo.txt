@@ -8,9 +8,6 @@
 [] Correctness check: use z-axis as normal, pass it to calc_tangents(), we should get Tangent as x axis, BiTangent as y axis.
 	does D3D11 float3x3(t, b, n) put them in expected places?
 
-[] Gizmo rotation snapping.
-
-
 [] Cleanup blender exporters and current state of animation system.
 [] Do proper blending between animations. Reference casey's video: (neighborhood vs. invert vs. direct).
 
