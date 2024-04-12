@@ -11,12 +11,6 @@
 [] Cleanup blender exporters and current state of animation system.
 [] Do proper blending between animations. Reference casey's video: (neighborhood vs. invert vs. direct).
 
-
-TIMESTAMPS:
-Get Quaternion orientation from M4x4: https://www.youtube.com/watch?v=aeDMABSW_KE&list=PLmV5I2fxaiCI9IAdFmGChKbIbenqRMi6Z&index=11 @39:00
-
-
-
 // Temporary: Testing our matrix and quaternion functions.
 V3 axis   = V3_Y_AXIS;
 f32 angle = PI32 / 4.0f;
