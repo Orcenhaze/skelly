@@ -390,55 +390,11 @@ FUNCTION void game_render()
     Entity_Manager *manager = &game->entity_manager;
     Entity *player = get_player(manager);
     
-#if DEVELOPER
-    // Draw simple wireframe quad instead of viewport grid for now.
-    /* 
-        immediate_begin(TRUE);
-        set_texture(0);
-        immediate_rect_3d({}, V3U, 200.0f, {0.8f, 0.8f, 0.8f, 1.0f});
-        immediate_end();
-     */
-    
-    // Draw basis vectors of camera.
-    /*     
-        immediate_begin();
-        V3 o = V3U * 3.0f;
-        V3 r = get_right(game->camera.object_to_world);
-        V3 u = get_up(game->camera.object_to_world);
-        V3 f = get_forward(game->camera.object_to_world);
-        immediate_arrow(o, r, 2, v4(1, 0, 0, 1), 0.02f);
-        immediate_arrow(o, u, 2, v4(0, 1, 0, 1), 0.02f);
-        immediate_arrow(o, f, 2, v4(0, 0, 1, 1), 0.02f);
-        immediate_arrow(o, normalize(v3(f.x, 0.0f, f.z)), 2, v4(1, 1, 1, 1), 0.02f);
-         */
-#endif
-    
     // Render all entities.
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
         draw_entity(e);
     }
-    
-    
-#if 0
-    // Draw TBN.
-    if (str8_contains(player->mesh->name, S8LIT("cube"))) {
-        for (s32 i = 0; i < (player->mesh->vertices.count); i++) {
-            immediate_begin();
-            set_object_to_world(player->position, player->orientation, v3(1));
-            V3 v = player->mesh->vertices[i];
-            V3 t = player->mesh->tbns[i].tangent;
-            V3 b = player->mesh->tbns[i].bitangent;
-            V3 n = player->mesh->tbns[i].normal;
-            immediate_arrow(v, t, 0.5f, v4(1, 0, 0, 1), 0.02f);
-            immediate_arrow(v, b, 0.5f, v4(0, 1, 0, 1), 0.02f);
-            immediate_arrow(v, n, 0.5f, v4(0, 0, 1, 1), 0.02f);
-            immediate_end();
-        }
-    }
-#endif
-    
-    
     
 #if DEVELOPER
     draw_editor_ui();

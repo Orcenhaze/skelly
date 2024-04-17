@@ -23,10 +23,6 @@ version = 2
     - It exports vertex weights and rest pose skeleton info.
         MESH origin and ARMATURE origin must match!
     
-    TODO:
-    - Smooth TBNs.
-    - We need to merge all vertices by distance before exporting. Not doing so may cause issues...
-    
     NOTE: Exporting from Mixamo:
     - Import one Mixamo FBX with skin, the others should just be armatures with no skin.
     - Click Armature -> apply all transforms -> go to animation tab -> go to graph editor: 
@@ -35,11 +31,15 @@ version = 2
     - Go back to layout -> select armature -> export armature to GLTF -> import GLTF:
     - Make sure shading tab is using materals as expected, make sure all anim actions of GLTF armature are used by someone, use exporters like usual.
     
+    TODO:
+    - Export face info only (face TBNs and such).
+    - Export Mesh_Load_Flags for things like (is_smooth_shaded, uses_height_map, and such).
+    - Better hashing.
+    - We need to merge all vertices by distance before exporting. Not doing so may cause issues...
+    - Create addon for convenience.
     
+    @Cleanup:
     @Cleanup: This file is super messy!
-    @Cleanup:
-    @Cleanup:
-    
     
     MISC:
     

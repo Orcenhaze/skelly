@@ -1,30 +1,17 @@
-[] Organizing shaders: Skybox, instancing, PBR, animated, shader folder, -Ishaders/ compiler flag.
-[] Fix visual bug: For some reason, when using when using 4x MSAA, rasterizer is causing seams when triangles meet.
-[] Fix mesh exporter! 
-	Averaging tangents and bitangents for smooth surfaces.
+[] orh_collision.h.
+
+[] Figure out a neat way to serialize stuff.
+[] Modify mesh exporter: 
+	Always export face info. Averaging takes place in mesh load time.
+	Export flags variable for things like (is_smooth_shaded, uses_height_map, and such).
 	Better hashing.
-	Are we re-using verts? are the indices useless?
+	Make the exporters as blender addons for convenience.
+[] Modify mesh.h/cpp to average TBNs based on exported flags.
 
-[] Correctness check: use z-axis as normal, pass it to calc_tangents(), we should get Tangent as x axis, BiTangent as y axis.
-	does D3D11 float3x3(t, b, n) put them in expected places?
+[] Organizing shaders: Skybox, instancing, PBR, animated, shaders folder, /Ishaders\ compiler flag.
+[] Add support for heightmaps/bumpmaps.
+[] Forward+ shading.
 
-[] Cleanup blender exporters and current state of animation system.
+[] Fix visual bug: For some reason, when using when using 4x MSAA, rasterizer is causing seams when triangles meet.
+
 [] Do proper blending between animations. Reference casey's video: (neighborhood vs. invert vs. direct).
-
-// Temporary: Testing our matrix and quaternion functions.
-V3 axis   = V3_Y_AXIS;
-f32 angle = PI32 / 4.0f;
-Quaternion qref = quaternion_from_axis_angle(axis, angle);
-M4x4 rotref     = m4x4_from_axis_angle(axis, angle);
-
-M4x4 rot1 = m4x4_from_translation_rotation_scale({}, qref, v3(1)); // rot1 == rotref
-M4x4 rot2 = m4x4_from_quaternion(qref); // rot2 == rotref
-
-Quaternion q1 = quaternion_from_m4x4(rot1); // q1 == qref
-
-rot1 = m4x4_from_translation_rotation_scale({}, q1, v3(2, 1, 4)); // scaled
-rot2 = get_rotation(rot1); // rot2 == rotref
-
-q1   = quaternion_from_m4x4(rot1); // q1 == qref
-
-rot1 = m4x4_from_quaternion(q1); // rot1 == rotref
