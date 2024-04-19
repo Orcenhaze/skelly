@@ -224,7 +224,7 @@ FUNCTION void draw_skeleton(Entity *e)
                 d3d11_clear_depth();
                 set_texture(0);
                 set_object_to_world(e->position, e->orientation, e->scale);
-                immediate_line_3d(p0, p1, v4(1.0f, 0.8f, 0.4f, 1.0f), 0.011f);
+                immediate_line(p0, p1, v4(1.0f, 0.8f, 0.4f, 1.0f), 0.011f);
                 immediate_end();
             }
             

@@ -196,6 +196,7 @@ FUNCTION void game_init()
     Triangle_Mesh *bot_mesh = find(&game->mesh_catalog, S8LIT("bot"));
     entity_manager_init(&game->entity_manager, bot_mesh);
     
+#if 0
     // @Temporary: Spawn floor.
     Triangle_Mesh *floor_mesh = find(&game->mesh_catalog, S8LIT("floor"));
     register_new_entity(&game->entity_manager, floor_mesh);
@@ -232,6 +233,7 @@ FUNCTION void game_init()
             play_animation(e, anim);
         }
     }
+#endif
     
     // Init camera.
     game->camera = {};
@@ -389,6 +391,15 @@ FUNCTION void game_render()
 {
     Entity_Manager *manager = &game->entity_manager;
     Entity *player = get_player(manager);
+    
+#if DEVELOPER
+    // Draw viewport grid.
+    immediate_begin();
+    set_texture(0);
+    u32 w = 33, h = 33;
+    immediate_grid_2point5d(v3(-(w/2.0f), 0.0f, (h/2.0f)), V3U, w, h, 1, v4(1), 0.01f);
+    immediate_end();
+#endif
     
     // Render all entities.
     for (s32 i = 0; i < manager->all_entities.count; i++) {

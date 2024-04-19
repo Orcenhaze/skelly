@@ -127,9 +127,7 @@ FUNCTION void draw_main_editor_window()
                 set_texture(0);
                 // Draw point light position and radius.
                 immediate_cube(light->position, 0.2f, v4(light->color, 1.0f));
-                immediate_torus(light->position, light->range, V3U, v4(1), 0.01f);
-                immediate_torus(light->position, light->range, V3R, v4(1), 0.01f);
-                immediate_torus(light->position, light->range, V3F, v4(1), 0.01f);
+                immediate_debug_sphere(light->position, light->range, v4(1));
                 immediate_end();
             }
         } break;

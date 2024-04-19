@@ -144,7 +144,7 @@ FUNCTION void gizmo_render()
                 V4 plane_c  = (gizmo_element == GizmoElement_TRANSLATE_YZ + i)? gizmo_active_color : colors[GizmoElement_TRANSLATE_YZ + i];
                 
                 immediate_arrow(axis.o, axis.d, s, axis_c, th);
-                immediate_rect_3d(plane.center, plane.normal, 0.5f*ps, plane_c);
+                immediate_rect_2point5d(plane.center, plane.normal, 0.5f*ps, plane_c);
             }
         } else {
             // Draw selected/active translation element.
@@ -153,18 +153,18 @@ FUNCTION void gizmo_render()
                 Ray axis  = geometry.axes[index];
                 V3 p0     = click_origin - axis.d * 2000.0f;
                 V3 p1     = click_origin + axis.d * 2000.0f;
-                immediate_line_3d(p0, p1, colors[gizmo_element], 0.01f);
+                immediate_line(p0, p1, colors[gizmo_element], 0.01f);
             } else if (gizmo_element <= GizmoElement_TRANSLATE_XY) {
                 // When interacting with a plane, draw the other two axes.
                 s32 index = gizmo_element - GizmoElement_TRANSLATE_YZ;
                 Ray axis  = geometry.axes[(index + 1) % 3];
                 V3 p0     = click_origin - axis.d * 2000.0f;
                 V3 p1     = click_origin + axis.d * 2000.0f;
-                immediate_line_3d(p0, p1, colors[(index + 1) % 3 + 1], 0.01f);
+                immediate_line(p0, p1, colors[(index + 1) % 3 + 1], 0.01f);
                 axis      = geometry.axes[(index + 2) % 3];
                 p0        = click_origin - axis.d * 2000.0f;
                 p1        = click_origin + axis.d * 2000.0f;
-                immediate_line_3d(p0, p1, colors[(index + 2) % 3 + 1], 0.01f);
+                immediate_line(p0, p1, colors[(index + 2) % 3 + 1], 0.01f);
             }
         }
     } else if (gizmo_mode == GizmoMode_ROTATION) {
@@ -179,8 +179,8 @@ FUNCTION void gizmo_render()
             // Draw selected/active circle.
             s32 index     = gizmo_element - GizmoElement_ROTATE_X;
             Circle circle = geometry.circles[index];
-            immediate_line_3d(circle.center, click_point, gizmo_active_color, params.thickness*0.20f);
-            immediate_line_3d(circle.center, current_point, gizmo_active_color, params.thickness*0.50f);
+            immediate_line(circle.center, click_point, gizmo_active_color, params.thickness*0.20f);
+            immediate_line(circle.center, current_point, gizmo_active_color, params.thickness*0.50f);
             immediate_torus(circle.center, circle.radius, circle.normal, colors[gizmo_element], params.thickness);
         }
     }

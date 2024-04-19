@@ -1,6 +1,7 @@
-/* orh_d3d11.cpp - v0.10 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.11 - C++ D3D11 immediate mode renderer.
 
 REVISION HISTORY:
+0.11 - added more geometry we can draw in immediate mode. Added 2.5D stuff to draw 2D geometry in 3D world.
 0.10 - loaded textures now use mip-mapping.
 0.09 - debug breaks on dxgi as well.
 0.08 - fixed pixel_to_ndc(); now accounts for viewport TopLeftX & TopLeftY and added V3 version for z-depth.
@@ -1086,7 +1087,7 @@ FUNCTION void update_render_transform()
     device_context->Unmap(immediate_vs_cbuffer, 0);
 }
 
-FUNCTION void immediate_end()
+FUNCTION void immediate_end(b32 reset_state = TRUE)
 {
     if (!num_immediate_vertices) 
         return;
@@ -1126,9 +1127,11 @@ FUNCTION void immediate_end()
     
     // Reset state.
     num_immediate_vertices = 0;
-    is_using_pixel_coords  = FALSE;
-    object_to_world_matrix = m4x4_identity();
-    //set_texture(0);
+    if (reset_state) {
+        is_using_pixel_coords  = FALSE;
+        object_to_world_matrix = m4x4_identity();
+        //set_texture(0);
+    }
 }
 
 FUNCTION void immediate_begin(b32 wireframe = FALSE)
@@ -1136,7 +1139,7 @@ FUNCTION void immediate_begin(b32 wireframe = FALSE)
     if (wireframe) rasterizer_state = rasterizer_state_wireframe;
     else           rasterizer_state = rasterizer_state_solid;
     
-    immediate_end();
+    immediate_end(TRUE);
 }
 
 FUNCTION Vertex_XCNU* immediate_vertex_ptr(s32 index)
@@ -1151,7 +1154,7 @@ FUNCTION Vertex_XCNU* immediate_vertex_ptr(s32 index)
 //~ 3D
 FUNCTION void immediate_vertex(V3 position, V4 color)
 {
-    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end();
+    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     ASSERT (is_using_pixel_coords == FALSE);
     
     // Go linear; using SRGB framebuffer.
@@ -1168,7 +1171,7 @@ FUNCTION void immediate_vertex(V3 position, V4 color)
 
 FUNCTION void immediate_vertex(V3 position, V2 uv, V4 color)
 {
-    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end();
+    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     if (is_using_pixel_coords)
         position = pixel_to_ndc(position);
@@ -1187,7 +1190,7 @@ FUNCTION void immediate_vertex(V3 position, V2 uv, V4 color)
 
 FUNCTION void immediate_triangle(V3 p0, V3 p1, V3 p2, V4 color)
 {
-    if ((num_immediate_vertices + 3) > MAX_IMMEDIATE_VERTICES) immediate_end();
+    if ((num_immediate_vertices + 3) > MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     immediate_vertex(p0, color);
     immediate_vertex(p1, color);
@@ -1198,7 +1201,7 @@ FUNCTION void immediate_quad(V3 p0, V3 p1, V3 p2, V3 p3, V4 color)
 {
     // CCW starting bottom-left.
     
-    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end();
+    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     immediate_triangle(p0, p1, p2, color);
     immediate_triangle(p0, p2, p3, color);
@@ -1210,7 +1213,7 @@ FUNCTION void immediate_quad(V3 p0, V3 p1, V3 p2, V3 p3,
 {
     // CCW starting bottom-left.
     
-    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end();
+    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     immediate_vertex(p0, uv0, color);
     immediate_vertex(p1, uv1, color);
@@ -1221,7 +1224,7 @@ FUNCTION void immediate_quad(V3 p0, V3 p1, V3 p2, V3 p3,
     immediate_vertex(p3, uv3, color);
 }
 
-FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V4 color)
+FUNCTION void immediate_rect_2point5d(V3 center, V3 normal, f32 half_scale, V4 color)
 {
     V3 tangent, bitangent;
     calculate_tangents(normal, &tangent, &bitangent);
@@ -1234,7 +1237,7 @@ FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V4 color)
     immediate_quad(p0, p1, p2, p3, color);
 }
 
-FUNCTION void immediate_rect_3d(V3 center, V3 normal, f32 half_scale, V2 uv_min, V2 uv_max, V4 color)
+FUNCTION void immediate_rect_2point5d(V3 center, V3 normal, f32 half_scale, V2 uv_min, V2 uv_max, V4 color)
 {
     V3 tangent, bitangent;
     calculate_tangents(normal, &tangent, &bitangent);
@@ -1286,7 +1289,21 @@ FUNCTION void immediate_cube(V3 center, f32 half_size, V4 color)
     immediate_cuboid(center, v3(half_size), color);
 }
 
-FUNCTION void immediate_line_3d(V3 p0, V3 p1, V4 color, f32 thickness = 0.1f)
+FUNCTION void immediate_circle_2point5d(V3 center, f32 radius, V3 normal, V4 color, s32 num_segments = 32)
+{
+    f32 theta    = TAU32 / num_segments;
+    Quaternion q = quaternion_from_axis_angle(normal, theta);
+    V3 tangent, unused;
+    calculate_tangents(normal, &tangent, &unused);
+    V3 current_vertex = center + tangent * radius;
+    for (s32 i = 0; i < num_segments; i++) {
+        V3 next_vertex = rotate_point_around_pivot(current_vertex, center, q);
+        immediate_triangle(center, current_vertex, next_vertex, color);
+        current_vertex = next_vertex;
+    }
+}
+
+FUNCTION void immediate_line_2point5d(V3 p0, V3 p1, V3 normal, V4 color, f32 thickness = 0.1f)
 {
     V3 a[2];
     V3 b[2];
@@ -1298,8 +1315,33 @@ FUNCTION void immediate_line_3d(V3 p0, V3 p1, V4 color, f32 thickness = 0.1f)
     // Half-thickness.
     f32 half_thickness = thickness * 0.5f;
     
-    V3 tangent   = {};
-    V3 bitangent = {};
+    V3 tangent = normalize(cross(line_d, normal));
+    
+    V3 p = p0;
+    for(s32 sindex = 0; sindex < 2; sindex++)
+    {
+        a[sindex] = p + tangent*half_thickness;
+        b[sindex] = p - tangent*half_thickness;
+        
+        p = p + line_length*line_d;
+    }
+    
+    immediate_quad(b[0], a[0], a[1], b[1], color);
+}
+
+FUNCTION void immediate_line(V3 p0, V3 p1, V4 color, f32 thickness = 0.1f)
+{
+    V3 a[2];
+    V3 b[2];
+    
+    V3 line_d       = p1 - p0;
+    f32 line_length = length(line_d);
+    line_d          = normalize(line_d);
+    
+    // Half-thickness.
+    f32 half_thickness = thickness * 0.5f;
+    
+    V3 tangent, bitangent;
     calculate_tangents(line_d, &tangent, &bitangent);
     
     // Make a `+` sign to construct the points. 
@@ -1327,23 +1369,19 @@ FUNCTION void immediate_line_3d(V3 p0, V3 p1, V4 color, f32 thickness = 0.1f)
     immediate_hexahedron(v0, v1, v2, v3, v4, v5, v6, v7, color);
 }
 
-FUNCTION void immediate_cone(V3 base_center, V3 direction, f32 base_radius, f32 length, V4 color)
+FUNCTION void immediate_cone(V3 base_center, V3 direction, f32 base_radius, f32 length, V4 color, s32 num_segments = 32)
 {
     direction = normalize_or_zero(direction);
     V3 tip    = base_center + length * direction;
     
-    V3 tangent = {};
-    V3 unused  = {};
+    V3 tangent, unused;
     calculate_tangents(direction, &tangent, &unused);
     
-    // Initial point
+    // We'll start from right and go CCW as per unit circle.
+    f32 theta         = TAU32 / num_segments;
+    Quaternion q      = quaternion_from_axis_angle(direction, theta);
     V3 current_vertex = base_center + base_radius * tangent;
-    
-    const s32 NUM_SEGMENTS = 50;
-    f32 theta    = TAU32 / NUM_SEGMENTS;
-    Quaternion q = quaternion_from_axis_angle(direction, theta);
-    
-    for (s32 i = 0; i < NUM_SEGMENTS; i++) {
+    for (s32 i = 0; i < num_segments; i++) {
         V3 next_vertex = rotate_point_around_pivot(current_vertex, base_center, q);
         
         // Draw circle part.
@@ -1365,18 +1403,19 @@ FUNCTION void immediate_arrow(V3 start, V3 direction, f32 length, V4 color, f32 
     V3 p0     = start;
     V3 p1     = start + length * direction;
     
-    immediate_line_3d(p0, p1, color, thickness);
+    immediate_line(p0, p1, color, thickness);
     immediate_cone(p1, direction, 2.5f * thickness, cone_length, color);
 }
 
-FUNCTION void immediate_torus(V3 center, f32 radius, V3 normal, V4 color, f32 thickness = 0.1f)
+FUNCTION void immediate_torus(V3 center, f32 radius, V3 normal, V4 color, f32 thickness = 0.1f, s32 num_segments = 32)
 {
+    // @Note: We are cheating and drawing quads for this, but it looks fine.
+    
     f32 half_thickness = thickness * 0.5f;
     f32 inner_radius   = radius - half_thickness;
     f32 outer_radius   = radius + half_thickness;
     
-    V3 tangent = {};
-    V3 unused  = {};
+    V3 tangent, unused;
     calculate_tangents(normal, &tangent, &unused);
     
     // Initial points.
@@ -1385,12 +1424,10 @@ FUNCTION void immediate_torus(V3 center, f32 radius, V3 normal, V4 color, f32 th
     V3 inner_point_front = center + inner_radius*tangent + half_thickness*normal;
     V3 outer_point_front = center + outer_radius*tangent + half_thickness*normal;
     
-    const s32 NUM_SEGMENTS = 50;
-    f32 theta    = TAU32 / NUM_SEGMENTS;
+    // We'll start from right and go CCW as per unit circle.
+    f32 theta    = TAU32 / num_segments;
     Quaternion q = quaternion_from_axis_angle(normal, theta);
-    
-    for(s32 i = 0; i < NUM_SEGMENTS; i++)
-    {
+    for(s32 i = 0; i < num_segments; i++) {
         // Rotate the points.
         V3 inner_point_back_next  = rotate_point_around_pivot(inner_point_back,  center, q);
         V3 outer_point_back_next  = rotate_point_around_pivot(outer_point_back,  center, q);
@@ -1398,18 +1435,21 @@ FUNCTION void immediate_torus(V3 center, f32 radius, V3 normal, V4 color, f32 th
         V3 outer_point_front_next = rotate_point_around_pivot(outer_point_front, center, q);
         
         // Back CCW.
-        V3 p0 = inner_point_back_next;
-        V3 p1 = inner_point_back;
-        V3 p2 = outer_point_back;
-        V3 p3 = outer_point_back_next;
+        V3 p0 = inner_point_back;
+        V3 p1 = outer_point_back;
+        V3 p2 = outer_point_back_next;
+        V3 p3 = inner_point_back_next;
         
         // Front CCW.
-        V3 p4 = inner_point_front_next;
-        V3 p5 = inner_point_front;
-        V3 p6 = outer_point_front;
-        V3 p7 = outer_point_front_next;
+        V3 p4 = inner_point_front;
+        V3 p5 = outer_point_front;
+        V3 p6 = outer_point_front_next;
+        V3 p7 = inner_point_front_next;
         
-        immediate_hexahedron(p0, p1, p2, p3, p4, p5, p6, p7, color);
+        immediate_quad(p0, p1, p2, p3, color); // Back
+        immediate_quad(p4, p5, p6, p7, color); // Front
+        immediate_quad(p0, p4, p7, p3, color); // Left
+        immediate_quad(p5, p1, p2, p6, color); // Right
         
         inner_point_back  = inner_point_back_next;
         outer_point_back  = outer_point_back_next;
@@ -1418,11 +1458,212 @@ FUNCTION void immediate_torus(V3 center, f32 radius, V3 normal, V4 color, f32 th
     }
 }
 
+FUNCTION void immediate_toroidal_capsule(V3 center, f32 radius, f32 half_height, V3 normal, V4 color, f32 thickness = 0.1f, s32 num_segments = 32)
+{
+    // @Note: We are cheating and drawing quads for this, but it looks fine.
+    
+    radius      = CLAMP_LOWER(radius, 0.0f);
+    half_height = MAX3(0.0f, radius, half_height);
+    
+    V3 tangent, bitangent;
+    calculate_tangents(normal, &tangent, &bitangent);
+    
+    // Draw lines on side.
+    V3 top       = center + bitangent*  (half_height - radius);
+    V3 bot       = center + bitangent* -(half_height - radius);
+    V3 top_right = top    + tangent  *  radius;
+    V3 top_left  = top    + tangent  * -radius;
+    V3 bot_right = bot    + tangent  *  radius;
+    V3 bot_left  = bot    + tangent  * -radius;
+    immediate_line(bot_right, top_right, color, thickness);
+    immediate_line(bot_left, top_left, color, thickness);
+    
+    f32 half_thickness = thickness * 0.5f;
+    f32 inner_radius   = radius - half_thickness;
+    f32 outer_radius   = radius + half_thickness;
+    
+    // We are drawing _half_ a torus on top and bottom, so use PI.
+    f32 theta    = PI32 / num_segments;
+    Quaternion q = quaternion_from_axis_angle(normal, theta);
+    
+    // Draw top and bottom half-torus.
+    for (s32 blah = 0; blah < 2; blah++) {
+        
+        V3 reference = top;
+        if (blah == 1) {
+            // Go opposite direction.
+            reference = bot;
+            q = quaternion_from_axis_angle(normal, -theta);
+        }
+        
+        // Initial points.
+        V3 inner_point_back  = reference + inner_radius*tangent - half_thickness*normal;
+        V3 outer_point_back  = reference + outer_radius*tangent - half_thickness*normal;
+        V3 inner_point_front = reference + inner_radius*tangent + half_thickness*normal;
+        V3 outer_point_front = reference + outer_radius*tangent + half_thickness*normal;
+        for(s32 i = 0; i < num_segments; i++) {
+            // Rotate the points.
+            V3 inner_point_back_next  = rotate_point_around_pivot(inner_point_back,  reference, q);
+            V3 outer_point_back_next  = rotate_point_around_pivot(outer_point_back,  reference, q);
+            V3 inner_point_front_next = rotate_point_around_pivot(inner_point_front, reference, q);
+            V3 outer_point_front_next = rotate_point_around_pivot(outer_point_front, reference, q);
+            
+            // Back CCW.
+            V3 p0 = inner_point_back;
+            V3 p1 = outer_point_back;
+            V3 p2 = outer_point_back_next;
+            V3 p3 = inner_point_back_next;
+            
+            // Front CCW.
+            V3 p4 = inner_point_front;
+            V3 p5 = outer_point_front;
+            V3 p6 = outer_point_front_next;
+            V3 p7 = inner_point_front_next;
+            
+            immediate_quad(p0, p1, p2, p3, color); // Back
+            immediate_quad(p4, p5, p6, p7, color); // Front
+            immediate_quad(p0, p4, p7, p3, color); // Left
+            immediate_quad(p5, p1, p2, p6, color); // Right
+            
+            inner_point_back  = inner_point_back_next;
+            outer_point_back  = outer_point_back_next;
+            inner_point_front = inner_point_front_next;
+            outer_point_front = outer_point_front_next;
+        }
+    }
+}
+
+FUNCTION void immediate_sphere_ext(V3 center, f32 radius, f32 longitude_percent, f32 latitude_percent, V4 color, s32 num_segments = 32)
+{
+    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
+    
+    // From:
+    // https://ximera.osu.edu/mooculus/calculus3/workingInTwoAndThreeDimensions/digInDrawingASphere
+    
+    longitude_percent = CLAMP01(longitude_percent);
+    latitude_percent  = CLAMP01(latitude_percent);
+    f32 yaw           = (TAU32 / (f32)num_segments) * longitude_percent;
+    f32 pitch         = (PI32  / (f32)num_segments) * latitude_percent;
+    for (s32 i = 0; i < num_segments; i++) {
+        for (s32 j = 0; j < num_segments; j++) {
+            V3 p0 = center + radius * v3(_sin(pitch * j) * _sin(yaw * i),
+                                         _cos(pitch * j),
+                                         _sin(pitch * j) * _cos(yaw * i));
+            V3 p1 = center + radius * v3(_sin(pitch * j) * _sin(yaw * (i + 1)),
+                                         _cos(pitch * j),
+                                         _sin(pitch * j) * _cos(yaw * (i + 1)));
+            V3 p2 = center + radius * v3(_sin(pitch * (j + 1)) * _sin(yaw * (i + 1)),
+                                         _cos(pitch * (j + 1)),
+                                         _sin(pitch * (j + 1)) * _cos(yaw * (i + 1)));
+            V3 p3 = center + radius * v3(_sin(pitch * (j + 1)) * _sin(yaw * i),
+                                         _cos(pitch * (j + 1)),
+                                         _sin(pitch * (j + 1)) * _cos(yaw * i));
+            
+            // Draw the quad
+            immediate_quad(p0, p1, p2, p3, color);
+        }
+    }
+}
+
+FUNCTION inline void immediate_sphere(V3 center, f32 radius, V4 color, s32 num_segments = 32)
+{
+    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
+    immediate_sphere_ext(center, radius, 1.0f, 1.0f, color, num_segments);
+}
+
+FUNCTION inline void immediate_hemisphere(V3 center, f32 radius, V4 color, s32 num_segments = 32)
+{
+    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
+    immediate_sphere_ext(center, radius, 1.0f, 0.5f, color, num_segments);
+    immediate_circle_2point5d(center, radius, V3_UP, color, num_segments);
+}
+
+FUNCTION void immediate_cylinder(V3 center, f32 radius, f32 half_height, V4 color, s32 num_segments = 32)
+{
+    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
+    
+    f32 theta    = TAU32 / num_segments;
+    Quaternion q = quaternion_from_axis_angle(V3_UP, theta);
+    
+    V3 top         = center + V3_UP    *  half_height;
+    V3 bot         = center + V3_UP    * -half_height;
+    V3 current_top = top    + V3_RIGHT *  radius;
+    V3 current_bot = bot    + V3_RIGHT *  radius;
+    for (s32 i = 0; i < num_segments; i++) {
+        V3 next_top = rotate_point_around_pivot(current_top, top, q);
+        V3 next_bot = rotate_point_around_pivot(current_bot, bot, q);
+        
+        // Draw top.
+        immediate_triangle(top, current_top, next_top, color);
+        
+        // Draw bot.
+        immediate_triangle(bot, current_bot, next_bot, color);
+        
+        // Draw connection.
+        immediate_quad(current_bot, next_bot, next_top, current_top, color);
+        
+        current_top = next_top;
+        current_bot = next_bot;
+    }
+}
+
+FUNCTION void immediate_debug_sphere(V3 center, f32 radius, V4 color, s32 num_segments = 32)
+{
+    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
+    
+    immediate_torus(center, radius, V3_X_AXIS, color, 0.01f, num_segments);
+    immediate_torus(center, radius, V3_Y_AXIS, color, 0.01f, num_segments);
+    immediate_torus(center, radius, V3_Z_AXIS, color, 0.01f, num_segments);
+}
+
+FUNCTION void immediate_debug_capsule(V3 center, f32 radius, f32 half_height, V4 color, s32 num_segments = 32)
+{
+    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
+    
+    radius      = CLAMP_LOWER(radius, 0.0f);
+    half_height = MAX3(0.0f, radius, half_height);
+    
+    immediate_toroidal_capsule(center, radius, half_height, -V3_FORWARD, color, 0.01f, num_segments);
+    immediate_toroidal_capsule(center, radius, half_height,    V3_RIGHT, color, 0.01f, num_segments);
+    
+    V3 top_base = center + V3_UP *  (half_height - radius);
+    V3 bot_base = center + V3_UP * -(half_height - radius);
+    immediate_torus(top_base, radius,  V3_UP, color, 0.01f, num_segments);
+    immediate_torus(bot_base, radius, -V3_UP, color, 0.01f, num_segments);
+}
+
+FUNCTION void immediate_grid_2point5d(V3 bottom_left, V3 normal, u32 grid_width, u32 grid_height, f32 cell_size, V4 color, f32 line_thickness = 0.025f)
+{
+    V3 p0 = bottom_left;
+    V3 p1;
+    
+    V3 tangent, bitangent;
+    calculate_tangents(normal, &tangent, &bitangent);
+    
+    // Horizontal lines.
+    for(u32 i = 0; i <= grid_height; i++)
+    {
+        p1  = p0 + tangent*((f32)grid_width * cell_size);
+        immediate_line_2point5d(p0, p1, normal, color, line_thickness);
+        p0 += bitangent*cell_size;
+    }
+    
+    p0 = bottom_left;
+    
+    // Vertical lines.
+    for(u32 i = 0; i <= grid_width; i++)
+    {
+        p1  = p0 + bitangent*((f32)grid_height * cell_size);
+        immediate_line_2point5d(p0, p1, normal, color, line_thickness);
+        p0 += tangent*cell_size;
+    }
+}
+
 ////////////////////////////////
 //~ 2D
 FUNCTION void immediate_vertex(V2 position, V4 color)
 {
-    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end();
+    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     if (is_using_pixel_coords)
         position = pixel_to_ndc(position);
@@ -1441,7 +1682,7 @@ FUNCTION void immediate_vertex(V2 position, V4 color)
 
 FUNCTION void immediate_vertex(V2 position, V2 uv, V4 color)
 {
-    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end();
+    if (num_immediate_vertices == MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     if (is_using_pixel_coords)
         position = pixel_to_ndc(position);
@@ -1460,7 +1701,7 @@ FUNCTION void immediate_vertex(V2 position, V2 uv, V4 color)
 
 FUNCTION void immediate_triangle(V2 p0, V2 p1, V2 p2, V4 color)
 {
-    if ((num_immediate_vertices + 3) > MAX_IMMEDIATE_VERTICES) immediate_end();
+    if ((num_immediate_vertices + 3) > MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     immediate_vertex(p0, color);
     immediate_vertex(p1, color);
@@ -1471,7 +1712,7 @@ FUNCTION void immediate_quad(V2 p0, V2 p1, V2 p2, V2 p3, V4 color)
 {
     // CCW starting bottom-left.
     
-    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end();
+    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     immediate_triangle(p0, p1, p2, color);
     immediate_triangle(p0, p2, p3, color);
@@ -1483,7 +1724,7 @@ FUNCTION void immediate_quad(V2 p0, V2 p1, V2 p2, V2 p3,
 {
     // CCW starting bottom-left.
     
-    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end();
+    if ((num_immediate_vertices + 6) > MAX_IMMEDIATE_VERTICES) immediate_end(FALSE);
     
     immediate_vertex(p0, uv0, color);
     immediate_vertex(p1, uv1, color);
@@ -1634,7 +1875,7 @@ FUNCTION void immediate_text(Font *font, V3 baseline, s32 vh, V4 color, char *fo
     va_end(arg_list);
 }
 
-FUNCTION void immediate_line_2d(V2 p0, V2 p1, V4 color, f32 thickness = 0.1f)
+FUNCTION void immediate_line(V2 p0, V2 p1, V4 color, f32 thickness = 0.1f)
 {
     V2 a[2];
     V2 b[2];
@@ -1656,7 +1897,46 @@ FUNCTION void immediate_line_2d(V2 p0, V2 p1, V4 color, f32 thickness = 0.1f)
         p = p + line_length*line_d;
     }
     
-    immediate_quad(b[0], b[1], a[1], a[0], color);
+    immediate_quad(b[0], a[0], a[1], b[1], color);
+}
+
+FUNCTION void immediate_circle(V2 center, f32 radius, V4 color, s32 num_segments = 32)
+{
+    // We'll start from right and go CCW as per unit circle.
+    f32 theta         = TAU32 / num_segments;
+    Quaternion q      = quaternion_from_axis_angle(V3_Z_AXIS, theta);
+    V2 current_vertex = center + V3_RIGHT.xy * radius;
+    for (s32 i = 0; i < num_segments; i++) {
+        V2 next_vertex = rotate_point_around_pivot(current_vertex, center, q);
+        immediate_triangle(center, current_vertex, next_vertex, color);
+        current_vertex = next_vertex;
+    }
+}
+
+FUNCTION void immediate_annulus_sector(V2 center, f32 radius, f32 percent, V4 color, f32 thickness = 0.1f, s32 num_segments = 32)
+{
+    percent = CLAMP01(percent);
+    
+    // We'll start from right and go CCW as per unit circle.
+    f32 theta      = (TAU32 / num_segments) * percent;
+    s32 iterations = (s32)_round(num_segments * percent);
+    Quaternion q   = quaternion_from_axis_angle(V3_Z_AXIS, theta);
+    V2 inner_point = center + V3_RIGHT.xy *  radius;
+    V2 outer_point = center + V3_RIGHT.xy * (radius + thickness);
+    for (s32 i = 0; i < iterations; i++) {
+        V2 next_inner = rotate_point_around_pivot(inner_point, center, q);
+        V2 next_outer = rotate_point_around_pivot(outer_point, center, q);
+        
+        immediate_quad(inner_point, outer_point, next_outer, next_inner, color);
+        
+        inner_point = next_inner;
+        outer_point = next_outer;
+    }
+}
+
+FUNCTION inline void immediate_annulus(V2 center, f32 radius, V4 color, f32 thickness = 0.1f, s32 num_segments = 32)
+{
+    immediate_annulus_sector(center, radius, 1.0f, color, thickness, num_segments);
 }
 
 FUNCTION void immediate_grid(V2 bottom_left, u32 grid_width, u32 grid_height, f32 cell_size, V4 color, f32 line_thickness = 0.025f)
@@ -1667,9 +1947,9 @@ FUNCTION void immediate_grid(V2 bottom_left, u32 grid_width, u32 grid_height, f3
     // Horizontal lines.
     for(u32 i = 0; i <= grid_height; i++)
     {
-        p1  = p0 + v2(1, 0)*((f32)grid_width * cell_size);
-        immediate_line_2d(p0, p1, color, line_thickness);
-        p0 += v2(0, 1)*cell_size;
+        p1  = p0 + V3_RIGHT.xy*((f32)grid_width * cell_size);
+        immediate_line(p0, p1, color, line_thickness);
+        p0 += V3_UP.xy*cell_size;
     }
     
     p0 = bottom_left;
@@ -1677,8 +1957,8 @@ FUNCTION void immediate_grid(V2 bottom_left, u32 grid_width, u32 grid_height, f3
     // Vertical lines.
     for(u32 i = 0; i <= grid_width; i++)
     {
-        p1  = p0 + v2(0, 1)*((f32)grid_height * cell_size);
-        immediate_line_2d(p0, p1, color, line_thickness);
-        p0 += v2(1, 0)*cell_size;
+        p1  = p0 + V3_UP.xy*((f32)grid_height * cell_size);
+        immediate_line(p0, p1, color, line_thickness);
+        p0 += V3_RIGHT.xy*cell_size;
     }
 }
