@@ -783,11 +783,11 @@ FUNCDEF        Quaternion quaternion_from_two_vectors_helper(V3 a, V3 b, f32 len
 FUNCDEF inline Quaternion quaternion_from_two_vectors(V3 a, V3 b);
 FUNCDEF inline Quaternion quaternion_from_two_normals(V3 a, V3 b);
 
-FUNCDEF inline Quaternion quaternion_conjugate(Quaternion q);
-FUNCDEF inline Quaternion quaternion_inverse(Quaternion q);
-FUNCDEF inline V3         quaternion_get_axis(Quaternion q);
-FUNCDEF inline f32        quaternion_get_angle(Quaternion q);
-FUNCDEF inline f32        quaternion_get_angle_turns(Quaternion q);
+FUNCDEF inline Quaternion quaternion_conjugate(Quaternion const &q);
+FUNCDEF inline Quaternion quaternion_inverse(Quaternion const &q);
+FUNCDEF inline V3         quaternion_get_axis(Quaternion const &q);
+FUNCDEF inline f32        quaternion_get_angle(Quaternion const &q);
+FUNCDEF inline f32        quaternion_get_angle_turns(Quaternion const &q);
 FUNCDEF inline f32        angle_between(Quaternion const &a, Quaternion const &b);
 
 FUNCDEF inline M3x3 m3x3_identity();
@@ -3120,29 +3120,29 @@ FUNCDEF inline Quaternion quaternion_from_two_normals(V3 a, V3 b)
     return result;
 }
 
-FUNCDEF inline Quaternion quaternion_conjugate(Quaternion q) 
+FUNCDEF inline Quaternion quaternion_conjugate(Quaternion const &q) 
 {
     Quaternion result;
     result.v = -q.v;
     result.w =  q.w;
     return result;
 }
-FUNCDEF inline Quaternion quaternion_inverse(Quaternion q) 
+FUNCDEF inline Quaternion quaternion_inverse(Quaternion const &q) 
 {
     Quaternion result = quaternion_conjugate(q)/dot(q, q);
     return result;
 }
-FUNCDEF inline V3 quaternion_get_axis(Quaternion q)
+FUNCDEF inline V3 quaternion_get_axis(Quaternion const &q)
 {
     V3 result = normalize_or_zero(q.v);
     return result;
 }
-FUNCDEF inline f32 quaternion_get_angle(Quaternion q)
+FUNCDEF inline f32 quaternion_get_angle(Quaternion const &q)
 {
     f32 result = _arctan2(length(q.v), q.w) * 2.0f;
     return result;
 }
-FUNCDEF inline f32 quaternion_get_angle_turns(Quaternion q)
+FUNCDEF inline f32 quaternion_get_angle_turns(Quaternion const &q)
 {
     f32 result = quaternion_get_angle(q) * RADS_TO_TURNS;
     return result;

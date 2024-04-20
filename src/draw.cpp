@@ -251,7 +251,7 @@ FUNCTION void draw_skeleton(Entity *e)
             d3d11_clear_depth();
             set_texture(&dfont.atlas);
             is_using_pixel_coords = TRUE;
-            immediate_text(&dfont, p_pixel, 2, v4(0.8f, 0.8f, 0.8f, 1.0f), "%S", joint_name);
+            immediate_text(dfont, p_pixel, 2, v4(0.8f, 0.8f, 0.8f, 1.0f), "%S", joint_name);
             immediate_end();
         }
     }
