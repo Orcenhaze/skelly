@@ -1,6 +1,7 @@
-/* orh_d3d11.cpp - v0.11 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.12 - C++ D3D11 immediate mode renderer.
 
 REVISION HISTORY:
+0.12 - can now pass rotation to some immediate-mode drawing functions.
 0.11 - added more geometry we can draw in immediate mode. Added 2.5D stuff to draw 2D geometry in 3D world.
 0.10 - loaded textures now use mip-mapping.
 0.09 - debug breaks on dxgi as well.
@@ -990,12 +991,11 @@ FUNCTION void set_world_to_view_from_camera(M4x4 camera_object_to_word)
     world_to_view_matrix.inverse = camera_object_to_word;
 }
 
-FUNCTION void set_object_to_world(V3 position, Quaternion orientation, V3 scale)
+FUNCTION void set_object_to_world(V3 translation, Quaternion rotation, V3 scale)
 {
-    // @Note: immediate_() family functions (like immediate_quad(), immediate_triangle(), etc.. ) MUST 
-    // use object-space coordinates for their geometry after calling this function. 
-    // Points are usually passed in world space to immediate_() functions. But after using this function,
-    // you should pass the world position here and use local-space points in the immediate_() functions.
+    // @Note: Use this function to transform the geometry you want to draw by passed components. 
+    // This transform will be used in the vertex shader.
+    // Make sure you pass "object-space" positions to immediate_XXX() family functions.
     //
     // Example:
     //
@@ -1005,18 +1005,17 @@ FUNCTION void set_object_to_world(V3 position, Quaternion orientation, V3 scale)
     // immediate_quad(center, v3(1, 1, 0), v4(1));
     // immediate_end();
     //
-    //
-    // WHEN WE WANT TO USE set_object_transform():
+    // WHEN USING set_object_to_world():
     // immediate_begin();
-    // set_object_transform(center, quaternion_identity());
+    // set_object_to_world(center, quaternion_identity(), v3(1));
     // immediate_quad(v3(0), v3(1, 1, 0), v4(1));
     // immediate_end();
     //
-    // Notice that we passed v3(0) to immediate_quad() after using set_object_transform(), which means
+    // Notice that we passed v3(0) to immediate_quad() after using set_object_to_world(), which means
     // that the quad object is in it's own local space and it will be transformed to the world in the
     // vertex shader.
     
-    object_to_world_matrix = m4x4_from_translation_rotation_scale(position, orientation, scale);
+    object_to_world_matrix = m4x4_from_translation_rotation_scale(translation, rotation, scale);
 }
 
 FUNCTION V2 pixel_to_ndc(V2 pixel)
@@ -1455,15 +1454,16 @@ FUNCTION void immediate_torus(V3 const &center, f32 radius, V3 const &normal, V4
     }
 }
 
-FUNCTION void immediate_toroidal_capsule(V3 const &center, f32 radius, f32 half_height, V3 const &normal, V4 const &color, f32 thickness = 0.1f, s32 num_segments = 32)
+FUNCTION void immediate_toroidal_capsule(V3 const &center, f32 radius, f32 half_height, Quaternion const& rotation, V4 const &color, f32 thickness = 0.1f, s32 num_segments = 32)
 {
     // @Note: We are cheating and drawing quads for this, but it looks fine.
     
-    radius      = CLAMP_LOWER(radius, 0.0f);
-    half_height = MAX3(0.0f, radius, half_height);
+    radius       = CLAMP_LOWER(radius, 0.0f);
+    half_height  = MAX3(0.0f, radius, half_height);
     
-    V3 tangent, bitangent;
-    calculate_tangents(normal, &tangent, &bitangent);
+    V3 normal    = rotation * V3_Z_AXIS;
+    V3 tangent   = rotation * V3_X_AXIS;
+    V3 bitangent = rotation * V3_Y_AXIS;
     
     // Draw lines on side.
     V3 top       = center + bitangent*  (half_height - radius);
@@ -1530,10 +1530,8 @@ FUNCTION void immediate_toroidal_capsule(V3 const &center, f32 radius, f32 half_
     }
 }
 
-FUNCTION void immediate_sphere_ext(V3 const &center, f32 radius, f32 longitude_percent, f32 latitude_percent, V4 const &color, s32 num_segments = 32)
+FUNCTION void immediate_sphere_ext(V3 const &center, f32 radius, f32 longitude_percent, f32 latitude_percent, Quaternion const &rotation, V4 const &color, s32 num_segments = 32)
 {
-    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
-    
     // From:
     // https://ximera.osu.edu/mooculus/calculus3/workingInTwoAndThreeDimensions/digInDrawingASphere
     
@@ -1543,18 +1541,22 @@ FUNCTION void immediate_sphere_ext(V3 const &center, f32 radius, f32 longitude_p
     f32 pitch         = (PI32  / (f32)num_segments) * latitude_percent;
     for (s32 i = 0; i < num_segments; i++) {
         for (s32 j = 0; j < num_segments; j++) {
-            V3 p0 = center + radius * v3(_sin(pitch * j) * _sin(yaw * i),
-                                         _cos(pitch * j),
-                                         _sin(pitch * j) * _cos(yaw * i));
-            V3 p1 = center + radius * v3(_sin(pitch * j) * _sin(yaw * (i + 1)),
-                                         _cos(pitch * j),
-                                         _sin(pitch * j) * _cos(yaw * (i + 1)));
-            V3 p2 = center + radius * v3(_sin(pitch * (j + 1)) * _sin(yaw * (i + 1)),
-                                         _cos(pitch * (j + 1)),
-                                         _sin(pitch * (j + 1)) * _cos(yaw * (i + 1)));
-            V3 p3 = center + radius * v3(_sin(pitch * (j + 1)) * _sin(yaw * i),
-                                         _cos(pitch * (j + 1)),
-                                         _sin(pitch * (j + 1)) * _cos(yaw * i));
+            V3 p0 = radius * v3(_sin(pitch * j) * _sin(yaw * i),
+                                _cos(pitch * j),
+                                _sin(pitch * j) * _cos(yaw * i));
+            p0    = (rotation * p0) + center;
+            V3 p1 = radius * v3(_sin(pitch * j) * _sin(yaw * (i + 1)),
+                                _cos(pitch * j),
+                                _sin(pitch * j) * _cos(yaw * (i + 1)));
+            p1    = (rotation * p1) + center;
+            V3 p2 = radius * v3(_sin(pitch * (j + 1)) * _sin(yaw * (i + 1)),
+                                _cos(pitch * (j + 1)),
+                                _sin(pitch * (j + 1)) * _cos(yaw * (i + 1)));
+            p2    = (rotation * p2) + center;
+            V3 p3 = radius * v3(_sin(pitch * (j + 1)) * _sin(yaw * i),
+                                _cos(pitch * (j + 1)),
+                                _sin(pitch * (j + 1)) * _cos(yaw * i));
+            p3    = (rotation * p3) + center;
             
             // Draw the quad
             immediate_quad(p0, p1, p2, p3, color);
@@ -1562,30 +1564,30 @@ FUNCTION void immediate_sphere_ext(V3 const &center, f32 radius, f32 longitude_p
     }
 }
 
-FUNCTION inline void immediate_sphere(V3 const &center, f32 radius, V4 const &color, s32 num_segments = 32)
+FUNCTION inline void immediate_sphere(V3 const &center, f32 radius, Quaternion const &rotation, V4 const &color, s32 num_segments = 32)
 {
-    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
-    immediate_sphere_ext(center, radius, 1.0f, 1.0f, color, num_segments);
+    immediate_sphere_ext(center, radius, 1.0f, 1.0f, rotation, color, num_segments);
 }
 
-FUNCTION inline void immediate_hemisphere(V3 const &center, f32 radius, V4 const &color, s32 num_segments = 32)
+FUNCTION inline void immediate_hemisphere(V3 const &center, f32 radius, Quaternion const &rotation, V4 const &color, s32 num_segments = 32)
 {
-    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
-    immediate_sphere_ext(center, radius, 1.0f, 0.5f, color, num_segments);
-    immediate_circle_2point5d(center, radius, V3_UP, color, num_segments);
+    immediate_sphere_ext(center, radius, 1.0f, 0.5f, rotation, color, num_segments);
+    V3 up = rotation * V3_Y_AXIS;
+    immediate_circle_2point5d(center, radius, up, color, num_segments);
 }
 
-FUNCTION void immediate_cylinder(V3 const &center, f32 radius, f32 half_height, V4 const &color, s32 num_segments = 32)
+FUNCTION void immediate_cylinder(V3 const &center, f32 radius, f32 half_height, Quaternion const &rotation, V4 const &color, s32 num_segments = 32)
 {
-    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
+    V3 right       = rotation * V3_X_AXIS;
+    V3 up          = rotation * V3_Y_AXIS;
     
-    f32 theta    = TAU32 / num_segments;
-    Quaternion q = quaternion_from_axis_angle(V3_UP, theta);
+    f32 theta      = TAU32 / num_segments;
+    Quaternion q   = quaternion_from_axis_angle(up, theta);
     
-    V3 top         = center + V3_UP    *  half_height;
-    V3 bot         = center + V3_UP    * -half_height;
-    V3 current_top = top    + V3_RIGHT *  radius;
-    V3 current_bot = bot    + V3_RIGHT *  radius;
+    V3 top         = center + up    *  half_height;
+    V3 bot         = center + up    * -half_height;
+    V3 current_top = top    + right *  radius;
+    V3 current_bot = bot    + right *  radius;
     for (s32 i = 0; i < num_segments; i++) {
         V3 next_top = rotate_point_around_pivot(current_top, top, q);
         V3 next_bot = rotate_point_around_pivot(current_bot, bot, q);
@@ -1606,27 +1608,25 @@ FUNCTION void immediate_cylinder(V3 const &center, f32 radius, f32 half_height, 
 
 FUNCTION void immediate_debug_sphere(V3 const &center, f32 radius, V4 const &color, s32 num_segments = 32)
 {
-    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
-    
     immediate_torus(center, radius, V3_X_AXIS, color, 0.01f, num_segments);
     immediate_torus(center, radius, V3_Y_AXIS, color, 0.01f, num_segments);
     immediate_torus(center, radius, V3_Z_AXIS, color, 0.01f, num_segments);
 }
 
-FUNCTION void immediate_debug_capsule(V3 const &center, f32 radius, f32 half_height, V4 const &color, s32 num_segments = 32)
+FUNCTION void immediate_debug_capsule(V3 const &center, f32 radius, f32 half_height, Quaternion const &rotation, V4 const &color, s32 num_segments = 32)
 {
-    // @Note: always pointing "up", if you want to rotate, use set_object_to_world().
-    
     radius      = CLAMP_LOWER(radius, 0.0f);
     half_height = MAX3(0.0f, radius, half_height);
     
-    immediate_toroidal_capsule(center, radius, half_height, -V3_FORWARD, color, 0.01f, num_segments);
-    immediate_toroidal_capsule(center, radius, half_height,    V3_RIGHT, color, 0.01f, num_segments);
+    Quaternion q = quaternion_from_axis_angle(V3_UP, PI32*0.5f);
+    immediate_toroidal_capsule(center, radius, half_height,   rotation, color, 0.01f, num_segments);
+    immediate_toroidal_capsule(center, radius, half_height, rotation*q, color, 0.01f, num_segments);
     
-    V3 top_base = center + V3_UP *  (half_height - radius);
-    V3 bot_base = center + V3_UP * -(half_height - radius);
-    immediate_torus(top_base, radius,  V3_UP, color, 0.01f, num_segments);
-    immediate_torus(bot_base, radius, -V3_UP, color, 0.01f, num_segments);
+    V3 up       = rotation * V3_Y_AXIS;
+    V3 top_base = center + up *  (half_height - radius);
+    V3 bot_base = center + up * -(half_height - radius);
+    immediate_torus(top_base, radius,  up, color, 0.01f, num_segments);
+    immediate_torus(bot_base, radius, -up, color, 0.01f, num_segments);
 }
 
 FUNCTION void immediate_grid_2point5d(V3 const &bottom_left, V3 const &normal, u32 grid_width, u32 grid_height, f32 cell_size, V4 const &color, f32 line_thickness = 0.025f)
