@@ -91,7 +91,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                            os->drawing_rect.min.y, 
                            get_width(os->drawing_rect), 
                            get_height(os->drawing_rect));
-            d3d11_clear(0.8, 0.761, 0.729, 1);
+            d3d11_clear(0.2f, 0.2f, 0.2f, 1.0f);
             
             //
             // Render stuff.

@@ -396,8 +396,11 @@ FUNCTION void game_render()
     // Draw viewport grid.
     immediate_begin();
     set_texture(0);
-    u32 w = 33, h = 33;
-    immediate_grid_2point5d(v3(-(w/2.0f), 0.0f, (h/2.0f)), V3U, w, h, 1, v4(1), 0.01f);
+    u32 w  = 32, h = 32;
+    f32 hw = (f32)(w*0.5f), hh = (f32)(h*0.5f);
+    immediate_grid_2point5d(v3(-hw, 0.0f, hh), V3U, w, h, 1.0f, v4(1,1,1,0.2f), 0.01f);
+    immediate_line_2point5d(-V3F*hh, V3F*hh, V3U, v4(0,0,1,0.5f), 0.01f);
+    immediate_line_2point5d(-V3R*hw, V3R*hw, V3U, v4(1,0,0,0.5f), 0.01f);
     immediate_end();
 #endif
     

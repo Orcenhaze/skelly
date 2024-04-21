@@ -1466,12 +1466,12 @@ FUNCTION void immediate_toroidal_capsule(V3 const &center, f32 radius, f32 half_
     V3 bitangent = rotation * V3_Y_AXIS;
     
     // Draw lines on side.
-    V3 top       = center + bitangent*  (half_height - radius);
-    V3 bot       = center + bitangent* -(half_height - radius);
-    V3 top_right = top    + tangent  *  radius;
-    V3 top_left  = top    + tangent  * -radius;
-    V3 bot_right = bot    + tangent  *  radius;
-    V3 bot_left  = bot    + tangent  * -radius;
+    V3 top_base  = center   + bitangent*  (half_height - radius);
+    V3 bot_base  = center   + bitangent* -(half_height - radius);
+    V3 top_right = top_base + tangent  *  radius;
+    V3 top_left  = top_base + tangent  * -radius;
+    V3 bot_right = bot_base + tangent  *  radius;
+    V3 bot_left  = bot_base + tangent  * -radius;
     immediate_line(bot_right, top_right, color, thickness);
     immediate_line(bot_left, top_left, color, thickness);
     
@@ -1486,10 +1486,10 @@ FUNCTION void immediate_toroidal_capsule(V3 const &center, f32 radius, f32 half_
     // Draw top and bottom half-torus.
     for (s32 blah = 0; blah < 2; blah++) {
         
-        V3 reference = top;
+        V3 reference = top_base;
         if (blah == 1) {
             // Go opposite direction.
-            reference = bot;
+            reference = bot_base;
             q = quaternion_from_axis_angle(normal, -theta);
         }
         
