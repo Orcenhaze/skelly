@@ -1,4 +1,4 @@
-/* orh.h - v0.89 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.90 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.90 - added frame vs. tick dt and time.
 0.89 - added str8_contains(). Fixed quaternion_from_euler(). Added equal() for nearly equal comparison. Added rotate_towards().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
@@ -1984,7 +1985,7 @@ struct Input_State
     // Delta values since last frame.
     V2s mouse_delta_raw;     // The raw mouse delta as reported by the os.
     V2  mouse_delta;         // The raw mouse delta scaled by os->base_mouse_resolution with y negated.
-    s32 mouse_wheel_raw;     // The raw mouse wheel value as reported by os - +1 up, -1 down.
+    s32 mouse_wheel_raw;     // The raw mouse wheel value as reported by os | +1 up, -1 down.
 };
 
 struct Queued_Input
@@ -2079,8 +2080,8 @@ struct OS_State
     // User Input.
     // Keyboard and mouse stuff.
     Array<Queued_Input> inputs_to_process;
-    Input_State         tick_input;   // Per-tick key states.
-    Input_State         frame_input;  // Per-frame key states.
+    Input_State         tick_input;   // Per-tick input state.
+    Input_State         frame_input;  // Per-frame input state.
     V3  mouse_ndc;                    // Mouse position relative to drawing_rect - in [-1, 1] interval.
     
     //
@@ -2109,9 +2110,11 @@ struct OS_State
     V2u render_size;         // Determines aspect ratio.
     V2u window_size;         // Client window width and height.
     Rect2 drawing_rect;      // The viewport. In pixel space (min top-left) - relative to client window.
-    f32 dt;                  // The timestep - must be fixed!
+    f32 tick_dt;             // Fixed timestep - for per-tick/fixed update functions - constant.
+    f32 frame_dt;            // Variable timestep - for per-frame update functions - computed every frame.
+    f64 tick_time;           // Incremented by tick_dt at the end of each tick.
+    f64 frame_time;          // Incremented by frame_dt at the end of each frame.
     s32 fps_max;             // FPS limiter when vsync is off. Set to 0 for unlimited.
-    f64 time;                // Incremented by dt at the end of each update.
     
     // Functions.
     void       (*print_to_debug_output)(String8 text);

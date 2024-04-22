@@ -45,7 +45,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     ImGui_ImplWin32_Init(window);
     ImGui_ImplDX11_Init(device, device_context);
 #endif
-    
     game_init();
     
     LARGE_INTEGER last_counter = win32_qpc();
@@ -61,21 +60,26 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         last_counter                  = end_counter;
         accumulator                  += seconds_elapsed_for_frame;
         accumulator                   = CLAMP_UPPER(0.1, accumulator);
-        //debug_print("FPS: %d\n", (s32)(1.0/seconds_elapsed_for_frame));
+        
+        // @Hardcode: Limit max possible frame_dt.
+        os->frame_dt                  = CLAMP_UPPER(0.1f, (f32)seconds_elapsed_for_frame);
+        os->frame_time               += os->frame_dt;
+        //debug_print("FPS: %d\n", (s32)(1.0/os->frame_dt));
         
         win32_update_window_events(window);
         
-        while (accumulator >= os->dt) {
-            //
-            // Update tick.
-            //
-            game_update();
+        while (accumulator >= os->tick_dt) {
+            // Do per-tick update.
+            game_tick_update();
             
-            accumulator -= os->dt;
-            os->time    += os->dt;
+            accumulator   -= os->tick_dt;
+            os->tick_time += os->tick_dt;
             
             reset_input(&os->tick_input);
         }
+        
+        // Do per-frame update.
+        game_frame_update();
         
 #if DEVELOPER
         // Start the Dear ImGui frame.
@@ -93,9 +97,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                            get_height(os->drawing_rect));
             d3d11_clear(0.2f, 0.2f, 0.2f, 1.0f);
             
-            //
-            // Render stuff.
-            //
             game_render();
             
 #if DEVELOPER
@@ -103,10 +104,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 #endif
             d3d11_present(os->vsync);
-            
-            reset_input(&os->frame_input);
         }
         
+        reset_input(&os->frame_input);
         
         win32_limit_framerate(last_counter);
     }
@@ -116,6 +116,5 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance,
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
 #endif
-    
     return 0;
 }

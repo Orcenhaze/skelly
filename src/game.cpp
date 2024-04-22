@@ -83,7 +83,7 @@ FUNCTION void load_animations(Arena *arena, Catalog<Sampled_Animation> *catalog)
 FUNCTION void control_camera(Camera *cam)
 {
     V2 delta_mouse = os->tick_input.mouse_delta;
-    f32 dt         = os->dt;
+    f32 dt         = os->tick_dt;
     
     Entity *player = get_player(&game->entity_manager);
     
@@ -257,7 +257,7 @@ FUNCTION void game_init()
     game->dir_lights[0]  = default_dir_light();
 }
 
-FUNCTION void game_update()
+FUNCTION void game_tick_update()
 {
 #if DEVELOPER
     if (key_pressed(&os->tick_input, Key_F8)){
@@ -385,6 +385,11 @@ FUNCTION void game_update()
         }
     }
 #endif
+}
+
+FUNCTION void game_frame_update()
+{
+    
 }
 
 FUNCTION void game_render()

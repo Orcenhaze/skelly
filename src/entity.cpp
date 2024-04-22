@@ -148,7 +148,7 @@ FUNCTION inline b32 is_grounded(Entity *e)
 FUNCTION void update_entity(Entity *e)
 {
     Input_State *input = &os->tick_input;
-    f32 dt = os->dt;
+    f32 dt = os->tick_dt;
     
     switch (e->type) {
         case EntityType_PLAYER: {
@@ -219,7 +219,7 @@ FUNCTION void update_entity(Entity *e)
     
     update_entity_transform(e);
     
-    advance_time(e->animation_player, os->dt);
+    advance_time(e->animation_player, os->tick_dt);
     eval(e->animation_player);
 }
 

@@ -165,7 +165,7 @@ FUNCTION void draw_entity_wireframe(Entity *e)
     // Upload ps constants, default params except for base_color.
     V3  c0            = { 0.89,  0.71, 0.882};
     V3  c1            = {0.929, 0.047, 0.898};
-    f32 ct            = ping_pong((f32)os->time, 1.0f);
+    f32 ct            = ping_pong((f32)os->frame_time, 1.0f);
     V3  outline_color = lerp(c0, ct, c1);
     
     PBR_PS_Constants ps_constants = {};

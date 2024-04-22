@@ -938,15 +938,16 @@ FUNCTION void win32_os_state_init(HWND window)
     _win32.state.vsync             = TRUE;
     _win32.state.fix_aspect_ratio  = TRUE;
     _win32.state.render_size       = {1920, 1080};
-    _win32.state.dt                = 1.0f/120.0f;
+    _win32.state.tick_dt           = 1.0f/120.0f; // @Note: Fixed/constant!
+    _win32.state.frame_dt          = 0.0f;        // @Note: Set by main function every frame.
+    _win32.state.tick_time         = 0.0f;
+    _win32.state.frame_time        = 0.0f;
     _win32.state.fps_max           = 120;
     
     // @Note: Force fps_max to primary monitor refresh rate if possible.
     s32 refresh_hz = GetDeviceCaps(GetDC(window), VREFRESH);
     if ((!_win32.state.vsync) && (_win32.state.fps_max > 0) && (refresh_hz > 1))
         _win32.state.fps_max = refresh_hz;
-    
-    _win32.state.time              = 0.0f;
     
     // Functions.
     _win32.state.print_to_debug_output = win32_print_to_debug_output;
