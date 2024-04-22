@@ -2,6 +2,30 @@
 
 REVISION HISTORY:
 
+NOTE:
+ * Things you pass to collision functions are assumed to be in the same "space" or "coordinate system",
+and so all the Hit_Result info and distances that will be returned will be in said coordinate system.
+
+ Let's say you did the tests in some mesh object-space. The distances returned by our routines won't
+ always represent the distances in world-space because you may have applied some scaling when transforming
+points and directions from world-space to object-space. Solution:
+- If you know the scale you applied is uniform, you can simply multiply the returned distances by the
+ scale factor to convert it back to world-space distance. 
+- For non-uniform scaling it's trickier; probably the best way is to transform the intersection point 
+back to world-space and then re-measure the distance in world-space.
+
+This is a general explanation, of course... but really, you usually have a "center" point somewhere
+in the "original" space before you transformed it to the desired space. Well, our functions return
+ intersection points in desired space, so you can just transform those points back to original space
+ and re-measure the distance using the original "center" point.
+
+* Variables in implementation look cryptic (I know it sucks), but the algorithms involve many operations
+ and having descriptive names for stuff would be kinda "chaotic". So, I _try_ to explain what each 
+function does if it isn't obvious AND also refer to resources that explain things better.
+
+TODO:
+[] Traces for lines, boxes, spheres, and capsules.
+
 */
 
 #include "orh.h"
@@ -12,6 +36,114 @@ union Ray
     struct { V3  o;      V3 d;         f32 t; };
     
 };
+
+
+////////////////////////////////
+//~ 3D
+
+FUNCTION f32 closest_point_line_point(V3 const &c, V3 const &a, V3 const &b,
+                                      f32 *t_out = NULL, V3 *p_out = NULL)
+{
+    // @Note: Christer Ericson - Real Time Collision Detection - P.127;
+    //
+    // Returns _squared_ closest distance between point c and line ab.
+    //
+    // Just project c onto ab.
+    
+    V3  ab      = b - a;
+    f32 ab_len2 = dot(ab, ab);
+    if (nearly_zero(ab_len2)) {
+        if (t_out) *t_out = 0.0f;
+        if (p_out) *p_out = a;
+        return 0.0f;
+    }
+    
+    f32 t = dot(c - a, ab) / dot(ab, ab);
+    V3  p = a + t * ab;
+    
+    if (t_out) *t_out = t;
+    if (p_out) *p_out = p;
+    f32 result = length2(c - p);
+    return result;
+}
+
+FUNCTION f32 closest_point_segment_point(V3 const &c, V3 const &a, V3 const &b,
+                                         f32 *t_out = NULL, V3 *p_out = NULL)
+{
+    // @Note: Christer Ericson - Real Time Collision Detection - P.127;
+    //
+    // Returns _squared_ closest distance between point c and line segment ab.
+    //
+    // Just project c onto ab, then clamp the t value to end points of the line segment.
+    
+    V3  ab      = b - a;
+    f32 ab_len2 = dot(ab, ab);
+    if (nearly_zero(ab_len2)) {
+        if (t_out) *t_out = 0.0f;
+        if (p_out) *p_out = a;
+        return 0.0f;
+    }
+    
+    f32 t = dot(c - a, ab) / dot(ab, ab);
+    t     = CLAMP01(t);
+    V3  p = a + t * ab;
+    
+    if (t_out) *t_out = t;
+    if (p_out) *p_out = p;
+    f32 result = length2(c - p);
+    return result;
+}
+
+FUNCTION f32 closest_point_line_line(V3 const &a1, V3 const &b1, V3 const &a2, V3 const &b2,
+                                     f32 *t1_out = NULL, V3 *p1_out = NULL, 
+                                     f32 *t2_out = NULL, V3 *p2_out = NULL)
+{
+    // @Note: Christer Ericson - Real Time Collision Detection - P.148;
+    //
+    // Returns _squared_ closest distance between the two lines.
+    //
+    // If the lines are not parallel, we need to find two points (p1 and p2) on ab1 and ab2, such that
+    // (p1 - p2) is perpendicular to both lines.
+    //
+    // If the lines are parallel, then the distance between them is constant.
+    // We can simply project any point on ab1 onto ab2. For this, we use closest_point_line_point().
+    
+    V3 d1 = b1 - a1; // ab1 direction vector.
+    V3 d2 = b2 - a2; // ab2 direction vector.
+    
+    f32 a = dot(d1, d1);
+    f32 b = dot(d1, d2);
+    f32 e = dot(d2, d2);
+    f32 d = (a*e) - (b*b);
+    
+    f32 result;
+    f32 t1, t2;
+    V3  p1, p2;
+    if (nearly_zero(d)) {
+        // Lines are parallel.
+        result = closest_point_line_point(a1, a2, b2, &t2, &p2);
+        t1     = 0.0f;
+        p1     = a1;
+    } else {
+        // Common case.
+        V3 r  = a1 - a2;
+        f32 c = dot(d1, r);
+        f32 f = dot(d2, r);
+        
+        t1 = ((b*f) - (c*e)) / d;
+        t2 = ((a*f) - (b*c)) / d;
+        p1 = a1 + t1 * d1;
+        p2 = a2 + t2 * d2;
+        
+        result = length2(p1 - p2);
+    }
+    
+    if (t1_out) *t1_out = t1;
+    if (t2_out) *t2_out = t2;
+    if (p1_out) *p1_out = p1;
+    if (p2_out) *p2_out = p2;
+    return result;
+}
 
 struct Plane
 {

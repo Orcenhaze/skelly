@@ -407,16 +407,56 @@ FUNCTION void game_render()
     immediate_line_2point5d(-V3F*hh, V3F*hh, V3U, v4(0,0,1,0.5f), 0.01f);
     immediate_line_2point5d(-V3R*hw, V3R*hw, V3U, v4(1,0,0,0.5f), 0.01f);
     immediate_end();
+    
+    
+    
+    // @Temporary:
+    // @Temporary: Testing collision!
+    // @Temporary:
+    
+    //~ line - line
+    LOCAL_PERSIST V3 a1 = {}, b1 = {}, a2 = {}, b2 = {};
+    if (key_pressed(&os->frame_input, Key_1)) {
+        a1 = game->camera.position;
+        b1 = game->mouse_world;
+    }
+    if (key_pressed(&os->frame_input, Key_2)) {
+        a2 = game->camera.position;
+        b2 = game->mouse_world;
+    }
+    
+    V3 p1, p2;
+    f32 dist2 = closest_point_line_line(a1, b1, a2, b2, NULL, &p1, NULL, &p2);
+    
+    // Draw lines.
+    immediate_begin();
+    set_texture(0);
+    immediate_line(a1 - 50.0f*(b1-a1), b1 + 50.0f*(b1-a1), v4(0.8,0.8,0.8,1.0), 0.05f);
+    immediate_line(a2 - 50.0f*(b2-a2), b2 + 50.0f*(b2-a2), v4(0.4,0.4,0.4,1.0), 0.05f);
+    immediate_line(p1, p2, v4(1,0,0,1), 0.01f);
+    immediate_end();
+    
+    // Draw distance as text.
+    immediate_begin();
+    d3d11_clear_depth();
+    set_texture(&dfont.atlas);
+    is_using_pixel_coords = TRUE;
+    V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(p1, 0.5f, p2)));
+    immediate_text(dfont, p_pixel, 3, v4(1), "%f", _sqrt(dist2));
+    immediate_end();
+    
+    //~ segment - segment
+    
 #endif
     
     // Render all entities.
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
-        draw_entity(e);
+        //draw_entity(e);
     }
     
 #if DEVELOPER
-    draw_editor_ui();
+    //draw_editor_ui();
     
     // Draw visual debugging stuff for selected entities.
     if (manager->selected_entity) {
