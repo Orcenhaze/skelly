@@ -211,14 +211,12 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
         t1 = t2 = 0.0f;
         p1 = a1;
         p2 = a2;
-        debug_print("BOTH segs are points\n");
     } else if (seg1_is_point) {
         t1 = 0.0f;
         p1 = a1;
         t2 = f/e;
         t2 = CLAMP01(t2);
         p2 = a2 + t2 * d2;
-        debug_print("Seg1 is point\n");
     } else {
         f32 c = dot(d1, r);
         if (seg2_is_point) {
@@ -227,7 +225,6 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
             t1 = -c/a;
             t1 = CLAMP01(t1);
             p1 = a1 + t1 * d1;
-            debug_print("Seg2 is point\n");
         } else {
             // Nondegenerate case.
             f32 b = dot(d1, d2);
@@ -236,7 +233,6 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
             if (nearly_zero(d)) {
                 // Segments are parallel - pick arbitrary t1.
                 t1 = 0.0f;
-                debug_print("Segs are parallel\n");
             } else {
                 // Otherwise, compute closest point on L1 to L2 and clamp to S1 endpoint.
                 t1 = ((b*f) - (c*e)) / d;
@@ -251,17 +247,14 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
                 t2 = 0.0f;
                 t1 = -c/a;
                 t1 = CLAMP01(t1);
-                debug_print("t2 outside Seg2 behind\n");
             } else if (t2nom > e) {
                 // t2 is outside S2 (after b2).
                 t2 = 1.0f;
                 t1 = (b - c) / a;
                 t1 = CLAMP01(t1);
-                debug_print("t2 outside Seg2 after\n");
             } else {
                 // t2 lies on S2.
                 t2 = t2nom / e;
-                debug_print("t2 lies on s2\n");
             }
             
             p1 = a1 + t1 * d1;
