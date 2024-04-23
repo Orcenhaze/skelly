@@ -50,16 +50,19 @@ FUNCTION f32 closest_point_line_point(V3 const &c, V3 const &a, V3 const &b,
     //
     // Just project c onto ab.
     
-    V3  ab      = b - a;
-    f32 ab_len2 = dot(ab, ab);
-    if (nearly_zero(ab_len2)) {
-        if (t_out) *t_out = 0.0f;
-        if (p_out) *p_out = a;
-        return 0.0f;
-    }
+    V3  ab   = b - a;
+    f32 len2 = dot(ab, ab);
     
-    f32 t = dot(c - a, ab) / dot(ab, ab);
-    V3  p = a + t * ab;
+    f32 t;
+    V3  p;
+    if (nearly_zero(len2)) {
+        // If line degenerates into point.
+        t = 0.0f;
+        p = a;
+    } else {
+        t = dot(c - a, ab) / dot(ab, ab);
+        p = a + t * ab;
+    }
     
     if (t_out) *t_out = t;
     if (p_out) *p_out = p;
@@ -76,17 +79,20 @@ FUNCTION f32 closest_point_segment_point(V3 const &c, V3 const &a, V3 const &b,
     //
     // Just project c onto ab, then clamp the t value to end points of the line segment.
     
-    V3  ab      = b - a;
-    f32 ab_len2 = dot(ab, ab);
-    if (nearly_zero(ab_len2)) {
-        if (t_out) *t_out = 0.0f;
-        if (p_out) *p_out = a;
-        return 0.0f;
-    }
+    V3  ab   = b - a;
+    f32 len2 = dot(ab, ab);
     
-    f32 t = dot(c - a, ab) / dot(ab, ab);
-    t     = CLAMP01(t);
-    V3  p = a + t * ab;
+    f32 t;
+    V3  p;
+    if (nearly_zero(len2)) {
+        // If segment degenerates into point.
+        t = 0.0f;
+        p = a;
+    } else {
+        t = dot(c - a, ab) / dot(ab, ab);
+        t = CLAMP01(t);
+        p = a + t * ab;
+    }
     
     if (t_out) *t_out = t;
     if (p_out) *p_out = p;
@@ -98,7 +104,7 @@ FUNCTION f32 closest_point_line_line(V3 const &a1, V3 const &b1, V3 const &a2, V
                                      f32 *t1_out = NULL, V3 *p1_out = NULL, 
                                      f32 *t2_out = NULL, V3 *p2_out = NULL)
 {
-    // @Note: Christer Ericson - Real Time Collision Detection - P.148;
+    // @Note: Christer Ericson - Real Time Collision Detection - P.146;
     //
     // Returns _squared_ closest distance between the two lines.
     //
@@ -112,36 +118,162 @@ FUNCTION f32 closest_point_line_line(V3 const &a1, V3 const &b1, V3 const &a2, V
     V3 d2 = b2 - a2; // ab2 direction vector.
     
     f32 a = dot(d1, d1);
-    f32 b = dot(d1, d2);
     f32 e = dot(d2, d2);
-    f32 d = (a*e) - (b*b);
+    f32 b = dot(d1, d2);
+    f32 d = (a*e) - (b*b); // This should always be >= 0.0f. But FP errors...
     
-    f32 result;
     f32 t1, t2;
     V3  p1, p2;
-    if (nearly_zero(d)) {
-        // Lines are parallel.
-        result = closest_point_line_point(a1, a2, b2, &t2, &p2);
-        t1     = 0.0f;
-        p1     = a1;
+    
+    // Check if lines degenerate into points.
+    b32 line1_is_point = nearly_zero(a);
+    b32 line2_is_point = nearly_zero(e);
+    if (line1_is_point && line2_is_point) {
+        t1 = t2 = 0.0f;
+        p1 = a1;
+        p2 = a2;
+    } else if (line1_is_point) {
+        t1 = 0.0f;
+        p1 = a1;
+        closest_point_line_point(p1, a2, b2, &t2, &p2);
+    } else if (line2_is_point) {
+        t2 = 0.0f;
+        p2 = a2;
+        closest_point_line_point(p2, a1, b1, &t1, &p1);
     } else {
-        // Common case.
-        V3 r  = a1 - a2;
-        f32 c = dot(d1, r);
-        f32 f = dot(d2, r);
-        
-        t1 = ((b*f) - (c*e)) / d;
-        t2 = ((a*f) - (b*c)) / d;
-        p1 = a1 + t1 * d1;
-        p2 = a2 + t2 * d2;
-        
-        result = length2(p1 - p2);
+        // Nondegenerate cases.
+        if (nearly_zero(d)) {
+            // Lines are parallel.
+            t1 = 0.0f;
+            p1 = a1;
+            closest_point_line_point(p1, a2, b2, &t2, &p2);
+        } else {
+            // Common case.
+            V3 r  = a1 - a2;
+            f32 c = dot(d1, r);
+            f32 f = dot(d2, r);
+            
+            t1 = ((b*f) - (c*e)) / d;
+            t2 = ((a*f) - (b*c)) / d;
+            p1 = a1 + t1 * d1;
+            p2 = a2 + t2 * d2;
+        }
     }
     
     if (t1_out) *t1_out = t1;
     if (t2_out) *t2_out = t2;
     if (p1_out) *p1_out = p1;
     if (p2_out) *p2_out = p2;
+    f32 result = length2(p1 - p2);
+    return result;
+}
+
+FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const &a2, V3 const &b2,
+                                           f32 *t1_out = NULL, V3 *p1_out = NULL, 
+                                           f32 *t2_out = NULL, V3 *p2_out = NULL)
+{
+    // @Note: Christer Ericson - Real Time Collision Detection - P.148;
+    //
+    // Returns _squared_ closest distance between the two line segments.
+    //
+    // L1 is line of ab1 --- S1 is segment of ab1.
+    //
+    // We first treat the segments as lines and try to find closest points of those lines. 
+    // If both closest points of the lines lie on the segments, then the same method for
+    // closest_point_line_line() applies.
+    //
+    // If one of the closest points (of line) lies outside of the segment, then we clamp it to the appropriate
+    // endpoint, then do closest_point_segment_point(endpoint, a, b, 0, &on_segment).
+    // Your closest points are then "endpoint" and "on_segment".
+    //
+    // If both closest points (of lines) lie outside of the segments. We do the clamping process twice:
+    // Clamp closest point of line1 to endpoint1 and do closest_point_line_point(endpoint1, a2, b2, 0, &on_line2).
+    // Then clamp on_line2 to endpoint2 and do closest_point_segment_point(endpoint2, a1, b1, 0, &on_segment1).
+    // Your closest points are then "on_segment1" and "endpoint2".
+    //
+    // This is the conceptual explanation, we won't be calling those functions (although we could).
+    
+    V3 d1 = b1 - a1; // ab1 direction vector.
+    V3 d2 = b2 - a2; // ab2 direction vector.
+    V3 r  = a1 - a2;
+    
+    f32 a = dot(d1, d1); // Squared length of segment1, always nonnegative.
+    f32 e = dot(d2, d2); // Squared length of segment2, always nonnegative.
+    f32 f = dot(d2, r);
+    
+    f32 t1, t2;
+    V3  p1, p2;
+    
+    // Check if segments degenerate into points.
+    b32 seg1_is_point = nearly_zero(a);
+    b32 seg2_is_point = nearly_zero(e);
+    if (seg1_is_point && seg2_is_point) {
+        t1 = t2 = 0.0f;
+        p1 = a1;
+        p2 = a2;
+        debug_print("BOTH segs are points\n");
+    } else if (seg1_is_point) {
+        t1 = 0.0f;
+        p1 = a1;
+        t2 = f/e;
+        t2 = CLAMP01(t2);
+        p2 = a2 + t2 * d2;
+        debug_print("Seg1 is point\n");
+    } else {
+        f32 c = dot(d1, r);
+        if (seg2_is_point) {
+            t2 = 0.0f;
+            p2 = a2;
+            t1 = -c/a;
+            t1 = CLAMP01(t1);
+            p1 = a1 + t1 * d1;
+            debug_print("Seg2 is point\n");
+        } else {
+            // Nondegenerate case.
+            f32 b = dot(d1, d2);
+            f32 d = (a*e) - (b*b); // denom: should always be >= 0.0f. But FP errors...
+            
+            if (nearly_zero(d)) {
+                // Segments are parallel - pick arbitrary t1.
+                t1 = 0.0f;
+                debug_print("Segs are parallel\n");
+            } else {
+                // Otherwise, compute closest point on L1 to L2 and clamp to S1 endpoint.
+                t1 = ((b*f) - (c*e)) / d;
+                t1 = CLAMP01(t1);
+            }
+            
+            // t2 is equal to "((b*t1) + f) / e"; 
+            // But defer division by e until we know t2 is in range [0, 1], i.e, it lies on S2.
+            f32 t2nom = (b*t1) + f;
+            if (t2nom < 0.0f) {
+                // t2 is outside S2 (behind a2).
+                t2 = 0.0f;
+                t1 = -c/a;
+                t1 = CLAMP01(t1);
+                debug_print("t2 outside Seg2 behind\n");
+            } else if (t2nom > e) {
+                // t2 is outside S2 (after b2).
+                t2 = 1.0f;
+                t1 = (b - c) / a;
+                t1 = CLAMP01(t1);
+                debug_print("t2 outside Seg2 after\n");
+            } else {
+                // t2 lies on S2.
+                t2 = t2nom / e;
+                debug_print("t2 lies on s2\n");
+            }
+            
+            p1 = a1 + t1 * d1;
+            p2 = a2 + t2 * d2;
+        }
+    }
+    
+    if (t1_out) *t1_out = t1;
+    if (t2_out) *t2_out = t2;
+    if (p1_out) *p1_out = p1;
+    if (p2_out) *p2_out = p2;
+    f32 result = length2(p1 - p2);
     return result;
 }
 

@@ -410,12 +410,18 @@ FUNCTION void game_render()
     
     
     
+    //
     // @Temporary:
     // @Temporary: Testing collision!
     // @Temporary:
-    
-    //~ line - line
+    //
     LOCAL_PERSIST V3 a1 = {}, b1 = {}, a2 = {}, b2 = {};
+    LOCAL_PERSIST s32 scroll;
+    scroll += os->frame_input.mouse_wheel_raw;
+    V3 p1 = {}, p2 = {};
+    f32 dist2 = 0.0f;
+#if 0
+    //~ lines
     if (key_pressed(&os->frame_input, Key_1)) {
         a1 = game->camera.position;
         b1 = game->mouse_world;
@@ -425,14 +431,65 @@ FUNCTION void game_render()
         b2 = game->mouse_world;
     }
     
-    V3 p1, p2;
-    f32 dist2 = closest_point_line_line(a1, b1, a2, b2, NULL, &p1, NULL, &p2);
-    
     // Draw lines.
     immediate_begin();
     set_texture(0);
     immediate_line(a1 - 50.0f*(b1-a1), b1 + 50.0f*(b1-a1), v4(0.8,0.8,0.8,1.0), 0.05f);
     immediate_line(a2 - 50.0f*(b2-a2), b2 + 50.0f*(b2-a2), v4(0.4,0.4,0.4,1.0), 0.05f);
+    immediate_end();
+#endif
+#if 1
+    //~ line segments
+    if (key_pressed(&os->frame_input, Key_1)) {
+        a1 = game->camera.position;
+        b1 = game->mouse_world;
+    }
+    if (key_pressed(&os->frame_input, Key_2)) {
+        a2 = game->camera.position;
+        b2 = game->mouse_world;
+    }
+    
+    // Draw line segments.
+    immediate_begin();
+    set_texture(0);
+    immediate_line(a1, b1, v4(0.8,0.8,0.8,1.0), 0.05f);
+    immediate_line(a2, b2, v4(0.4,0.4,0.4,1.0), 0.05f);
+    immediate_end();
+#endif
+#if 0
+    //~ point - line and point - segment
+    V3 point = unproject(game->camera.position, 
+                         1.0f + scroll, 
+                         os->mouse_ndc, 
+                         world_to_view_matrix, 
+                         view_to_proj_matrix);
+    
+    //dist2 = closest_point_line_point(point, a1, b1, NULL, &p1);
+    dist2 = closest_point_segment_point(point, a1, b1, NULL, &p1);
+    
+    immediate_begin();
+    set_texture(0);
+    immediate_sphere(point, 0.1f, quaternion_identity(), v4(1), 16);
+    immediate_line(point, p1, v4(1,0,0,1), 0.01f);
+    immediate_end();
+    
+    // Draw distance as text.
+    immediate_begin();
+    d3d11_clear_depth();
+    set_texture(&dfont.atlas);
+    is_using_pixel_coords = TRUE;
+    V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(point, 0.5f, p1)));
+    immediate_text(dfont, p_pixel, 3, v4(1), "%f", _sqrt(dist2));
+    immediate_end();
+#endif
+#if 1
+    //~ line - line and segment segment
+    //dist2 = closest_point_line_line(a1, b1, a2, b2, NULL, &p1, NULL, &p2);
+    dist2 = closest_point_segment_segment(a1, b1, a2, b2, NULL, &p1, NULL, &p2);
+    
+    // Draw closest vector.
+    immediate_begin();
+    set_texture(0);
     immediate_line(p1, p2, v4(1,0,0,1), 0.01f);
     immediate_end();
     
@@ -444,9 +501,7 @@ FUNCTION void game_render()
     V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(p1, 0.5f, p2)));
     immediate_text(dfont, p_pixel, 3, v4(1), "%f", _sqrt(dist2));
     immediate_end();
-    
-    //~ segment - segment
-    
+#endif
 #endif
     
     // Render all entities.
