@@ -286,10 +286,12 @@ FUNCTION b32 ray_triangle_intersect(V3 const &a, V3 const &b,
 {
     // @Note: From: https://iquilezles.org/articles/hackingintersector/
     //
-    // Returns whether line pierces the triangle. Also fills Hit_Result and barycentric coords.
+    // Returns whether ray pierces the triangle. Also fills Hit_Result and barycentric coords.
     
     V3 e1 = p2-p1, e2 = p3-p1, to_a = a-p1;
     V3 ab = b-a;
+    
+    ASSERT(nearly_zero(dot(ab, ab)) == FALSE);
     
     V3  n = cross(e1, e2);
     V3  q = cross(to_a, ab);
@@ -318,6 +320,137 @@ FUNCTION b32 ray_triangle_intersect(V3 const &a, V3 const &b,
     if (barycentric_out) *barycentric_out = barycentric;
     return hit_out->result;
 }
+
+
+enum Collision_Shape_Type
+{
+    CollisionShapeType_BOX,
+};
+
+struct Collision_Shape
+{
+    Quaternion rotation;
+    V3         center;
+    
+    union
+    {
+        struct
+        {
+            V3 half_extents;
+        }; // Box.
+    };
+    
+    Collision_Shape_Type type;
+};
+
+FUNCTION inline Collision_Shape make_aabb(V3 const &center, V3 const &half_extents)
+{
+    Collision_Shape result;
+    result.rotation     = quaternion_identity();
+    result.center       = center;
+    result.half_extents = abs(half_extents);
+    result.type         = CollisionShapeType_BOX;
+    return result;
+}
+
+FUNCTION inline Collision_Shape make_obb(V3 const &center, V3 const &half_extents, Quaternion const &rotation)
+{
+    Collision_Shape result;
+    result.rotation     = rotation;
+    result.center       = center;
+    result.half_extents = abs(half_extents);
+    result.type         = CollisionShapeType_BOX;
+    return result;
+}
+
+FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b, 
+                               Collision_Shape const &box,
+                               Hit_Result *hit_out)
+{
+    // @Note:
+    // 
+    // Returns whether ray pierces the box. Also fills Hit_Result.
+    
+    ASSERT(box.type == CollisionShapeType_BOX);
+    
+    V3 o = a;
+    V3 d = b-a;
+    
+    ASSERT(nearly_zero(dot(d, d)) == FALSE);
+    
+    // Transform ray to local space of box.
+    //
+    if (box.rotation.w == 1.0f) {
+        // Box is an AABB.
+        o = o - box.center;
+    } else {
+        // Box is an OBB.
+        V3 xaxis = box.rotation * V3_X_AXIS;
+        V3 yaxis = box.rotation * V3_Y_AXIS;
+        V3 zaxis = box.rotation * V3_Z_AXIS;
+        M4x4 to_obb_matrix =
+        {
+            xaxis.x, xaxis.y, xaxis.z, -dot(xaxis, box.center),
+            yaxis.x, yaxis.y, yaxis.z, -dot(yaxis, box.center),
+            zaxis.x, zaxis.y, zaxis.z, -dot(zaxis, box.center),
+            0.0f, 0.0f, 0.0f, 1.0f
+        };
+        
+        o = transform_point (to_obb_matrix, o);
+        d = transform_vector(to_obb_matrix, d);
+    }
+    
+    V3 box_min = box.center - box.half_extents;
+    V3 box_max = box.center + box.half_extents;
+    
+    V3 t_bmin = hadamard_div((-box.half_extents - o), d);
+    V3 t_bmax = hadamard_div(( box.half_extents - o), d);
+    
+    V3 t_min3 = { MIN(t_bmin.x, t_bmax.x), MIN(t_bmin.y, t_bmax.y), MIN(t_bmin.z, t_bmax.z) };
+    V3 t_max3 = { MAX(t_bmin.x, t_bmax.x), MAX(t_bmin.y, t_bmax.y), MAX(t_bmin.z, t_bmax.z) };
+    
+    f32 t_min = MAX3(t_min3.x, t_min3.y, t_min3.z);
+    f32 t_max = MIN3(t_max3.x, t_max3.y, t_max3.z);
+    
+    if ((t_min < 0.0f) || (t_min > t_max)) {
+        // Ignore collisions that are behind us, i.e. (t_min < 0.0f).
+        hit_out->impact_point  = V3_INF;
+        hit_out->impact_normal = V3_ZERO;
+        hit_out->distance      = F32_MAX;
+        hit_out->result        = FALSE;
+    } else {
+        // Hit point.
+        V3 p = o + t_min * d;
+        
+        // Compute hit normal.
+        V3 pn      = hadamard_div(p,  box.half_extents); // Hit point "normalized"
+        V3 pa      = abs(pn);                            // Hit point "normalized + absolute"
+        s32 max_i  = (pa.x > pa.y)? ((pa.x > pa.z)? 0 : 2) : ((pa.y > pa.z)? 1: 2);
+        V3 n       = {};
+        n.I[max_i] = (f32)SIGN(pn.I[max_i]);
+        
+        // Transform the hit point and normal back to original space.
+        //
+        if (box.rotation.w == 1.0f) {
+            // Box is an AABB.
+            p = p + box.center;
+        } else {
+            // Box is an OBB.
+            // @Speed: Is there a faster way to do this transform?
+            M4x4 to_orig_matrix = m4x4_from_translation_rotation_scale(box.center, box.rotation, v3(1));
+            p = transform_point (to_orig_matrix, p);
+            n = transform_vector(to_orig_matrix, n);
+        }
+        
+        hit_out->impact_point  = p;
+        hit_out->impact_normal = n;
+        hit_out->distance      = t_min;
+        hit_out->result        = TRUE;
+    }
+    
+    return hit_out->result;
+}
+
 
 struct Plane
 {

@@ -9,7 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
-0.90 - added frame vs. tick dt and time. Added V3_INF.
+0.90 - added frame vs. tick dt and time. Added V3_INF. Added abs() for V2 and V3.
 0.89 - added str8_contains(). Fixed quaternion_from_euler(). Added equal() for nearly equal comparison. Added rotate_towards().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
@@ -668,16 +668,18 @@ FUNCDEF inline f32 _arccos_turns(f32 x);         // Returns angle in turns.
 FUNCDEF inline f32 _arctan_turns(f32 x);         // Returns angle in turns.
 FUNCDEF inline f32 _arctan2_turns(f32 y, f32 x); // Returns angle in turns.
 
-FUNCDEF inline V2 pow(V2 v, f32 y);
-FUNCDEF inline V3 pow(V3 v, f32 y);
-FUNCDEF inline V2 clamp(V2 min, V2 x, V2 max);
-FUNCDEF inline V3 clamp(V3 min, V3 x, V3 max);
-FUNCDEF inline V2 round(V2 v);
-FUNCDEF inline V3 round(V3 v);
-FUNCDEF inline V2 floor(V2 v);
-FUNCDEF inline V3 floor(V3 v);
-FUNCDEF inline V2 ceil(V2 v);
-FUNCDEF inline V3 ceil(V3 v);
+FUNCDEF inline V2 pow(V2 const &v, f32 y);
+FUNCDEF inline V3 pow(V3 const &v, f32 y);
+FUNCDEF inline V2 clamp(V2 const &min, V2 const &x, V2 const &max);
+FUNCDEF inline V3 clamp(V3 const &min, V3 const &x, V3 const &max);
+FUNCDEF inline V2 round(V2 const &v);
+FUNCDEF inline V3 round(V3 const &v);
+FUNCDEF inline V2 floor(V2 const &v);
+FUNCDEF inline V3 floor(V3 const &v);
+FUNCDEF inline V2 ceil(V2 const &v);
+FUNCDEF inline V3 ceil(V3 const &v);
+FUNCDEF inline V2 abs(V2 const &v);
+FUNCDEF inline V3 abs(V3 const &v);
 
 FUNCDEF inline f32 frac(f32 x); // Output in range [0, 1]
 FUNCDEF inline V2  frac(V2 v);
@@ -2425,14 +2427,14 @@ FUNCDEF inline f32 _arctan2_turns(f32 y, f32 x)
     return clamp_axis(_arctan2(y, x)) * RADS_TO_TURNS;
 }
 
-FUNCDEF inline V2 pow(V2 v, f32 y)
+FUNCDEF inline V2 pow(V2 const &v, f32 y)
 {
     V2 result = {};
     result.x = _pow(v.x, y);
     result.y = _pow(v.y, y);
     return result;
 }
-FUNCDEF inline V3 pow(V3 v, f32 y)
+FUNCDEF inline V3 pow(V3 const &v, f32 y)
 {
     V3 result = {};
     result.x = _pow(v.x, y);
@@ -2440,14 +2442,14 @@ FUNCDEF inline V3 pow(V3 v, f32 y)
     result.z = _pow(v.z, y);
     return result;
 }
-FUNCDEF inline V2 clamp(V2 min, V2 x, V2 max)
+FUNCDEF inline V2 clamp(V2 const &min, V2 const &x, V2 const &max)
 {
     V2 result = {};
     result.x = CLAMP(min.x, x.x, max.x);
     result.y = CLAMP(min.y, x.y, max.y);
     return result;
 }
-FUNCDEF inline V3 clamp(V3 min, V3 x, V3 max)
+FUNCDEF inline V3 clamp(V3 const &min, V3 const &x, V3 const &max)
 {
     V3 result = {};
     result.x = CLAMP(min.x, x.x, max.x);
@@ -2455,14 +2457,14 @@ FUNCDEF inline V3 clamp(V3 min, V3 x, V3 max)
     result.z = CLAMP(min.z, x.z, max.z);
     return result;
 }
-FUNCDEF inline V2 round(V2 v)
+FUNCDEF inline V2 round(V2 const &v)
 {
     V2 result = {};
     result.x  = _round(v.x);
     result.y  = _round(v.y);
     return result;
 }
-FUNCDEF inline V3 round(V3 v)
+FUNCDEF inline V3 round(V3 const &v)
 {
     V3 result = {};
     result.x  = _round(v.x);
@@ -2470,14 +2472,14 @@ FUNCDEF inline V3 round(V3 v)
     result.z  = _round(v.z);
     return result;
 }
-FUNCDEF inline V2 floor(V2 v)
+FUNCDEF inline V2 floor(V2 const &v)
 {
     V2 result = {};
     result.x  = _floor(v.x);
     result.y  = _floor(v.y);
     return result;
 }
-FUNCDEF inline V3 floor(V3 v)
+FUNCDEF inline V3 floor(V3 const &v)
 {
     V3 result = {};
     result.x  = _floor(v.x);
@@ -2485,19 +2487,34 @@ FUNCDEF inline V3 floor(V3 v)
     result.z  = _floor(v.z);
     return result;
 }
-FUNCDEF inline V2 ceil(V2 v)
+FUNCDEF inline V2 ceil(V2 const &v)
 {
     V2 result = {};
     result.x  = _ceil(v.x);
     result.y  = _ceil(v.y);
     return result;
 }
-FUNCDEF inline V3 ceil(V3 v)
+FUNCDEF inline V3 ceil(V3 const &v)
 {
     V3 result = {};
     result.x  = _ceil(v.x);
     result.y  = _ceil(v.y);
     result.z  = _ceil(v.z);
+    return result;
+}
+FUNCDEF inline V2 abs(V2 const &v)
+{
+    V2 result = {};
+    result.x  = ABS(v.x);
+    result.y  = ABS(v.y);
+    return result;
+}
+FUNCDEF inline V3 abs(V3 const &v)
+{
+    V3 result = {};
+    result.x  = ABS(v.x);
+    result.y  = ABS(v.y);
+    result.z  = ABS(v.z);
     return result;
 }
 
