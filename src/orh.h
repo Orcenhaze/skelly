@@ -9,7 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
-0.90 - added frame vs. tick dt and time.
+0.90 - added frame vs. tick dt and time. Added V3_INF.
 0.89 - added str8_contains(). Fixed quaternion_from_euler(). Added equal() for nearly equal comparison. Added rotate_towards().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
@@ -525,11 +525,13 @@ union V3
     struct { f32 x, y, z; };
     struct { V2 xy; f32 ignored0_; };
     struct { f32 ignored1_; V2 yz; };
-    struct { f32 r, g, b; };
-    struct { f32 pitch, yaw, roll; };
+    struct { f32 u, v, w; };          // For barycentric coords.
+    struct { f32 r, g, b; };          // For colors.
+    struct { f32 pitch, yaw, roll; }; // For euler rotations.
     f32 I[3];
 };
 extern const V3 V3_ZERO;
+extern const V3 V3_INF;
 extern const V3 V3_X_AXIS;
 extern const V3 V3_Y_AXIS;
 extern const V3 V3_Z_AXIS;
@@ -2166,6 +2168,7 @@ FUNCDEF V3    unproject(V3 camera_position, f32 Zworld_distance_from_camera, V3 
 #endif
 
 const V3 V3_ZERO    = {};
+const V3 V3_INF     = {F32_MAX, F32_MAX, F32_MAX};
 const V3 V3_X_AXIS  = {1.0f, 0.0f, 0.0f};
 const V3 V3_Y_AXIS  = {0.0f, 1.0f, 0.0f};
 const V3 V3_Z_AXIS  = {0.0f, 0.0f, 1.0f};

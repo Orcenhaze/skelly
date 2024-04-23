@@ -270,6 +270,55 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
     return result;
 }
 
+struct Hit_Result
+{
+    V3 impact_point;
+    V3 impact_normal;
+    
+    f32 distance; // Distance along line/ray origin or starting point.
+    b32 result;
+};
+
+FUNCTION b32 ray_triangle_intersect(V3 const &a, V3 const &b, 
+                                    V3 const &p1,V3 const &p2, V3 const &p3,
+                                    Hit_Result *hit_out,
+                                    V3 *barycentric_out = NULL)
+{
+    // @Note: From: https://iquilezles.org/articles/hackingintersector/
+    //
+    // Returns whether line pierces the triangle. Also fills Hit_Result and barycentric coords.
+    
+    V3 e1 = p2-p1, e2 = p3-p1, to_a = a-p1;
+    V3 ab = b-a;
+    
+    V3  n = cross(e1, e2);
+    V3  q = cross(to_a, ab);
+    f32 d = 1.0f/dot( n, ab);
+    f32 u =    d*dot(-q, e2);
+    f32 v =    d*dot( q, e1);
+    f32 t =    d*dot(-n, to_a);
+    f32 w = 1.0f - u - v;;
+    
+    V3 barycentric;
+    if ((u < 0.0f) || (v < 0.0f) || ((u+v) > 1.0f) || (t < 0.0f)) {
+        // "t < 0"  to ignore intersections that are behind the ray origin (a1).
+        hit_out->impact_point  = V3_INF;
+        hit_out->impact_normal = V3_ZERO;
+        hit_out->distance      = F32_MAX;
+        hit_out->result        = FALSE;
+        barycentric = {-1.0f, -1.0f, -1.0f};
+    } else {
+        hit_out->impact_point  = a + t * ab;
+        hit_out->impact_normal = n;
+        hit_out->distance      = t;
+        hit_out->result        = TRUE;
+        barycentric = {u, v, w};
+    }
+    
+    if (barycentric_out) *barycentric_out = barycentric;
+    return hit_out->result;
+}
+
 struct Plane
 {
     V3 center;

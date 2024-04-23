@@ -434,8 +434,8 @@ FUNCTION void game_render()
     // Draw lines.
     immediate_begin();
     set_texture(0);
-    immediate_line(a1 - 50.0f*(b1-a1), b1 + 50.0f*(b1-a1), v4(0.8,0.8,0.8,1.0), 0.05f);
-    immediate_line(a2 - 50.0f*(b2-a2), b2 + 50.0f*(b2-a2), v4(0.4,0.4,0.4,1.0), 0.05f);
+    immediate_line(a1 - 50.0f*(b1-a1), b1 + 50.0f*(b1-a1), v4(0.8,0.8,0.8,1.0), 0.035f);
+    immediate_line(a2 - 50.0f*(b2-a2), b2 + 50.0f*(b2-a2), v4(0.4,0.4,0.4,1.0), 0.035f);
     immediate_end();
 #endif
 #if 1
@@ -452,8 +452,8 @@ FUNCTION void game_render()
     // Draw line segments.
     immediate_begin();
     set_texture(0);
-    immediate_line(a1, b1, v4(0.8,0.8,0.8,1.0), 0.05f);
-    immediate_line(a2, b2, v4(0.4,0.4,0.4,1.0), 0.05f);
+    immediate_line(a1, a1 + 50.0f*(b1-a1), v4(0.8,0.8,0.8,1.0), 0.035f);
+    immediate_line(a2, b2, v4(0.4,0.4,0.4,1.0), 0.035f);
     immediate_end();
 #endif
 #if 0
@@ -465,7 +465,7 @@ FUNCTION void game_render()
                          view_to_proj_matrix);
     
     //dist2 = closest_point_line_point(point, a1, b1, NULL, &p1);
-    dist2 = closest_point_segment_point(point, a1, b1, NULL, &p1);
+    //dist2 = closest_point_segment_point(point, a1, b1, NULL, &p1);
     
     immediate_begin();
     set_texture(0);
@@ -482,7 +482,7 @@ FUNCTION void game_render()
     immediate_text(dfont, p_pixel, 3, v4(1), "%f", _sqrt(dist2));
     immediate_end();
 #endif
-#if 1
+#if 0
     //~ line - line and segment segment
     //dist2 = closest_point_line_line(a1, b1, a2, b2, NULL, &p1, NULL, &p2);
     dist2 = closest_point_segment_segment(a1, b1, a2, b2, NULL, &p1, NULL, &p2);
@@ -502,6 +502,50 @@ FUNCTION void game_render()
     immediate_text(dfont, p_pixel, 3, v4(1), "%f", _sqrt(dist2));
     immediate_end();
 #endif
+#if 1
+    //~ line - triangle
+    V3 center = {0, 2, 0};
+    V3 tri1 = center - V3R, tri2 = center + V3R, tri3 = center + 2*V3U;
+    
+    LOCAL_PERSIST Quaternion q = quaternion_identity();
+    q = quaternion_from_axis_angle(V3U, 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
+    tri1 = rotate_point_around_pivot(tri1, center, q);
+    tri2 = rotate_point_around_pivot(tri2, center, q);
+    tri3 = rotate_point_around_pivot(tri3, center, q);
+    
+    Hit_Result hit = {};
+    V3 bary;
+    b32 intersected = ray_triangle_intersect(a1, b1, tri1, tri2, tri3, &hit, &bary);
+    
+    debug_print("Barycentric: %v3\n", bary);
+    
+    // Draw closest vector.
+    immediate_begin(TRUE);
+    set_texture(0);
+    immediate_triangle(tri1, tri2, tri3, v4(1));
+    immediate_end();
+    
+    // Draw hit result stuff.
+    V4 color = intersected? v4(0,1,0,1) : v4(1,0,0,1);
+    immediate_begin();
+    set_texture(0);
+    immediate_cube(a1, 0.05f, color);
+    immediate_cube(hit.impact_point, 0.035f, color);
+    immediate_arrow(hit.impact_point, hit.impact_normal, 1.0f, v4(0,0,1,1), 0.01f);
+    immediate_end();
+    
+    // Draw distance as text.
+    if (hit.result) {
+        immediate_begin();
+        d3d11_clear_depth();
+        set_texture(&dfont.atlas);
+        is_using_pixel_coords = TRUE;
+        V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(a1, 0.5f, hit.impact_point)));
+        immediate_text(dfont, p_pixel, 3, color, "%f", hit.distance);
+        immediate_end();
+    }
+#endif
+    
 #endif
     
     // Render all entities.
