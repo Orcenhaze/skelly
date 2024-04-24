@@ -33,7 +33,7 @@ transform the FIRST shape from collision-space to local-space of SECOND shape.
 function does if it isn't obvious AND also refer to resources that explain things better.
 
 TODO:
-[] Rays are redundant, we can just use segments; we usually limit max t-value for rays anyway. Get rid of all occurances of rays. @Note: Replace ray logic with segment logic.
+[] Replace all ray occurances with segments. Replace logic to REFUSE t-values that go beyond end point.
 [] Traces for lines, boxes, spheres, and capsules.
 [] Make Hit_Result ALWAYS return things in world-space (kinda tricky atm).
 
@@ -384,6 +384,7 @@ enum Collision_Shape_Type
 {
     CollisionShapeType_BOX,
     CollisionShapeType_SPHERE,
+    CollisionShapeType_CAPSULE,
 };
 
 struct Collision_Shape
@@ -398,12 +399,21 @@ struct Collision_Shape
         struct
         {
             V3 half_extents;
-        }; // Box.
+        }; // Box
         
         struct
         {
             f32 radius;
         }; // Sphere
+        
+        struct
+        {
+            f32 radius;
+            
+            // Distance (in local-space) from the center of the capsule to the tip of the capsule.
+            // (half_height - radius) gives you the "half axis height" that you can use to calculate the center of the upper and lower spheres/caps,
+            f32 half_height;
+        }; // Capsule
     };
     
     Collision_Shape_Type type;
@@ -411,31 +421,51 @@ struct Collision_Shape
 
 FUNCTION inline Collision_Shape make_aabb(V3 const &center, V3 const &half_extents)
 {
+    // To avoid division by zero.
+    V3 half_ext         = max_v3(half_extents, v3(KINDA_SMALL_NUMBER));
     Collision_Shape result;
     result.rotation     = quaternion_identity();
     result.center       = center;
-    result.half_extents = abs(half_extents);
+    result.half_extents = half_ext;
     result.type         = CollisionShapeType_BOX;
     return result;
 }
 
 FUNCTION inline Collision_Shape make_obb(V3 const &center, V3 const &half_extents, Quaternion const &rotation)
 {
+    // To avoid division by zero.
+    V3 half_ext         = max_v3(half_extents, v3(KINDA_SMALL_NUMBER));
     Collision_Shape result;
     result.rotation     = rotation;
     result.center       = center;
-    result.half_extents = abs(half_extents);
+    result.half_extents = half_ext;
     result.type         = CollisionShapeType_BOX;
     return result;
 }
 
 FUNCTION inline Collision_Shape make_sphere(V3 const &center, f32 radius)
 {
+    // To avoid division by zero.
+    radius              = MAX(radius, KINDA_SMALL_NUMBER);
     Collision_Shape result;
     result.rotation     = quaternion_identity();
     result.center       = center;
     result.radius       = radius;
     result.type         = CollisionShapeType_SPHERE;
+    return result;
+}
+
+FUNCTION inline Collision_Shape make_capsule(V3 const &center, f32 radius, f32 half_height, Quaternion const &rotation)
+{
+    // To avoid division by zero.
+    radius              = MAX(radius, KINDA_SMALL_NUMBER);
+    half_height         = MAX3(KINDA_SMALL_NUMBER, radius, half_height);
+    Collision_Shape result;
+    result.rotation     = rotation;
+    result.center       = center;
+    result.radius       = radius;
+    result.half_height  = half_height;
+    result.type         = CollisionShapeType_CAPSULE;
     return result;
 }
 
@@ -449,6 +479,7 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
     
     ASSERT(box.type == CollisionShapeType_BOX);
     
+    // We don't need to normalize the direction here.
     V3 o = a;
     V3 d = b-a;
     
@@ -459,7 +490,8 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
     
     // Transform ray to local space of box.
     //
-    if (box.rotation.w == 1.0f) {
+    b32 is_aabb = equal(ABS(box.rotation.w), 1.0f);
+    if (is_aabb) {
         // Box is an AABB.
         o = o - box.center;
     } else {
@@ -507,7 +539,7 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
         
         // Transform the hit point and normal back to original collision-space.
         //
-        if (box.rotation.w == 1.0f) {
+        if (is_aabb) {
             // Box is an AABB.
             p = p + box.center;
         } else {
@@ -556,24 +588,21 @@ FUNCTION b32 ray_sphere_intersect(V3 const &a, V3 const &b,
         // We're not hitting the sphere.
         return FALSE;
     } else {
-        // Calculate distance to entry and exit point of ray intersection with the sphere.
+        // Calculate distance to entry and exit points of ray intersection with the sphere.
         f32 x  = _sqrt(r2 - y2);
-        f32 t0 = tc - x;
-        f32 t1 = tc + x;
+        f32 t0 = tc - x; // A.k.a. t_min
+        f32 t1 = tc + x; // A.k.a. t_max
         
         // @Sanity:
         if (t0 > t1)
             SWAP(t0, t1, f32);
         
-        // t0 and t1 negative? then both are behind ray origin, 
-        
-        // If t0 is negative, then it's behind ray origin. But t1 could still be in front, which would mean ray origin is _inside_
-        // the sphere.
-        // If both t0 and t1 are negative, the both intersection points are behind the ray origin.
         if (t0 < 0.0f) {
+            // Entry point is behind ray origin, but t1 could still be in front. 
+            // This would mean ray origin is _inside_ the sphere.
             t0 = t1;
             if (t0 < 0.0f) {
-                // The intersection is behind the ray origin.
+                // Both entry and exit points are behind the ray origin.
                 return FALSE;
             }
         }
@@ -586,6 +615,80 @@ FUNCTION b32 ray_sphere_intersect(V3 const &a, V3 const &b,
     }
 }
 
+FUNCTION b32 ray_capsule_intersect(V3 const &a, V3 const &b, 
+                                   Collision_Shape const &capsule,
+                                   Hit_Result *hit_out)
+{
+    // @Note: Inigo Quilez: https://iquilezles.org/articles/intersectors/
+    //
+    // Returns whether ray pierces capsule. Also fills Hit_Result.
+    
+    ASSERT(capsule.type == CollisionShapeType_CAPSULE);
+    
+    V3 o = a;
+    V3 d = normalize_or_zero(b-a);
+    
+    ASSERT(nearly_zero(dot(d, d)) == FALSE);
+    
+    // Init hit result.
+    *hit_out = make_hit_result();
+    
+    // Calculate the capsule axis points, i.e., the center of the upper and lower spheres/caps in capsule's local space, and transform them to collision-space.
+    f32 ra   = capsule.radius;
+    V3 pa    = (capsule.rotation * -V3_UP*(capsule.half_height-ra)) + capsule.center;
+    V3 pb    = (capsule.rotation *  V3_UP*(capsule.half_height-ra)) + capsule.center;
+    
+    V3  ba   = pb - pa;
+    V3  oa   = o - pa;
+    f32 baba = dot(ba, ba);
+    f32 bard = dot(ba,  d);
+    f32 baoa = dot(ba, oa);
+    f32 rdoa = dot( d, oa);
+    f32 oaoa = dot(oa, oa);
+    f32 a1   = baba      - bard*bard;
+    f32 b1   = baba*rdoa - baoa*bard;
+    f32 c    = baba*oaoa - baoa*baoa - ra*ra*baba;
+    f32 h    = b1*b1 - a1*c;
+    if(h >= 0.0f)
+    {
+        f32 t = (-b1 - _sqrt(h)) / a1;
+        f32 y = baoa + t*bard;
+        
+        if((y > 0.0f && y < baba) == FALSE) {
+            // Didn't hit body, let's check if we hit the caps.
+            V3 oc = (y <= 0.0)? oa : o - pb;
+            b1    = dot( d, oc);
+            c     = dot(oc, oc) - ra*ra;
+            h     = b1*b1 - c;
+            if(h > 0.0f)
+                t = -b1 - _sqrt(h);  // We hit the caps, update t-value.
+            else
+                return FALSE;        // We hit nothing.
+        }
+        
+        // @Todo: We don't care about this now, but it might be useful to know how to calculate "t_max",
+        // i.e., the distance to the _exit_ point of the intersection.
+        
+        // The hit was behind us.
+        if (t < 0.0f) return FALSE;
+        
+        // Impact point.
+        V3 p = o + t * d;
+        
+        // Calculate impact normal.
+        V3  pap = p - pa;
+        f32 h   = CLAMP01(dot(pap,ba) / dot(ba,ba));
+        V3 n    = (pap - h*ba) / ra;
+        
+        hit_out->impact_point  = p;
+        hit_out->impact_normal = n;
+        hit_out->distance      = t;
+        hit_out->result        = TRUE;
+        return TRUE;
+    }
+    
+    return FALSE;
+}
 
 struct Plane
 {
