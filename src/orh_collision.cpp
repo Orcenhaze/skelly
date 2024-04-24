@@ -4,27 +4,38 @@ REVISION HISTORY:
 
 NOTE:
  * Things you pass to collision functions are assumed to be in the same "space" or "coordinate system",
-and so all the Hit_Result info and distances that will be returned will be in said coordinate system.
+and so all the Hit_Result info and distances returned will be in said coordinate system.
 
- Let's say you did the tests in some mesh object-space. The distances returned by our routines won't
- always represent the distances in world-space because you may have applied some scaling when transforming
-points and directions from world-space to object-space. Solution:
+Let's give this coordinate system a name: the "collision-space".
+
+This collision-space could simply be the world space OR it could be the mesh object-space OR whatever.
+
+An important thing to note is that most of the time, the user cares about values in world-space.
+But let's say you did the tests in some mesh object-space, i.e., the "collision-space" here is the mesh 
+object-space, the distances returned by our routines WON'T represent the distances in world-space 
+ because you may have applied some scaling when transforming points and directions from world-space to
+ object-space. Solution:
 - If you know the scale you applied is uniform, you can simply multiply the returned distances by the
- scale factor to convert it back to world-space distance. 
+ scale factor to convert it back to world-space distance. Then re-measure points using new distance.
 - For non-uniform scaling it's trickier; probably the best way is to transform the intersection point 
 back to world-space and then re-measure the distance in world-space.
 
-This is a general explanation, of course... but really, you usually have a "center" point somewhere
-in the "original" space before you transformed it to the desired space. Well, our functions return
- intersection points in desired space, so you can just transform those points back to original space
- and re-measure the distance using the original "center" point.
+ Maybe we could implement higher-level functions that just lets user pass everything in world space and
+do things automatically for him.
+
+* The second collision shape we pass to functions (the one on the right by convention), is the shape we
+ test _against_.
+ Both shapes, as we said before, must be in collision-space and if necessary (not for all tests) we
+transform the FIRST shape from collision-space to local-space of SECOND shape.
 
 * Variables in implementation look cryptic (I know it sucks), but the algorithms involve many operations
  and having descriptive names for stuff would be kinda "chaotic". So, I _try_ to explain what each 
 function does if it isn't obvious AND also refer to resources that explain things better.
 
 TODO:
+[] Rays are redundant, we can just use segments; we usually limit max t-value for rays anyway. Get rid of all occurances of rays. @Note: Replace ray logic with segment logic.
 [] Traces for lines, boxes, spheres, and capsules.
+[] Make Hit_Result ALWAYS return things in world-space (kinda tricky atm).
 
 */
 
@@ -272,12 +283,62 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
 
 struct Hit_Result
 {
+    // @Note: At the moment, all the values here are in collision-space, which is NOT world-space necessarily.
+    
+    // The point on the surface of the second shape (the one we are testing against)
+    // on which the collision occured.
+    // If no collision occured, this will be a zero vector.
     V3 impact_point;
+    
+    // The normal vector of the surface of the second shape (the one we are testing against)
+    // on which the collision occured.
+    // If no collision occured, this will be a zero vector.
     V3 impact_normal;
     
-    f32 distance; // Distance along line/ray origin or starting point.
-    b32 result;
+    // @Todo: Add something that would help shapes in collision to resolve their collision like
+    // delta_position or "penetration_depth + location and normal". 
+    //
+    // Be AWARE however, that those values will be in collision-space and won't be correct
+    // if the user moved the shapes from world-space to collision-space using any type of scaling 
+    // (uniform or non-uniform), so we must also account for that.
+    
+    // @Todo: Traces:
+    //V3 trace_start;
+    //V3 trace_end;
+    
+    // The center of the traced shape when collision occured.
+    // Equivalent to impact_point when using line traces or ray-intersection tests.
+    //V3 location;
+    
+    // The vector from impact_point to location. We move along this vector by "penetration_depth" amount
+    // in order to "resolve" the collision.
+    // This normal value is equivalent to impact_normal when using line traces or ray-intersection tests.
+    //V3 normal;
+    
+    // This is for traces only. The value is in range [0, 1].
+    // It indicates the percentage from trace_start to trace_end we moved until collision occured.
+    // When the value is 1, it most likey means there was no collision and we were able to traverse 100%
+    // of the trace direction.
+    //f32 time;
+    
+    // @Todo: Get rid of this, it's redundant. Get rid of all occurances of rays,
+    // This is for rays only. The value is in range [0, INF].
+    // Distance (in units) from ray origin to the impact_point IFF we hit something.
+    f32 distance;
+    
+    // @Todo: Could add distance2 in the future since some functions could have multiple impact points
+    // like ray-box and ray-sphere intersections.
+    
+    // True if we intersect, false otherwise.
+    u8 result;
 };
+
+FUNCTION inline Hit_Result make_hit_result()
+{
+    Hit_Result result = {};
+    //result.time = 1.0f; // Assume there was no collision.
+    return result;
+}
 
 FUNCTION b32 ray_triangle_intersect(V3 const &a, V3 const &b, 
                                     V3 const &p1,V3 const &p2, V3 const &p3,
@@ -287,6 +348,9 @@ FUNCTION b32 ray_triangle_intersect(V3 const &a, V3 const &b,
     // @Note: From: https://iquilezles.org/articles/hackingintersector/
     //
     // Returns whether ray pierces the triangle. Also fills Hit_Result and barycentric coords.
+    
+    // Init hit result.
+    *hit_out = make_hit_result();
     
     V3 e1 = p2-p1, e2 = p3-p1, to_a = a-p1;
     V3 ab = b-a;
@@ -301,34 +365,31 @@ FUNCTION b32 ray_triangle_intersect(V3 const &a, V3 const &b,
     f32 t =    d*dot(-n, to_a);
     f32 w = 1.0f - u - v;;
     
-    V3 barycentric;
     if ((u < 0.0f) || (v < 0.0f) || ((u+v) > 1.0f) || (t < 0.0f)) {
         // "t < 0"  to ignore intersections that are behind the ray origin (a1).
-        hit_out->impact_point  = V3_INF;
-        hit_out->impact_normal = V3_ZERO;
-        hit_out->distance      = F32_MAX;
-        hit_out->result        = FALSE;
-        barycentric = {-1.0f, -1.0f, -1.0f};
+        if (barycentric_out) *barycentric_out = {-1.0f, -1.0f, -1.0f};
+        return FALSE;
     } else {
         hit_out->impact_point  = a + t * ab;
         hit_out->impact_normal = n;
         hit_out->distance      = t;
         hit_out->result        = TRUE;
-        barycentric = {u, v, w};
+        if (barycentric_out) *barycentric_out = {u, v, w};
+        return TRUE;
     }
-    
-    if (barycentric_out) *barycentric_out = barycentric;
-    return hit_out->result;
 }
 
 
 enum Collision_Shape_Type
 {
     CollisionShapeType_BOX,
+    CollisionShapeType_SPHERE,
 };
 
 struct Collision_Shape
 {
+    // These define our shape local_space_to_collision_space_matrix. 
+    // Read first note in the beginning of file to know what that means.
     Quaternion rotation;
     V3         center;
     
@@ -338,6 +399,11 @@ struct Collision_Shape
         {
             V3 half_extents;
         }; // Box.
+        
+        struct
+        {
+            f32 radius;
+        }; // Sphere
     };
     
     Collision_Shape_Type type;
@@ -363,6 +429,16 @@ FUNCTION inline Collision_Shape make_obb(V3 const &center, V3 const &half_extent
     return result;
 }
 
+FUNCTION inline Collision_Shape make_sphere(V3 const &center, f32 radius)
+{
+    Collision_Shape result;
+    result.rotation     = quaternion_identity();
+    result.center       = center;
+    result.radius       = radius;
+    result.type         = CollisionShapeType_SPHERE;
+    return result;
+}
+
 FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b, 
                                Collision_Shape const &box,
                                Hit_Result *hit_out)
@@ -377,6 +453,9 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
     V3 d = b-a;
     
     ASSERT(nearly_zero(dot(d, d)) == FALSE);
+    
+    // Init hit result.
+    *hit_out = make_hit_result();
     
     // Transform ray to local space of box.
     //
@@ -414,10 +493,7 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
     
     if ((t_min < 0.0f) || (t_min > t_max)) {
         // Ignore collisions that are behind us, i.e. (t_min < 0.0f).
-        hit_out->impact_point  = V3_INF;
-        hit_out->impact_normal = V3_ZERO;
-        hit_out->distance      = F32_MAX;
-        hit_out->result        = FALSE;
+        return FALSE;
     } else {
         // Hit point.
         V3 p = o + t_min * d;
@@ -429,7 +505,7 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
         V3 n       = {};
         n.I[max_i] = (f32)SIGN(pn.I[max_i]);
         
-        // Transform the hit point and normal back to original space.
+        // Transform the hit point and normal back to original collision-space.
         //
         if (box.rotation.w == 1.0f) {
             // Box is an AABB.
@@ -446,9 +522,68 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
         hit_out->impact_normal = n;
         hit_out->distance      = t_min;
         hit_out->result        = TRUE;
+        return TRUE;
     }
+}
+
+FUNCTION b32 ray_sphere_intersect(V3 const &a, V3 const &b, 
+                                  Collision_Shape const &sphere,
+                                  Hit_Result *hit_out)
+{
+    // @Note: Read ScratchPixel's article about ray-sphere intersection.
+    // Or watch this video: https://www.youtube.com/watch?v=HFPlKQGChpE
+    // 
+    // Returns whether ray pierces the sphere. Also fills Hit_Result.
+    //
+    // No need to transform ray to local space of sphere as long as both are in 
+    // the same collision-space.
     
-    return hit_out->result;
+    ASSERT(sphere.type == CollisionShapeType_SPHERE);
+    
+    V3 o = a;
+    V3 d = normalize_or_zero(b-a);
+    
+    ASSERT(nearly_zero(dot(d, d)) == FALSE);
+    
+    // Init hit result.
+    *hit_out = make_hit_result();
+    
+    V3 oc  = sphere.center - o;
+    f32 tc = dot(oc, d);
+    f32 y2 = dot(oc, oc) - tc*tc;
+    f32 r2 = sphere.radius * sphere.radius;
+    if (y2 > r2) {
+        // We're not hitting the sphere.
+        return FALSE;
+    } else {
+        // Calculate distance to entry and exit point of ray intersection with the sphere.
+        f32 x  = _sqrt(r2 - y2);
+        f32 t0 = tc - x;
+        f32 t1 = tc + x;
+        
+        // @Sanity:
+        if (t0 > t1)
+            SWAP(t0, t1, f32);
+        
+        // t0 and t1 negative? then both are behind ray origin, 
+        
+        // If t0 is negative, then it's behind ray origin. But t1 could still be in front, which would mean ray origin is _inside_
+        // the sphere.
+        // If both t0 and t1 are negative, the both intersection points are behind the ray origin.
+        if (t0 < 0.0f) {
+            t0 = t1;
+            if (t0 < 0.0f) {
+                // The intersection is behind the ray origin.
+                return FALSE;
+            }
+        }
+        
+        hit_out->impact_point  = o + t0 * d;
+        hit_out->impact_normal = normalize_or_zero(hit_out->impact_point - sphere.center);
+        hit_out->distance      = t0;
+        hit_out->result        = TRUE;
+        return TRUE;
+    }
 }
 
 

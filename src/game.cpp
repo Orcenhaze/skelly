@@ -543,9 +543,8 @@ FUNCTION void game_render()
         immediate_end();
     }
 #endif
-#if 1
+#if 0
     //~ ray - box
-    
     
     LOCAL_PERSIST Quaternion q = quaternion_identity();
     q = quaternion_from_axis_angle(normalize(v3(1, 1, 0)), 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
@@ -584,6 +583,41 @@ FUNCTION void game_render()
         immediate_end();
     }
 #endif
+#if 1
+    //~ ray - sphere
+    Collision_Shape sphere = make_sphere({-3.0f, 2.0f, -2.0f}, 0.5f);
+    
+    Hit_Result hit = {};
+    ray_sphere_intersect(a1, b1, sphere, &hit);
+    
+    // Draw sphere.
+    immediate_begin();
+    set_texture(0);
+    immediate_sphere(sphere.center, sphere.radius, quaternion_identity(), v4(1), 16);
+    immediate_end();
+    
+    // Draw hit result stuff.
+    V4 color = hit.result? v4(0,1,0,1) : v4(1,0,0,1);
+    immediate_begin();
+    set_texture(0);
+    immediate_cube(a1, 0.02f, color);
+    immediate_cube(hit.impact_point, 0.01f, color);
+    immediate_arrow(hit.impact_point, hit.impact_normal, 1.0f, v4(0,0,1,1), 0.01f);
+    immediate_arrow(hit.impact_point, reflect(normalize(b1-a1), hit.impact_normal), 1.0f, v4(1,0,1,1), 0.01f);
+    immediate_end();
+    
+    // Draw distance as text.
+    if (hit.result) {
+        immediate_begin();
+        d3d11_clear_depth();
+        set_texture(&dfont.atlas);
+        is_using_pixel_coords = TRUE;
+        V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(a1, 0.5f, hit.impact_point)));
+        immediate_text(dfont, p_pixel, 3, color, "%f", hit.distance);
+        immediate_end();
+    }
+#endif
+    
     
 #endif
     
