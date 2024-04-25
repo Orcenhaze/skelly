@@ -34,7 +34,9 @@ function does if it isn't obvious AND also refer to resources that explain thing
 
 TODO:
 [] Replace all ray occurances with segments. Replace logic to REFUSE t-values that go beyond end point.
-[] Traces for lines, boxes, spheres, and capsules.
+[] Implement fast_segment_aabb_intersect() that only returns bool.
+[] Traces for lines, boxes, spheres, and capsules. Note that for traces, there's this concept of being
+ _already_ in collision before trace starts where you can return early.
 [] Make Hit_Result ALWAYS return things in world-space (kinda tricky atm).
 
 */
@@ -312,7 +314,7 @@ struct Hit_Result
     
     // The vector from impact_point to location. We move along this vector by "penetration_depth" amount
     // in order to "resolve" the collision.
-    // This normal value is equivalent to impact_normal when using line traces or ray-intersection tests.
+    // It is calculated for spheres and capsules only, otherwise it will be the same as impact_normal.
     //V3 normal;
     
     // This is for traces only. The value is in range [0, 1].
@@ -421,7 +423,7 @@ struct Collision_Shape
 
 FUNCTION inline Collision_Shape make_aabb(V3 const &center, V3 const &half_extents)
 {
-    // To avoid division by zero.
+    // To avoid weird errors like division by zero and such.
     V3 half_ext         = max_v3(half_extents, v3(KINDA_SMALL_NUMBER));
     Collision_Shape result;
     result.rotation     = quaternion_identity();
@@ -433,7 +435,6 @@ FUNCTION inline Collision_Shape make_aabb(V3 const &center, V3 const &half_exten
 
 FUNCTION inline Collision_Shape make_obb(V3 const &center, V3 const &half_extents, Quaternion const &rotation)
 {
-    // To avoid division by zero.
     V3 half_ext         = max_v3(half_extents, v3(KINDA_SMALL_NUMBER));
     Collision_Shape result;
     result.rotation     = rotation;
@@ -445,7 +446,6 @@ FUNCTION inline Collision_Shape make_obb(V3 const &center, V3 const &half_extent
 
 FUNCTION inline Collision_Shape make_sphere(V3 const &center, f32 radius)
 {
-    // To avoid division by zero.
     radius              = MAX(radius, KINDA_SMALL_NUMBER);
     Collision_Shape result;
     result.rotation     = quaternion_identity();
@@ -457,7 +457,6 @@ FUNCTION inline Collision_Shape make_sphere(V3 const &center, f32 radius)
 
 FUNCTION inline Collision_Shape make_capsule(V3 const &center, f32 radius, f32 half_height, Quaternion const &rotation)
 {
-    // To avoid division by zero.
     radius              = MAX(radius, KINDA_SMALL_NUMBER);
     half_height         = MAX3(KINDA_SMALL_NUMBER, radius, half_height);
     Collision_Shape result;
@@ -688,6 +687,246 @@ FUNCTION b32 ray_capsule_intersect(V3 const &a, V3 const &b,
     }
     
     return FALSE;
+}
+
+
+FUNCTION b32 sat_interval_overlap_test(Range a, Range b, V3 const &axis, V3 *normal, f32 *penetration_depth)
+{
+    // @Note: 
+    //
+    // Returns whether the intervals are overlapping. Also fills the normal and penetration_depth.
+    //
+    // All our SAT axes are positive, because negative axes will give us the same 
+    // shadow interval... So we won't test them twice. 
+    // However, for obtaining the Minimum Translation Vector (MTV), we need to differentiate
+    // between negative and positive axes to know the direction in which the offset applies when
+    // resolving the overlap. For that, there are two cases that we need to check for:
+    //
+    //
+    // Case 1: A<--B (Negative axis)
+    //
+    // min      A      max
+    //  +---------------+
+    //          +---------------+
+    //                   B
+    //
+    // Case 2: B-->A (Positive axis)
+    //
+    // min      B      max
+    //  +---------------+
+    //          +---------------+
+    //                   A
+    
+    // @Sanity:
+    if(a.min > a.max) {SWAP(a.min, a.max, f32);}
+    if(b.min > b.max) {SWAP(b.min, b.max, f32);}
+    
+    // Case 1.
+    if(a.min <= b.min && a.max >= b.min) {
+        *penetration_depth = a.max - b.min;
+        *normal            = -axis;
+        return TRUE;
+    }
+    
+    // Case 2.
+    if(b.min <= a.min && b.max >= a.min) {
+        *penetration_depth = b.max - a.min;
+        *normal            = axis;
+        return TRUE;
+    }
+    
+    *penetration_depth = {};
+    *normal            = {};
+    return FALSE;
+}
+
+FUNCTION Range sat_get_box_shadow_interval(Collision_Shape const &box, V3 const axis)
+{
+    ASSERT(box.type == CollisionShapeType_BOX);
+    
+    // Local box axes.
+    V3 x  = box.rotation * V3_X_AXIS;
+    V3 y  = box.rotation * V3_Y_AXIS;
+    V3 z  = box.rotation * V3_Z_AXIS;
+    
+    // Projection of extents along local axes onto the axis we are testing.
+    f32 xe_proj = dot(x*box.half_extents.x, axis);
+    f32 ye_proj = dot(y*box.half_extents.y, axis);
+    f32 ze_proj = dot(z*box.half_extents.z, axis);
+    f32 ce_proj = dot(box.center, axis);
+    
+    Range result =
+    {
+        ce_proj - xe_proj - ye_proj - ze_proj,
+        ce_proj + xe_proj + ye_proj + ze_proj,
+    };
+    return result;
+}
+
+FUNCTION f32 closest_point_box_point(V3 const &c, Collision_Shape const &box, V3 *p_out)
+{
+    // @Note:
+    //
+    // Returns _squared_ distance between c (point outside) and closest point on box.
+    //
+    // To obtain closest point on box, we simply clamp c to extents of box.
+    // If we are dealing with an OBB, we transform c to local space of OBB and do same thing.
+    //
+    // If c is inside the box, we will return c itself.
+    
+    ASSERT(box.type == CollisionShapeType_BOX);
+    
+    b32 is_aabb = equal(ABS(box.rotation.w), 1.0f);
+    
+    V3 o = c;
+    if (is_aabb) {
+        // Box is an AABB.
+        o = o - box.center;
+    } else {
+        // Box is an OBB.
+        V3 xaxis = box.rotation * V3_X_AXIS;
+        V3 yaxis = box.rotation * V3_Y_AXIS;
+        V3 zaxis = box.rotation * V3_Z_AXIS;
+        M4x4 to_obb_matrix =
+        {
+            xaxis.x, xaxis.y, xaxis.z, -dot(xaxis, box.center),
+            yaxis.x, yaxis.y, yaxis.z, -dot(yaxis, box.center),
+            zaxis.x, zaxis.y, zaxis.z, -dot(zaxis, box.center),
+            0.0f, 0.0f, 0.0f, 1.0f
+        };
+        
+        o = transform_point(to_obb_matrix, o);
+    }
+    
+    V3 p = clamp(-box.half_extents, o, box.half_extents);
+    
+    // Transform closest point back to original collision-space.
+    if (is_aabb) {
+        p = p + box.center;
+    } else {
+        // @Speed: Is there a faster way to do this transform?
+        M4x4 to_orig_matrix = m4x4_from_translation_rotation_scale(box.center, box.rotation, v3(1));
+        p = transform_point (to_orig_matrix, p);
+    }
+    
+    if (p_out) *p_out = p;
+    f32 result = length2(c - p);
+    return result;
+}
+
+FUNCTION b32 box_box_intersect(Collision_Shape const &box1, Collision_Shape const &box2, Hit_Result *hit_out)
+{
+    // @Note:
+    //
+    // Returns whether the two boxes overlap. And also fill out the Hit_Result.
+    //
+    // We will use the Separating Axis Theorem (SAT) to determine whether boxes overlap, while also 
+    // calculating the Minimum Translation Vector (MTV) for resolving the collision.
+    //
+    // If both boxes are aligned with world axes (AABBs), we only have 3 axes to test; the world axes.
+    // If one (or both) of them is an OBB, we will have 15 axes to test in total. Namely, the 3 local
+    // axes of box1, the 3 local axes of box2, and the permutations of the previous axes (which are 9).
+    
+    // @Cleanup:
+    // @Cleanup:
+    // @Speed:
+    // @Speed: No need to rotate world axes by identity...
+    // @Todo: Pull out get shadow interval into something better.
+    
+    ASSERT(box1.type == CollisionShapeType_BOX);
+    ASSERT(box2.type == CollisionShapeType_BOX);
+    
+    // Init hit result.
+    *hit_out = make_hit_result();
+    
+    b32 box1_is_aabb = equal(ABS(box1.rotation.w), 1.0f);
+    b32 box2_is_aabb = equal(ABS(box2.rotation.w), 1.0f);
+    
+    // These represent the Minimum Translation Vector (MTV).
+    f32 best_penetration_depth = F32_MAX;
+    V3  best_normal            = {};
+    if (box1_is_aabb && box2_is_aabb) {
+        // We only have 3 axes to test. The world axes.
+        debug_print("AABB\n");
+        // Test world axes.
+        for (s32 i = 0; i < 3; i++) {
+            V3 axis       = {};
+            axis.I[i]     = 1.0f;
+            Range shadow1 = sat_get_box_shadow_interval(box1, axis);
+            Range shadow2 = sat_get_box_shadow_interval(box2, axis);
+            f32 pen_depth;
+            V3 normal;
+            if (sat_interval_overlap_test(shadow1, shadow2, axis, &normal, &pen_depth) == FALSE)
+                return FALSE; // Early out.
+            if (pen_depth < best_penetration_depth) {
+                best_penetration_depth = pen_depth;
+                best_normal            = normal;
+            }
+        }
+    } else {
+        // We have 15 axes to test.
+        debug_print("OBB\n");
+        // Test the 3 axes of box1.
+        V3 box1_axes[3] = {box1.rotation * V3_X_AXIS, box1.rotation * V3_Y_AXIS, box1.rotation * V3_Z_AXIS};
+        for (s32 i = 0; i < 3; i++) {
+            V3 axis       = box1_axes[i];
+            Range shadow1 = sat_get_box_shadow_interval(box1, axis);
+            Range shadow2 = sat_get_box_shadow_interval(box2, axis);
+            f32 pen_depth;
+            V3 normal;
+            if (sat_interval_overlap_test(shadow1, shadow2, axis, &normal, &pen_depth) == FALSE)
+                return FALSE; // Early out.
+            if (pen_depth < best_penetration_depth) {
+                best_penetration_depth = pen_depth;
+                best_normal            = normal;
+            }
+        }
+        
+        // Test the 3 axes of box2.
+        V3 box2_axes[3] = {box2.rotation * V3_X_AXIS, box2.rotation * V3_Y_AXIS, box2.rotation * V3_Z_AXIS};
+        for (s32 i = 0; i < 3; i++) {
+            V3 axis       = box2_axes[i];
+            Range shadow1 = sat_get_box_shadow_interval(box1, axis);
+            Range shadow2 = sat_get_box_shadow_interval(box2, axis);
+            f32 pen_depth;
+            V3 normal;
+            if (sat_interval_overlap_test(shadow1, shadow2, axis, &normal, &pen_depth) == FALSE)
+                return FALSE; // Early out.
+            if (pen_depth < best_penetration_depth) {
+                best_penetration_depth = pen_depth;
+                best_normal            = normal;
+            }
+        }
+        
+        // Permutations of axes of box1 and box2.
+        for (s32 i = 0; i < 3; i++) {
+            for (s32 j = 0; j < 3; j++) {
+                V3 axis       = normalize(cross(box1_axes[i], box2_axes[j]));
+                if (nearly_zero(axis))
+                    continue;
+                Range shadow1 = sat_get_box_shadow_interval(box1, axis);
+                Range shadow2 = sat_get_box_shadow_interval(box2, axis);
+                f32 pen_depth;
+                V3 normal;
+                if (sat_interval_overlap_test(shadow1, shadow2, axis, &normal, &pen_depth) == FALSE)
+                    return FALSE; // Early out.
+                if (pen_depth < best_penetration_depth) {
+                    best_penetration_depth = pen_depth;
+                    best_normal            = normal;
+                }
+            }
+        }
+    }
+    
+    // This is the "resolved" center of box1.
+    V3 location = box1.center + best_normal*best_penetration_depth;
+    V3 closest_point;
+    closest_point_box_point(location, box2, &closest_point);
+    
+    hit_out->impact_point  = closest_point;
+    hit_out->impact_normal = best_normal;
+    hit_out->result        = TRUE;
+    return TRUE;
 }
 
 struct Plane

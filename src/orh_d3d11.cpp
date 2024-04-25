@@ -1291,23 +1291,27 @@ FUNCTION void immediate_box(V3 const &center, V3 const &half_extents, Quaternion
 {
     // @Note: p0 to p3: back | p4 to p7: front | CCW.
     
-    V3 r  = rotation * V3_X_AXIS; // Right vector.
-    V3 u  = rotation * V3_Y_AXIS; // Up vector.
-    V3 z  = rotation * V3_Z_AXIS; // Z-axis vector.
-    V3 rx = r*half_extents.x;
-    V3 uy = u*half_extents.y;
-    V3 zz = z*half_extents.z;
-    V3 p0 = center - rx - uy - zz;
-    rx   *= 2.0f;
-    uy   *= 2.0f;
-    zz   *= 2.0f;
-    V3 p1 = p0 + rx;
-    V3 p2 = p1 + uy;
-    V3 p3 = p0 + uy;
-    V3 p4 = p0 + zz;
-    V3 p5 = p4 + rx;
-    V3 p6 = p5 + uy;
-    V3 p7 = p4 + uy;
+    // Local box axes.
+    V3 x  = rotation * V3_X_AXIS;
+    V3 y  = rotation * V3_Y_AXIS;
+    V3 z  = rotation * V3_Z_AXIS;
+    
+    // Extents along local axes.
+    V3 xe = x*half_extents.x;
+    V3 ye = y*half_extents.y;
+    V3 ze = z*half_extents.z;
+    
+    V3 p0 = center - xe - ye - ze;
+    xe   *= 2.0f;
+    ye   *= 2.0f;
+    ze   *= 2.0f;
+    V3 p1 = p0 + xe;
+    V3 p2 = p1 + ye;
+    V3 p3 = p0 + ye;
+    V3 p4 = p0 + ze;
+    V3 p5 = p4 + xe;
+    V3 p6 = p5 + ye;
+    V3 p7 = p4 + ye;
     
     immediate_hexahedron(p0, p1, p2, p3, p4, p5, p6, p7, color);
 }

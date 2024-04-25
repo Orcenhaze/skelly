@@ -9,7 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
-0.90 - added frame vs. tick dt and time. Added V3_INF. Added abs() for V2 and V3.
+0.90 - added frame vs. tick dt and time. Added V3_INF. Added abs() for V2 and V3. added sign().
 0.89 - added str8_contains(). Fixed quaternion_from_euler(). Added equal() for nearly equal comparison. Added rotate_towards().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
@@ -680,6 +680,8 @@ FUNCDEF inline V2 ceil(V2 const &v);
 FUNCDEF inline V3 ceil(V3 const &v);
 FUNCDEF inline V2 abs(V2 const &v);
 FUNCDEF inline V3 abs(V3 const &v);
+FUNCDEF inline V2 sign(V2 const &v);
+FUNCDEF inline V3 sign(V3 const &v);
 
 FUNCDEF inline f32 frac(f32 x); // Output in range [0, 1]
 FUNCDEF inline V2  frac(V2 v);
@@ -2515,6 +2517,21 @@ FUNCDEF inline V3 abs(V3 const &v)
     result.x  = ABS(v.x);
     result.y  = ABS(v.y);
     result.z  = ABS(v.z);
+    return result;
+}
+FUNCDEF inline V2 sign(V2 const &v)
+{
+    V2 result = {};
+    result.x  = (f32)SIGN(v.x);
+    result.y  = (f32)SIGN(v.y);
+    return result;
+}
+FUNCDEF inline V3 sign(V3 const &v)
+{
+    V3 result = {};
+    result.x  = (f32)SIGN(v.x);
+    result.y  = (f32)SIGN(v.y);
+    result.z  = (f32)SIGN(v.z);
     return result;
 }
 

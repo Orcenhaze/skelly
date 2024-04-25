@@ -438,7 +438,7 @@ FUNCTION void game_render()
     immediate_line(a2 - 50.0f*(b2-a2), b2 + 50.0f*(b2-a2), v4(0.4,0.4,0.4,1.0), 0.01f);
     immediate_end();
 #endif
-#if 1
+#if 0
     //~ line segments
     if (key_pressed(&os->frame_input, Key_1)) {
         a1 = game->camera.position;
@@ -549,8 +549,8 @@ FUNCTION void game_render()
     LOCAL_PERSIST Quaternion q = quaternion_identity();
     q = quaternion_from_axis_angle(normalize(v3(1, 1, 0)), 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
     
-    Collision_Shape box = make_aabb({-2.0f, 2.0f, -1.0f}, {0.25f, 0.5f, 0.15f});
-    //Collision_Shape box = make_obb({2.0f, 2.0f, 1.0f}, {0.25f, 0.5f, 0.15f}, q);
+    //Collision_Shape box = make_aabb({-2.0f, 2.0f, -1.0f}, {0.25f, 0.5f, 0.15f});
+    Collision_Shape box = make_obb({2.0f, 2.0f, 1.0f}, {0.25f, 0.5f, 0.15f}, q);
     
     Hit_Result hit = {};
     ray_box_intersect(a1, b1, box, &hit);
@@ -615,7 +615,7 @@ FUNCTION void game_render()
         immediate_end();
     }
 #endif
-#if 1
+#if 0
     //~ ray - capsule
     
     LOCAL_PERSIST Quaternion q = quaternion_identity();
@@ -652,6 +652,92 @@ FUNCTION void game_render()
         immediate_text(dfont, p_pixel, 3, color, "%f", hit.distance);
         immediate_end();
     }
+#endif
+#if 0
+    //~ point - box
+    V3 point = unproject(game->camera.position, 
+                         1.0f + scroll*0.005f, 
+                         os->mouse_ndc, 
+                         world_to_view_matrix, 
+                         view_to_proj_matrix);
+    
+    
+    LOCAL_PERSIST Quaternion q = quaternion_identity();
+    q = quaternion_from_axis_angle(normalize(v3(1, 1, 0)), 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
+    
+    //Collision_Shape box = make_aabb({-2.0f, 2.0f, -1.0f}, {0.25f, 0.5f, 0.15f});
+    Collision_Shape box = make_obb({2.0f, 2.0f, 1.0f}, {0.25f, 0.5f, 0.15f}, q);
+    
+    dist2 = closest_point_box_point(point, box, &p1);
+    
+    immediate_begin();
+    set_texture(0);
+    immediate_box(box.center, box.half_extents, box.rotation, v4(1));
+    immediate_sphere(point, 0.05f, quaternion_identity(), v4(1), 16);
+    immediate_cube(p1, 0.05f, v4(1,0,0,1));
+    immediate_line(point, p1, v4(1), 0.0005f);
+    immediate_end();
+    
+    // Draw distance as text.
+    immediate_begin();
+    d3d11_clear_depth();
+    set_texture(&dfont.atlas);
+    is_using_pixel_coords = TRUE;
+    V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(point, 0.5f, p1)));
+    immediate_text(dfont, p_pixel, 3, v4(1), "%f", _sqrt(dist2));
+    immediate_end();
+#endif
+#if 1
+    //~ box - box
+    
+    LOCAL_PERSIST Quaternion q = quaternion_identity();
+    q = quaternion_from_axis_angle(V3_Z_AXIS, 45.0f * DEGS_TO_RADS);
+    //q = quaternion_from_axis_angle(normalize(v3(1, 1, 0)), 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
+    
+    LOCAL_PERSIST V3 center = {0,0.25f,0};
+    if (key_held(&os->frame_input, Key_UP)) {
+        center.z -= 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_DOWN)) {
+        center.z += 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_RIGHT)) {
+        center.x += 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_LEFT)) {
+        center.x -= 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_X)) {
+        center.y -= 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_C)) {
+        center.y += 0.005f;
+    }
+    
+    V3 sz  = v3(0.25f);
+    V3 sz2 = {0.25f, 0.5f, 0.15f};
+    Collision_Shape box1 = make_aabb({0,0,1}, sz);//v3(0.25f, 1.0f, 1.5f));
+    //Collision_Shape box2 = make_aabb(center, sz);//v3(0.2f, 0.3f, 0.4f));
+    //Collision_Shape box1 = make_obb({0,0,1}, sz, q);//v3(0.25f, 1.0f, 1.5f));
+    Collision_Shape box2 = make_obb(center, sz, q);
+    
+    Hit_Result hit = {};
+    box_box_intersect(box1, box2, &hit);
+    
+    // Draw boxes.
+    immediate_begin(TRUE);
+    set_texture(0);
+    immediate_box(box1.center, box1.half_extents, box1.rotation, v4(0.8f,0.8f,0.8f,0.5f));
+    immediate_box(box2.center, box2.half_extents, box2.rotation, v4(0.3f,0.3f,0.3f,0.5f));
+    immediate_end();
+    
+    // Draw hit result stuff.
+    V4 color = hit.result? v4(0,1,0,1) : v4(1,0,0,1);
+    immediate_begin();
+    set_texture(0);
+    immediate_cube(hit.impact_point, 0.01f, color);
+    immediate_arrow(hit.impact_point, hit.impact_normal, 1.0f, v4(0,0,1,1), 0.01f);
+    immediate_end();
 #endif
     
     
