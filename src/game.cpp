@@ -558,9 +558,7 @@ FUNCTION void game_render()
     // Draw box;
     immediate_begin(TRUE);
     set_texture(0);
-    immediate_cuboid(box.center, box.half_extents, v4(1));
-    //set_object_to_world(box.center, box.rotation, v3(1));
-    //immediate_cuboid({}, box.half_extents, v4(1));
+    immediate_box(box.center, box.half_extents, box.rotation, v4(1));
     immediate_end();
     
     // Draw hit result stuff.

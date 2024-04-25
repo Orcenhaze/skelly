@@ -1,7 +1,7 @@
 /* orh_d3d11.cpp - v0.12 - C++ D3D11 immediate mode renderer.
 
 REVISION HISTORY:
-0.12 - can now pass rotation to some immediate-mode drawing functions.
+0.12 - can now pass rotation to some immediate-mode drawing functions. Added immediate_box().
 0.11 - added more geometry we can draw in immediate mode. Added 2.5D stuff to draw 2D geometry in 3D world.
 0.10 - loaded textures now use mip-mapping.
 0.09 - debug breaks on dxgi as well.
@@ -1256,7 +1256,7 @@ FUNCTION void immediate_hexahedron(V3 const &p0, V3 const &p1, V3 const &p2, V3 
                                    V3 const &p4, V3 const &p5, V3 const &p6, V3 const &p7,
                                    V4 const &color)
 {
-    // @Note: p0 to p3 --> back // p4 to p7 --> front // CCW.
+    // @Note: p0 to p3: back | p4 to p7: front | CCW.
     
     immediate_quad(p0, p1, p2, p3, color); // Back
     immediate_quad(p4, p5, p6, p7, color); // Front
@@ -1268,6 +1268,8 @@ FUNCTION void immediate_hexahedron(V3 const &p0, V3 const &p1, V3 const &p2, V3 
 
 FUNCTION void immediate_cuboid(V3 const &center, V3 const &half_size, V4 const &color)
 {
+    // @Note: p0 to p3: back | p4 to p7: front | CCW.
+    
     V3 p0 = {center.x - half_size.x, center.y - half_size.y, center.z - half_size.z};
     V3 p1 = {center.x + half_size.x, center.y - half_size.y, center.z - half_size.z};
     V3 p2 = {center.x + half_size.x, center.y + half_size.y, center.z - half_size.z};
@@ -1283,6 +1285,31 @@ FUNCTION void immediate_cuboid(V3 const &center, V3 const &half_size, V4 const &
 FUNCTION void immediate_cube(V3 const &center, f32 half_size, V4 const &color)
 {
     immediate_cuboid(center, v3(half_size), color);
+}
+
+FUNCTION void immediate_box(V3 const &center, V3 const &half_extents, Quaternion const& rotation, V4 const &color)
+{
+    // @Note: p0 to p3: back | p4 to p7: front | CCW.
+    
+    V3 r  = rotation * V3_X_AXIS; // Right vector.
+    V3 u  = rotation * V3_Y_AXIS; // Up vector.
+    V3 z  = rotation * V3_Z_AXIS; // Z-axis vector.
+    V3 rx = r*half_extents.x;
+    V3 uy = u*half_extents.y;
+    V3 zz = z*half_extents.z;
+    V3 p0 = center - rx - uy - zz;
+    rx   *= 2.0f;
+    uy   *= 2.0f;
+    zz   *= 2.0f;
+    V3 p1 = p0 + rx;
+    V3 p2 = p1 + uy;
+    V3 p3 = p0 + uy;
+    V3 p4 = p0 + zz;
+    V3 p5 = p4 + rx;
+    V3 p6 = p5 + uy;
+    V3 p7 = p4 + uy;
+    
+    immediate_hexahedron(p0, p1, p2, p3, p4, p5, p6, p7, color);
 }
 
 FUNCTION void immediate_circle_2point5d(V3 const &center, f32 radius, V3 const &normal, V4 const &color, s32 num_segments = 32)
