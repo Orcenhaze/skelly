@@ -438,11 +438,12 @@ FUNCTION void game_render()
     immediate_line(a2 - 50.0f*(b2-a2), b2 + 50.0f*(b2-a2), v4(0.4,0.4,0.4,1.0), 0.01f);
     immediate_end();
 #endif
-#if 0
+#if 1
     //~ line segments
     if (key_pressed(&os->frame_input, Key_1)) {
         a1 = game->camera.position;
         b1 = game->mouse_world;
+        b1 = a1 + 3.0f*normalize(b1-a1);
     }
     if (key_pressed(&os->frame_input, Key_2)) {
         a2 = game->camera.position;
@@ -452,7 +453,7 @@ FUNCTION void game_render()
     // Draw line segments.
     immediate_begin();
     set_texture(0);
-    immediate_line(a1, a1 + 50.0f*(b1-a1), v4(0.8,0.8,0.8,1.0), 0.01f);
+    immediate_line(a1, b1, v4(0.8,0.8,0.8,1.0), 0.01f);
     immediate_line(a2, b2, v4(0.4,0.4,0.4,1.0), 0.01f);
     immediate_end();
 #endif
@@ -465,11 +466,11 @@ FUNCTION void game_render()
                          view_to_proj_matrix);
     
     //dist2 = closest_point_line_point(point, a1, b1, NULL, &p1);
-    //dist2 = closest_point_segment_point(point, a1, b1, NULL, &p1);
+    dist2 = closest_point_segment_point(point, a1, b1, NULL, &p1);
     
     immediate_begin();
     set_texture(0);
-    immediate_sphere(point, 0.1f, quaternion_identity(), v4(1), 16);
+    immediate_sphere(point, 0.1f, v4(1), 16);
     immediate_line(point, p1, v4(1,0,0,1), 0.01f);
     immediate_end();
     
@@ -503,19 +504,21 @@ FUNCTION void game_render()
     immediate_end();
 #endif
 #if 0
-    //~ ray - triangle
+    //~ segment - triangle
     V3 center = {0, 2, 0};
     V3 tri1 = center - V3R, tri2 = center + V3R, tri3 = center + 2*V3U;
     
     LOCAL_PERSIST Quaternion q = quaternion_identity();
-    q = quaternion_from_axis_angle(V3U, 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
+    //q = quaternion_from_axis_angle(V3U, 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
     tri1 = rotate_point_around_pivot(tri1, center, q);
     tri2 = rotate_point_around_pivot(tri2, center, q);
     tri3 = rotate_point_around_pivot(tri3, center, q);
     
     Hit_Result hit = {};
     V3 bary;
-    b32 intersected = ray_triangle_intersect(a1, b1, tri1, tri2, tri3, &hit, &bary);
+    b32 intersected = segment_triangle_intersect(a1, b1, tri1, tri2, tri3, &hit, &bary);
+    
+    debug_print("len= %f, percent= %f\n", length(b1-a1), hit.percent);
     
     // Draw closest vector.
     immediate_begin(TRUE);
@@ -528,6 +531,7 @@ FUNCTION void game_render()
     immediate_begin();
     set_texture(0);
     immediate_cube(a1, 0.05f, color);
+    immediate_cube(b1, 0.05f, color);
     immediate_cube(hit.impact_point, 0.035f, color);
     immediate_arrow(hit.impact_point, hit.impact_normal, 1.0f, v4(0,0,1,1), 0.01f);
     immediate_end();
@@ -539,12 +543,12 @@ FUNCTION void game_render()
         set_texture(&dfont.atlas);
         is_using_pixel_coords = TRUE;
         V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(a1, 0.5f, hit.impact_point)));
-        immediate_text(dfont, p_pixel, 3, color, "%f", hit.distance);
+        immediate_text(dfont, p_pixel, 3, color, "%f", length(b1-a1)*hit.percent);
         immediate_end();
     }
 #endif
 #if 0
-    //~ ray - box
+    //~ segment - box
     
     LOCAL_PERSIST Quaternion q = quaternion_identity();
     q = quaternion_from_axis_angle(normalize(v3(1, 1, 0)), 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
@@ -553,7 +557,9 @@ FUNCTION void game_render()
     Collision_Shape box = make_obb({2.0f, 2.0f, 1.0f}, {0.25f, 0.5f, 0.15f}, q);
     
     Hit_Result hit = {};
-    ray_box_intersect(a1, b1, box, &hit);
+    segment_box_intersect(a1, b1, box, &hit);
+    
+    debug_print("len= %f, percent= %f\n", length(b1-a1), hit.percent);
     
     // Draw box;
     immediate_begin(TRUE);
@@ -565,7 +571,8 @@ FUNCTION void game_render()
     V4 color = hit.result? v4(0,1,0,1) : v4(1,0,0,1);
     immediate_begin();
     set_texture(0);
-    immediate_cube(a1, 0.02f, color);
+    immediate_cube(a1, 0.05f, color);
+    immediate_cube(b1, 0.05f, color);
     immediate_cube(hit.impact_point, 0.01f, color);
     immediate_arrow(hit.impact_point, hit.impact_normal, 1.0f, v4(0,0,1,1), 0.01f);
     immediate_end();
@@ -577,28 +584,31 @@ FUNCTION void game_render()
         set_texture(&dfont.atlas);
         is_using_pixel_coords = TRUE;
         V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(a1, 0.5f, hit.impact_point)));
-        immediate_text(dfont, p_pixel, 3, color, "%f", hit.distance);
+        immediate_text(dfont, p_pixel, 3, color, "%f", length(b1-a1)*hit.percent);
         immediate_end();
     }
 #endif
-#if 0
-    //~ ray - sphere
+#if 1
+    //~ segment - sphere
     Collision_Shape sphere = make_sphere({-3.0f, 2.0f, -2.0f}, 0.5f);
     
     Hit_Result hit = {};
-    ray_sphere_intersect(a1, b1, sphere, &hit);
+    segment_sphere_intersect(a1, b1, sphere, &hit);
+    
+    debug_print("len= %f, percent= %f\n", length(b1-a1), hit.percent);
     
     // Draw sphere.
     immediate_begin();
     set_texture(0);
-    immediate_sphere(sphere.center, sphere.radius, quaternion_identity(), v4(1), 16);
+    immediate_sphere(sphere.center, sphere.radius, v4(1), 16);
     immediate_end();
     
     // Draw hit result stuff.
     V4 color = hit.result? v4(0,1,0,1) : v4(1,0,0,1);
     immediate_begin();
     set_texture(0);
-    immediate_cube(a1, 0.02f, color);
+    immediate_cube(a1, 0.05f, color);
+    immediate_cube(b1, 0.05f, color);
     immediate_cube(hit.impact_point, 0.01f, color);
     immediate_arrow(hit.impact_point, hit.impact_normal, 1.0f, v4(0,0,1,1), 0.01f);
     immediate_arrow(hit.impact_point, reflect(normalize(b1-a1), hit.impact_normal), 1.0f, v4(1,0,1,1), 0.01f);
@@ -611,12 +621,12 @@ FUNCTION void game_render()
         set_texture(&dfont.atlas);
         is_using_pixel_coords = TRUE;
         V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(a1, 0.5f, hit.impact_point)));
-        immediate_text(dfont, p_pixel, 3, color, "%f", hit.distance);
+        immediate_text(dfont, p_pixel, 3, color, "%f", length(b1-a1)*hit.percent);
         immediate_end();
     }
 #endif
 #if 0
-    //~ ray - capsule
+    //~ segment - capsule
     
     LOCAL_PERSIST Quaternion q = quaternion_identity();
     q = quaternion_from_axis_angle(normalize(v3(1, 1, 0)), 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
@@ -625,7 +635,9 @@ FUNCTION void game_render()
     //Collision_Shape capsule = make_capsule(v3(2.0f, 2.0f, -1.0f), 0.25f, 1.0f, q);
     
     Hit_Result hit = {};
-    ray_capsule_intersect(a1, b1, capsule, &hit);
+    segment_capsule_intersect(a1, b1, capsule, &hit);
+    
+    debug_print("len= %f, percent= %f\n", length(b1-a1), hit.percent);
     
     // Draw capsule.
     immediate_begin();
@@ -637,7 +649,8 @@ FUNCTION void game_render()
     V4 color = hit.result? v4(0,1,0,1) : v4(1,0,0,1);
     immediate_begin();
     set_texture(0);
-    immediate_cube(a1, 0.02f, color);
+    immediate_cube(a1, 0.05f, color);
+    immediate_cube(b1, 0.05f, color);
     immediate_cube(hit.impact_point, 0.01f, color);
     immediate_arrow(hit.impact_point, hit.impact_normal, 1.0f, v4(0,0,1,1), 0.01f);
     immediate_end();
@@ -649,7 +662,7 @@ FUNCTION void game_render()
         set_texture(&dfont.atlas);
         is_using_pixel_coords = TRUE;
         V3 p_pixel = ndc_to_pixel(world_to_ndc(lerp(a1, 0.5f, hit.impact_point)));
-        immediate_text(dfont, p_pixel, 3, color, "%f", hit.distance);
+        immediate_text(dfont, p_pixel, 3, color, "%f", length(b1-a1)*hit.percent);
         immediate_end();
     }
 #endif
@@ -964,7 +977,7 @@ FUNCTION void game_render()
     immediate_arrow(hit.impact_point, hit.normal, 0.5f, v4(0,1,1,1), 0.01f);
     immediate_end();
 #endif
-#if 1
+#if 0
     //~ capsule - capsule
     
     LOCAL_PERSIST Quaternion q = quaternion_identity();

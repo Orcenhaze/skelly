@@ -33,9 +33,6 @@ transform the FIRST shape from collision-space to local-space of SECOND shape.
 function does if it isn't obvious AND also refer to resources that explain things better.
 
 TODO:
-[] Replace all ray occurances with segments. Replace logic to REFUSE t-values that go beyond end point.
-Also make sure you are filling all the Hit_Results correctly.
-[] Implement fast_segment_aabb_intersect() that only returns bool.
 [] GJK for convex-hulls.
 [] Traces for lines, boxes, spheres, and capsules. Note that for traces, there's this concept of being
  _already_ in collision before trace starts where you can return early.
@@ -55,6 +52,45 @@ union Ray
 
 ////////////////////////////////
 //~ 3D
+
+FUNCTION b32 point_inside_aabb(V3 const &p, V3 const &min, V3 const &max)
+{
+    // @Note:
+    //
+    // Returns whether point p is inside aabb defined by min and max.
+    //
+    // It's for AABBs, so pass stuff in world-space, I guess.
+    b32 result = FALSE;
+    if((p.x >= min.x) && (p.x <= max.x) &&
+       (p.y >= min.y) && (p.y <= max.y) &&
+       (p.z >= min.z) && (p.z <= max.z))
+        result = TRUE;
+    return result;
+}
+
+FUNCTION b32 segment_aabb_intersect(V3 const &a, V3 const &b, V3 const &min, V3 const &max)
+{
+    // @Note:
+    //
+    // Returns whether line segment defined by a and b intersect the axis-aligned box defined by 
+    // min and max.
+    //
+    // It's for AABBs, so pass stuff in world-space, I guess.
+    
+    V3 d = b-a;
+    
+    V3 t_bmin = hadamard_div((min - a), d);
+    V3 t_bmax = hadamard_div((max - a), d);
+    
+    V3 t_min3 = { MIN(t_bmin.x, t_bmax.x), MIN(t_bmin.y, t_bmax.y), MIN(t_bmin.z, t_bmax.z) };
+    V3 t_max3 = { MAX(t_bmin.x, t_bmax.x), MAX(t_bmin.y, t_bmax.y), MAX(t_bmin.z, t_bmax.z) };
+    
+    f32 t_min = MAX3(t_min3.x, t_min3.y, t_min3.z);
+    f32 t_max = MIN3(t_max3.x, t_max3.y, t_max3.z);
+    
+    b32 result = ((t_min > 0.0f) && (t_min < t_max));
+    return result;
+}
 
 FUNCTION f32 closest_point_line_point(V3 const &c, V3 const &a, V3 const &b,
                                       f32 *t_out = NULL, V3 *p_out = NULL)
@@ -317,19 +353,15 @@ struct Hit_Result
     // Equivalent to impact_point when using line traces tests.
     V3 location;
     
-    // This is for traces only. The value is in range [0, 1].
-    // It indicates the percentage from trace_start to trace_end we moved until collision occured.
-    // When the value is 1, it most likey means there was no collision and we were able to traverse 100%
-    // of the trace direction.
-    //f32 time;
+    // This is a percent value in range [0, 1].
+    // It is used for traces and line segment intersection functions and it indicates the percentage from
+    // start to end points we moved until collision occured.
+    // You can use it to lerp between start and end points to get the impact_point essentially.
+    // When the value is 1, it _most likey_ means there was no collision and we were able to traverse
+    // 100% of the trace/segment direction.
+    f32 percent;
     
-    // @Todo: Get rid of this, it's redundant. Get rid of all occurances of rays,
-    // This is for rays only. The value is in range [0, INF].
-    // Distance (in units) from ray origin to the impact_point IFF we hit something.
-    f32 distance;
-    
-    // @Todo: Could add distance2 in the future since some functions could have multiple impact points
-    // like ray-box and ray-sphere intersections.
+    //f32 distance;
     
     // True if we intersect, false otherwise.
     u8 result;
@@ -338,18 +370,18 @@ struct Hit_Result
 FUNCTION inline Hit_Result make_hit_result()
 {
     Hit_Result result = {};
-    //result.time = 1.0f; // Assume there was no collision.
+    result.percent = 1.0f; // Assume there was no collision.
     return result;
 }
 
-FUNCTION b32 ray_triangle_intersect(V3 const &a, V3 const &b, 
-                                    V3 const &p1,V3 const &p2, V3 const &p3,
-                                    Hit_Result *hit_out,
-                                    V3 *barycentric_out = NULL)
+FUNCTION b32 segment_triangle_intersect(V3 const &a, V3 const &b, 
+                                        V3 const &p1,V3 const &p2, V3 const &p3,
+                                        Hit_Result *hit_out,
+                                        V3 *barycentric_out = NULL)
 {
     // @Note: From: https://iquilezles.org/articles/hackingintersector/
     //
-    // Returns whether ray pierces the triangle. Also fills Hit_Result and barycentric coords.
+    // Returns whether segment pierces the triangle. Also fills Hit_Result and barycentric coords.
     
     // Init hit result.
     *hit_out = make_hit_result();
@@ -367,14 +399,18 @@ FUNCTION b32 ray_triangle_intersect(V3 const &a, V3 const &b,
     f32 t =    d*dot(-n, to_a);
     f32 w = 1.0f - u - v;;
     
-    if ((u < 0.0f) || (v < 0.0f) || ((u+v) > 1.0f) || (t < 0.0f)) {
-        // "t < 0"  to ignore intersections that are behind the ray origin (a1).
+    // t here already represents percent (instead of a distance from segment origin along direction).
+    f32 percent = t;
+    if ((u < 0.0f) || (v < 0.0f) || ((u+v) > 1.0f) || (percent < 0.0f) || (percent > 1.0f)) {
+        // Also ignore intersections that are behind a and ahead of b.
         if (barycentric_out) *barycentric_out = {-1.0f, -1.0f, -1.0f};
         return FALSE;
     } else {
-        hit_out->impact_point  = a + t * ab;
+        hit_out->impact_point  = lerp(a, percent, b);
         hit_out->impact_normal = n;
-        hit_out->distance      = t;
+        hit_out->normal        = n;
+        hit_out->location      = hit_out->impact_point;
+        hit_out->percent       = percent;
         hit_out->result        = TRUE;
         if (barycentric_out) *barycentric_out = {u, v, w};
         return TRUE;
@@ -483,13 +519,13 @@ FUNCTION f32 get_capsule_axis(Collision_Shape const &capsule, V3 *start, V3 *end
     return result;
 }
 
-FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b, 
-                               Collision_Shape const &box,
-                               Hit_Result *hit_out)
+FUNCTION b32 segment_box_intersect(V3 const &a, V3 const &b, 
+                                   Collision_Shape const &box,
+                                   Hit_Result *hit_out)
 {
     // @Note:
     // 
-    // Returns whether ray pierces the box. Also fills Hit_Result.
+    // Returns whether segment pierces the box. Also fills Hit_Result.
     
     ASSERT(box.type == CollisionShapeType_BOX);
     
@@ -502,7 +538,7 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
     // Init hit result.
     *hit_out = make_hit_result();
     
-    // Transform ray to local space of box.
+    // Transform segment to local space of box.
     //
     // @Speed: This branch could be easily mispredicted if we test lots of boxes. Probably better to
     // split AABBs and OBBs into separate functions. 
@@ -540,8 +576,10 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
     f32 t_min = MAX3(t_min3.x, t_min3.y, t_min3.z);
     f32 t_max = MIN3(t_max3.x, t_max3.y, t_max3.z);
     
-    if ((t_min < 0.0f) || (t_min > t_max)) {
-        // Ignore collisions that are behind us, i.e. (t_min < 0.0f).
+    // t value here is already a percent (instead of a distance from segment origin along direction).
+    f32 percent = t_min;
+    if ((t_min < 0.0f) || (t_min > t_max) || (percent < 0.0f) || (percent > 1.0f)) {
+        // Also ignore t values that are behind a and ahead of b.
         return FALSE;
     } else {
         // Hit point.
@@ -569,22 +607,24 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
         
         hit_out->impact_point  = p;
         hit_out->impact_normal = n;
-        hit_out->distance      = t_min;
+        hit_out->normal        = n;
+        hit_out->location      = p;
+        hit_out->percent       = percent;
         hit_out->result        = TRUE;
         return TRUE;
     }
 }
 
-FUNCTION b32 ray_sphere_intersect(V3 const &a, V3 const &b, 
-                                  Collision_Shape const &sphere,
-                                  Hit_Result *hit_out)
+FUNCTION b32 segment_sphere_intersect(V3 const &a, V3 const &b, 
+                                      Collision_Shape const &sphere,
+                                      Hit_Result *hit_out)
 {
     // @Note: Read ScratchPixel's article about ray-sphere intersection.
     // Or watch this video: https://www.youtube.com/watch?v=HFPlKQGChpE
     // 
-    // Returns whether ray pierces the sphere. Also fills Hit_Result.
+    // Returns whether segment pierces the sphere. Also fills Hit_Result.
     //
-    // No need to transform ray to local space of sphere as long as both are in 
+    // No need to transform segment to local space of sphere as long as both are in 
     // the same collision-space.
     
     ASSERT(sphere.type == CollisionShapeType_SPHERE);
@@ -605,7 +645,7 @@ FUNCTION b32 ray_sphere_intersect(V3 const &a, V3 const &b,
         // We're not hitting the sphere.
         return FALSE;
     } else {
-        // Calculate distance to entry and exit points of ray intersection with the sphere.
+        // Calculate distance to entry and exit points of segment intersection with the sphere.
         f32 x  = _sqrt(r2 - y2);
         f32 t0 = tc - x; // A.k.a. t_min
         f32 t1 = tc + x; // A.k.a. t_max
@@ -615,30 +655,36 @@ FUNCTION b32 ray_sphere_intersect(V3 const &a, V3 const &b,
             SWAP(t0, t1, f32);
         
         if (t0 < 0.0f) {
-            // Entry point is behind ray origin, but t1 could still be in front. 
-            // This would mean ray origin is _inside_ the sphere.
+            // Entry point is behind segment origin, but t1 could still be in front. 
+            // This would mean segment origin is _inside_ the sphere.
             t0 = t1;
             if (t0 < 0.0f) {
-                // Both entry and exit points are behind the ray origin.
+                // Both entry and exit points are behind the segment origin.
                 return FALSE;
             }
         }
         
+        f32 percent = t0 / length(b-a);
+        if ((percent < 0.0f) || (percent > 1.0f))
+            return FALSE;
+        
         hit_out->impact_point  = o + t0 * d;
         hit_out->impact_normal = normalize_or_zero(hit_out->impact_point - sphere.center);
-        hit_out->distance      = t0;
+        hit_out->normal        = hit_out->impact_normal;
+        hit_out->location      = hit_out->impact_point;
+        hit_out->percent       = percent;
         hit_out->result        = TRUE;
         return TRUE;
     }
 }
 
-FUNCTION b32 ray_capsule_intersect(V3 const &a, V3 const &b, 
-                                   Collision_Shape const &capsule,
-                                   Hit_Result *hit_out)
+FUNCTION b32 segment_capsule_intersect(V3 const &a, V3 const &b, 
+                                       Collision_Shape const &capsule,
+                                       Hit_Result *hit_out)
 {
     // @Note: Inigo Quilez: https://iquilezles.org/articles/intersectors/
     //
-    // Returns whether ray pierces capsule. Also fills Hit_Result.
+    // Returns whether segment pierces capsule. Also fills Hit_Result.
     
     ASSERT(capsule.type == CollisionShapeType_CAPSULE);
     
@@ -686,8 +732,9 @@ FUNCTION b32 ray_capsule_intersect(V3 const &a, V3 const &b,
         // @Todo: We don't care about this now, but it might be useful to know how to calculate "t_max",
         // i.e., the distance to the _exit_ point of the intersection.
         
-        // The hit was behind us.
-        if (t < 0.0f) return FALSE;
+        f32 percent = t / length(b-a);
+        if ((percent < 0.0f) || (percent > 1.0f)) 
+            return FALSE;
         
         // Impact point.
         V3 p = o + t * d;
@@ -699,7 +746,9 @@ FUNCTION b32 ray_capsule_intersect(V3 const &a, V3 const &b,
         
         hit_out->impact_point  = p;
         hit_out->impact_normal = n;
-        hit_out->distance      = t;
+        hit_out->normal        = n;
+        hit_out->location      = p;
+        hit_out->percent       = percent;
         hit_out->result        = TRUE;
         return TRUE;
     }
@@ -1095,7 +1144,7 @@ FUNCTION b32 capsule_box_intersect(Collision_Shape const &capsule, Collision_Sha
     
     // Pretty convoluted way for calculating the "radius" of the box.
     Hit_Result hit;
-    ray_box_intersect(on_axis, box.center, box, &hit);
+    segment_box_intersect(on_axis, box.center, box, &hit);
     f32 box_radius = length(box.center - hit.impact_point);
     
     if (dist2 > SQUARE(capsule.radius + box_radius))
