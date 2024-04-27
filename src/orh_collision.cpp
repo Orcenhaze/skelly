@@ -34,6 +34,7 @@ function does if it isn't obvious AND also refer to resources that explain thing
 
 TODO:
 [] Replace all ray occurances with segments. Replace logic to REFUSE t-values that go beyond end point.
+Also make sure you are filling all the Hit_Results correctly.
 [] Implement fast_segment_aabb_intersect() that only returns bool.
 [] GJK for convex-hulls.
 [] Traces for lines, boxes, spheres, and capsules. Note that for traces, there's this concept of being
@@ -286,38 +287,33 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
 
 struct Hit_Result
 {
-    // @Note: At the moment, all the values here are in collision-space, which is NOT world-space necessarily.
-    
-    // The point on the surface of the second shape (the one we are testing against)
-    // on which the collision occured.
-    // If no collision occured, this will be a zero vector.
-    V3 impact_point;
-    
-    // The normal vector of the surface of the second shape (the one we are testing against)
-    // on which the collision occured.
-    // If no collision occured, this will be a zero vector.
-    V3 impact_normal;
-    
-    // @Todo: Add something that would help shapes in collision to resolve their collision like
-    // delta_position or "penetration_depth + location and normal". 
-    //
-    // Be AWARE however, that those values will be in collision-space and won't be correct
-    // if the user moved the shapes from world-space to collision-space using any type of scaling 
-    // (uniform or non-uniform), so we must also account for that.
+    // @Note: Currently, all the values here are in collision-space, which is NOT world-space necessarily.
+    // Be AWARE when moving the shapes from world-space to collision-space using any type of scaling 
+    // uniform or non-uniform. If you did, then certain values like penetration_depth won't be correct
+    // in world space as it needs to be scaled accordingly.
     
     // @Todo: Traces:
     //V3 trace_start;
     //V3 trace_end;
     
+    // The point on the surface of the second shape (the one we are testing against) on which the collision occured.
+    // If no collision occured, this will be a zero vector.
+    V3 impact_point;
+    
+    // The normal vector of the surface of the second shape (the one we are testing against) on which the collision occured.
+    // If no collision occured, this will be a zero vector.
+    V3 impact_normal;
+    
+    // normal = normalize(shape1.center - impact_point);
+    // We move along this vector by "penetration_depth" amount in order to "resolve" the collision.
+    // It is calculated for spheres and capsules only, otherwise it will be the same as impact_normal.
+    V3 normal;
+    
+    // location = shape1.center + normal * penetration_depth;
     // This is the "resolved" center of the "first" collision shape.
     // When using tracing, it's the center of the traced shape when collision occured.
     // Equivalent to impact_point when using line traces tests.
     V3 location;
-    
-    // The vector from impact_point to location. We move along this vector by "penetration_depth" amount
-    // in order to "resolve" the collision.
-    // It is calculated for spheres and capsules only, otherwise it will be the same as impact_normal.
-    //V3 normal;
     
     // This is for traces only. The value is in range [0, 1].
     // It indicates the percentage from trace_start to trace_end we moved until collision occured.
@@ -549,9 +545,9 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
         } else {
             // Box is an OBB.
             // @Speed: Is there a faster way to do this transform?
-            M4x4 to_orig_matrix = m4x4_from_translation_rotation_scale(box.center, box.rotation, v3(1));
-            p = transform_point (to_orig_matrix, p);
-            n = transform_vector(to_orig_matrix, n);
+            M4x4 to_collision_space = m4x4_from_translation_rotation_scale(box.center, box.rotation, v3(1));
+            p = transform_point (to_collision_space, p);
+            n = transform_vector(to_collision_space, n);
         }
         
         hit_out->impact_point  = p;
@@ -694,81 +690,7 @@ FUNCTION b32 ray_capsule_intersect(V3 const &a, V3 const &b,
     return FALSE;
 }
 
-
-FUNCTION b32 sat_interval_overlap_test(Range a, Range b, V3 const &axis, V3 *normal, f32 *penetration_depth)
-{
-    // @Note: 
-    //
-    // Returns whether the intervals are overlapping. Also fills the normal and penetration_depth.
-    //
-    // All our SAT axes are positive, because negative axes will give us the same 
-    // shadow interval... So we won't test them twice. 
-    // However, for obtaining the Minimum Translation Vector (MTV), we need to differentiate
-    // between negative and positive axes to know the direction in which the offset applies when
-    // resolving the overlap. For that, there are two cases that we need to check for:
-    //
-    //
-    // Case 1: A<--B (Negative axis)
-    //
-    // min      A      max
-    //  +---------------+
-    //          +---------------+
-    //                   B
-    //
-    // Case 2: B-->A (Positive axis)
-    //
-    // min      B      max
-    //  +---------------+
-    //          +---------------+
-    //                   A
-    
-    // @Sanity:
-    if(a.min > a.max) {SWAP(a.min, a.max, f32);}
-    if(b.min > b.max) {SWAP(b.min, b.max, f32);}
-    
-    // Case 1.
-    if(a.min <= b.min && a.max >= b.min) {
-        *penetration_depth = a.max - b.min;
-        *normal            = -axis;
-        return TRUE;
-    }
-    
-    // Case 2.
-    if(b.min <= a.min && b.max >= a.min) {
-        *penetration_depth = b.max - a.min;
-        *normal            = axis;
-        return TRUE;
-    }
-    
-    *penetration_depth = {};
-    *normal            = {};
-    return FALSE;
-}
-
-FUNCTION Range sat_get_box_shadow_interval(Collision_Shape const &box, V3 const axis)
-{
-    ASSERT(box.type == CollisionShapeType_BOX);
-    
-    // Local box axes.
-    V3 x  = box.rotation * V3_X_AXIS;
-    V3 y  = box.rotation * V3_Y_AXIS;
-    V3 z  = box.rotation * V3_Z_AXIS;
-    
-    // Projection of extents along local axes onto the axis we are testing.
-    f32 xe_proj = dot(x*box.half_extents.x, axis);
-    f32 ye_proj = dot(y*box.half_extents.y, axis);
-    f32 ze_proj = dot(z*box.half_extents.z, axis);
-    f32 ce_proj = dot(box.center, axis);
-    
-    Range result =
-    {
-        ce_proj - xe_proj - ye_proj - ze_proj,
-        ce_proj + xe_proj + ye_proj + ze_proj,
-    };
-    return result;
-}
-
-FUNCTION f32 closest_point_box_point(V3 const &c, Collision_Shape const &box, V3 *p_out)
+FUNCTION f32 closest_point_box_point(V3 const &c, Collision_Shape const &box, V3 *p_out = NULL, V3 *n_out = NULL)
 {
     // @Note:
     //
@@ -808,16 +730,25 @@ FUNCTION f32 closest_point_box_point(V3 const &c, Collision_Shape const &box, V3
     
     V3 p = clamp(-box.half_extents, o, box.half_extents);
     
+    // Compute normal.
+    V3 pn      = hadamard_div(p,  box.half_extents); // Hit point "normalized"
+    V3 pa      = abs(pn);                            // Hit point "normalized + absolute"
+    s32 max_i  = (pa.x > pa.y)? ((pa.x > pa.z)? 0 : 2) : ((pa.y > pa.z)? 1: 2);
+    V3 n       = {};
+    n.I[max_i] = (f32)SIGN(pn.I[max_i]);
+    
     // Transform closest point back to original collision-space.
     if (is_aabb) {
         p = p + box.center;
     } else {
         // @Speed: Is there a faster way to do this transform?
-        M4x4 to_orig_matrix = m4x4_from_translation_rotation_scale(box.center, box.rotation, v3(1));
-        p = transform_point(to_orig_matrix, p);
+        M4x4 to_collision_space = m4x4_from_translation_rotation_scale(box.center, box.rotation, v3(1));
+        p = transform_point (to_collision_space, p);
+        n = transform_vector(to_collision_space, n);
     }
     
     if (p_out) *p_out = p;
+    if (n_out) *n_out = n;
     f32 result = length2(c - p);
     return result;
 }
@@ -1076,7 +1007,40 @@ best_penetration_depth = penetration_depth;     \
     
     hit_out->impact_point  = closest_point;
     hit_out->impact_normal = best_normal;
+    hit_out->normal        = best_normal;
     hit_out->location      = location;
+    hit_out->result        = TRUE;
+    return TRUE;
+}
+
+FUNCTION b32 sphere_box_intersect(Collision_Shape const &sphere, Collision_Shape const &box, Hit_Result *hit_out)
+{
+    // @Note:
+    //
+    // Returns whether sphere collides with box. Alos fills Hit_Result.
+    //
+    // We find the neartest point on the box to the center of the sphere and check if the distance to it
+    // is smaller/larger the radius of the sphere.
+    //
+    // @DEBUG: What happens when the sphere is _inside_ the box?
+    
+    ASSERT(sphere.type == CollisionShapeType_SPHERE);
+    ASSERT(box.type == CollisionShapeType_BOX);
+    
+    // Init hit result.
+    *hit_out = make_hit_result();
+    
+    V3 closest_point, box_normal;
+    f32 dist2 = closest_point_box_point(sphere.center, box, &closest_point, &box_normal);
+    
+    if (dist2 > (sphere.radius * sphere.radius))
+        return FALSE;
+    
+    f32 penetration_depth  = sphere.radius - _sqrt(dist2);
+    hit_out->impact_point  = closest_point;
+    hit_out->impact_normal = box_normal;
+    hit_out->normal        = normalize(sphere.center - closest_point);
+    hit_out->location      = sphere.center + hit_out->normal * penetration_depth;
     hit_out->result        = TRUE;
     return TRUE;
 }
