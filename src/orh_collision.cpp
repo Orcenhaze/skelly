@@ -304,7 +304,9 @@ struct Hit_Result
     // If no collision occured, this will be a zero vector.
     V3 impact_normal;
     
-    // normal = normalize(shape1.center - impact_point);
+    // normal = normalize(sphere.center - impact_point);
+    // OR
+    // normal = normalize(closest_on_capsule_axis - impact_point);
     // We move along this vector by "penetration_depth" amount in order to "resolve" the collision.
     // It is calculated for spheres and capsules only, otherwise it will be the same as impact_normal.
     V3 normal;
@@ -463,6 +465,21 @@ FUNCTION inline Collision_Shape make_capsule(V3 const &center, f32 radius, f32 h
     result.radius       = radius;
     result.half_height  = half_height;
     result.type         = CollisionShapeType_CAPSULE;
+    return result;
+}
+
+FUNCTION f32 get_capsule_axis(Collision_Shape const &capsule, V3 *start, V3 *end)
+{
+    // @Note:
+    //
+    // Returns half axis height of capsule. Also fills the centers of the top and bottom caps/spheres in collision-space.
+    
+    ASSERT(start && end);
+    
+    f32 result = capsule.half_height - capsule.radius;
+    V3 up      = capsule.rotation * V3_Y_AXIS;
+    *start     = capsule.center + up * -result; // Center of bottom cap.
+    *end       = capsule.center + up *  result; // Center of top cap.
     return result;
 }
 
@@ -1000,8 +1017,9 @@ best_penetration_depth = penetration_depth;     \
     
     // @Note: I'm adding epsilon to penetration depth to ensure there's no collision after resolving.
     //
+    best_penetration_depth += KINDA_SMALL_NUMBER;
     best_normal = normalize_or_zero(best_normal);
-    V3 location = a.center + best_normal*(best_penetration_depth + KINDA_SMALL_NUMBER);
+    V3 location = a.center + best_normal*best_penetration_depth;
     V3 closest_point;
     closest_point_box_point(location, b, &closest_point);
     
@@ -1017,7 +1035,7 @@ FUNCTION b32 sphere_box_intersect(Collision_Shape const &sphere, Collision_Shape
 {
     // @Note:
     //
-    // Returns whether sphere collides with box. Alos fills Hit_Result.
+    // Returns whether sphere collides with box. Also fills Hit_Result.
     //
     // We find the neartest point on the box to the center of the sphere and check if the distance to it
     // is smaller/larger the radius of the sphere.
@@ -1030,17 +1048,68 @@ FUNCTION b32 sphere_box_intersect(Collision_Shape const &sphere, Collision_Shape
     // Init hit result.
     *hit_out = make_hit_result();
     
-    V3 closest_point, box_normal;
-    f32 dist2 = closest_point_box_point(sphere.center, box, &closest_point, &box_normal);
+    V3 on_box, box_normal;
+    f32 dist2 = closest_point_box_point(sphere.center, box, &on_box, &box_normal);
     
     if (dist2 > (sphere.radius * sphere.radius))
         return FALSE;
     
-    f32 penetration_depth  = sphere.radius - _sqrt(dist2);
-    hit_out->impact_point  = closest_point;
+    f32 penetration_depth  = sphere.radius - _sqrt(dist2) + KINDA_SMALL_NUMBER;
+    hit_out->impact_point  = on_box;
     hit_out->impact_normal = box_normal;
-    hit_out->normal        = normalize(sphere.center - closest_point);
+    hit_out->normal        = normalize_or_zero(sphere.center - on_box);
     hit_out->location      = sphere.center + hit_out->normal * penetration_depth;
+    hit_out->result        = TRUE;
+    return TRUE;
+}
+
+FUNCTION b32 capsule_box_intersect(Collision_Shape const &capsule, Collision_Shape const &box, Hit_Result *hit_out)
+{
+    // @Note:
+    //
+    // Returns whether capsule collides with box. Also fills Hit_Result.
+    //
+    // This is very similar to the sphere vs. box intersection test actually.
+    // The only thing is: we need to find the "box radius". 
+    //
+    // We first try to find the closest point on the axis of the capsule to the box center.
+    // Then we define a line from the point we found and the box center. Then we do a line vs. box
+    // intersection to see where we "pierce" the box. The length of the vector from that "pierce point"
+    // and the box center is the "box radius".
+    //
+    // To calculate the impact point, we find the closest point on the box to the closest point on the
+    // axis we computed earlier.
+    
+    ASSERT(capsule.type == CollisionShapeType_CAPSULE);
+    ASSERT(box.type == CollisionShapeType_BOX);
+    
+    // Init hit result.
+    *hit_out = make_hit_result();
+    
+    V3 start, end;
+    get_capsule_axis(capsule, &start, &end);
+    
+    // Point on capsule axis that is the closest to box center.
+    V3 on_axis;
+    f32 dist2 = closest_point_segment_point(box.center, start, end, NULL, &on_axis);
+    
+    // Pretty convoluted way for calculating the "radius" of the box.
+    Hit_Result hit;
+    ray_box_intersect(on_axis, box.center, box, &hit);
+    f32 box_radius = length(box.center - hit.impact_point);
+    
+    if (dist2 > SQUARE(capsule.radius + box_radius))
+        return FALSE;
+    
+    // Get closest point on box surface (and normal) to point on axis.
+    V3 on_box, box_normal;
+    closest_point_box_point(on_axis, box, &on_box, &box_normal);
+    
+    f32 penetration_depth  = (capsule.radius + box_radius) - _sqrt(dist2) + KINDA_SMALL_NUMBER;
+    hit_out->impact_point  = on_box;
+    hit_out->impact_normal = box_normal;
+    hit_out->normal        = normalize_or_zero(on_axis - on_box);
+    hit_out->location      = capsule.center + hit_out->normal * penetration_depth;
     hit_out->result        = TRUE;
     return TRUE;
 }
