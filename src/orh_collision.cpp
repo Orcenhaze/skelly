@@ -1143,6 +1143,25 @@ FUNCTION b32 sphere_sphere_intersect(Collision_Shape const &a, Collision_Shape c
     return TRUE;
 }
 
+FUNCTION b32 sphere_capsule_intersect(Collision_Shape const &sphere, Collision_Shape const &capsule, Hit_Result *hit_out)
+{
+    // @Note:
+    //
+    // Returns whether sphere overlaps with capsule. Also fills Hit_Result.
+    
+    ASSERT(sphere.type == CollisionShapeType_SPHERE);
+    ASSERT(capsule.type == CollisionShapeType_CAPSULE);
+    
+    V3 start, end;
+    get_capsule_axis(capsule, &start, &end);
+    
+    V3 on_axis;
+    f32 dist2 = closest_point_segment_point(sphere.center, start, end, NULL, &on_axis);
+    
+    b32 result = sphere_sphere_intersect(sphere, make_sphere(on_axis, capsule.radius), hit_out);
+    return result;
+}
+
 struct Plane
 {
     V3 center;
