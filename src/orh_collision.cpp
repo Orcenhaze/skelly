@@ -1157,9 +1157,43 @@ FUNCTION b32 sphere_capsule_intersect(Collision_Shape const &sphere, Collision_S
     
     V3 on_axis;
     f32 dist2 = closest_point_segment_point(sphere.center, start, end, NULL, &on_axis);
+    if (dist2 > SQUARE(sphere.radius + capsule.radius))
+        return FALSE;
     
     b32 result = sphere_sphere_intersect(sphere, make_sphere(on_axis, capsule.radius), hit_out);
     return result;
+}
+
+FUNCTION b32 capsule_capsule_intersect(Collision_Shape const &a, Collision_Shape const &b, Hit_Result *hit_out)
+{
+    // @Note:
+    //
+    // Returns whether sphere overlaps with capsule. Also fills Hit_Result.
+    
+    ASSERT(a.type == CollisionShapeType_CAPSULE);
+    ASSERT(b.type == CollisionShapeType_CAPSULE);
+    
+    V3 a_start, a_end, b_start, b_end;
+    get_capsule_axis(a, &a_start, &a_end);
+    get_capsule_axis(b, &b_start, &b_end);
+    
+    
+    V3 on_a_axis, on_b_axis;
+    f32 dist2 = closest_point_segment_segment(a_start, a_end, b_start, b_end, NULL, &on_a_axis, NULL, &on_b_axis);
+    
+    f32 d_len             = length(on_a_axis - on_b_axis);
+    f32 penetration_depth = (a.radius + b.radius) - d_len;
+    if (penetration_depth < 0.0f)
+        return FALSE;
+    
+    penetration_depth     += KINDA_SMALL_NUMBER;
+    V3 normal              = (on_a_axis - on_b_axis) / d_len;
+    hit_out->impact_point  = on_b_axis + normal*b.radius;
+    hit_out->impact_normal = normal;
+    hit_out->normal        = normal;
+    hit_out->location      = a.center + normal*penetration_depth;
+    hit_out->result        = TRUE;
+    return TRUE;
 }
 
 struct Plane
