@@ -1595,9 +1595,9 @@ FUNCTION void immediate_sphere_ext(V3 const &center, f32 radius, f32 longitude_p
     }
 }
 
-FUNCTION inline void immediate_sphere(V3 const &center, f32 radius, Quaternion const &rotation, V4 const &color, s32 num_segments = 32)
+FUNCTION inline void immediate_sphere(V3 const &center, f32 radius, V4 const &color, s32 num_segments = 32)
 {
-    immediate_sphere_ext(center, radius, 1.0f, 1.0f, rotation, color, num_segments);
+    immediate_sphere_ext(center, radius, 1.0f, 1.0f, quaternion_identity(), color, num_segments);
 }
 
 FUNCTION inline void immediate_hemisphere(V3 const &center, f32 radius, Quaternion const &rotation, V4 const &color, s32 num_segments = 32)

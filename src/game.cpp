@@ -802,7 +802,7 @@ FUNCTION void game_render()
     immediate_arrow(hit.impact_point, hit.normal, 0.5f, v4(0,1,1,1), 0.01f);
     immediate_end();
 #endif
-#if 1
+#if 0
     //~ capsule - box
     
     LOCAL_PERSIST Quaternion q = quaternion_identity();
@@ -852,6 +852,57 @@ FUNCTION void game_render()
     immediate_begin();
     set_texture(0);
     immediate_cube(capsule.center, 0.01f, v4(0,0,0,1));
+    immediate_cube(hit.impact_point, 0.01f, color);
+    immediate_cube(hit.location, 0.01f, v4(1,0,1,1));
+    immediate_arrow(hit.impact_point, hit.impact_normal, 0.5f, v4(0,0,1,1), 0.01f);
+    immediate_arrow(hit.impact_point, hit.normal, 0.5f, v4(0,1,1,1), 0.01f);
+    immediate_end();
+#endif
+#if 1
+    //~ sphere - sphere
+    
+    LOCAL_PERSIST V3 center = {0,0,1};
+    if (key_held(&os->frame_input, Key_UP)) {
+        center.z -= 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_DOWN)) {
+        center.z += 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_RIGHT)) {
+        center.x += 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_LEFT)) {
+        center.x -= 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_X)) {
+        center.y -= 0.005f;
+    }
+    if (key_held(&os->frame_input, Key_C)) {
+        center.y += 0.005f;
+    }
+    
+    Collision_Shape a = make_sphere(center, 0.25f);
+    Collision_Shape b = make_sphere({0,0.25f,0}, 0.75f);
+    
+    Hit_Result hit = {};
+    sphere_sphere_intersect(a, b, &hit);
+    if (hit.result)
+        center = hit.location;
+    
+    debug_print("Colliding: %b\n", hit.result);
+    
+    // Draw boxes.
+    immediate_begin(TRUE);
+    set_texture(0);
+    immediate_sphere(a.center, a.radius, v4(0.8f,0.8f,0.8f,0.5f));
+    immediate_sphere(b.center, b.radius, v4(0.3f,0.3f,0.3f,0.5f));
+    immediate_end();
+    
+    // Draw hit result stuff.
+    V4 color = hit.result? v4(0,1,0,1) : v4(1,0,0,1);
+    immediate_begin();
+    set_texture(0);
+    immediate_cube(a.center, 0.01f, v4(0,0,0,1));
     immediate_cube(hit.impact_point, 0.01f, color);
     immediate_cube(hit.location, 0.01f, v4(1,0,1,1));
     immediate_arrow(hit.impact_point, hit.impact_normal, 0.5f, v4(0,0,1,1), 0.01f);

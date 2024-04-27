@@ -1114,6 +1114,35 @@ FUNCTION b32 capsule_box_intersect(Collision_Shape const &capsule, Collision_Sha
     return TRUE;
 }
 
+FUNCTION b32 sphere_sphere_intersect(Collision_Shape const &a, Collision_Shape const &b, Hit_Result *hit_out)
+{
+    // @Note:
+    //
+    // Returns whether spheres overlap. Also fills Hit_Result.
+    //
+    // Basically check if vector from b center to a center is larger/smaller than sum of their radii.
+    
+    ASSERT(a.type == CollisionShapeType_SPHERE);
+    ASSERT(b.type == CollisionShapeType_SPHERE);
+    
+    // Init hit result.
+    *hit_out = make_hit_result();
+    
+    f32 d_len             = length(a.center - b.center);
+    f32 penetration_depth = (a.radius + b.radius) - d_len;
+    if (penetration_depth < 0.0f)
+        return FALSE;
+    
+    penetration_depth     += KINDA_SMALL_NUMBER;
+    V3 normal              = (a.center - b.center) / d_len;
+    hit_out->impact_point  = b.center + normal*b.radius;
+    hit_out->impact_normal = normal;
+    hit_out->normal        = normal;
+    hit_out->location      = a.center + normal*penetration_depth;
+    hit_out->result        = TRUE;
+    return TRUE;
+}
+
 struct Plane
 {
     V3 center;
