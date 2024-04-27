@@ -35,6 +35,7 @@ function does if it isn't obvious AND also refer to resources that explain thing
 TODO:
 [] Replace all ray occurances with segments. Replace logic to REFUSE t-values that go beyond end point.
 [] Implement fast_segment_aabb_intersect() that only returns bool.
+[] GJK for convex-hulls.
 [] Traces for lines, boxes, spheres, and capsules. Note that for traces, there's this concept of being
  _already_ in collision before trace starts where you can return early.
 [] Make Hit_Result ALWAYS return things in world-space (kinda tricky atm).
@@ -308,9 +309,10 @@ struct Hit_Result
     //V3 trace_start;
     //V3 trace_end;
     
-    // The center of the traced shape when collision occured.
-    // Equivalent to impact_point when using line traces or ray-intersection tests.
-    //V3 location;
+    // This is the "resolved" center of the "first" collision shape.
+    // When using tracing, it's the center of the traced shape when collision occured.
+    // Equivalent to impact_point when using line traces tests.
+    V3 location;
     
     // The vector from impact_point to location. We move along this vector by "penetration_depth" amount
     // in order to "resolve" the collision.
@@ -488,6 +490,9 @@ FUNCTION b32 ray_box_intersect(V3 const &a, V3 const &b,
     *hit_out = make_hit_result();
     
     // Transform ray to local space of box.
+    //
+    // @Speed: This branch could be easily mispredicted if we test lots of boxes. Probably better to
+    // split AABBs and OBBs into separate functions. 
     //
     b32 is_aabb = equal(ABS(box.rotation.w), 1.0f);
     if (is_aabb) {
@@ -776,9 +781,12 @@ FUNCTION f32 closest_point_box_point(V3 const &c, Collision_Shape const &box, V3
     
     ASSERT(box.type == CollisionShapeType_BOX);
     
-    b32 is_aabb = equal(ABS(box.rotation.w), 1.0f);
-    
     V3 o = c;
+    
+    // @Speed: This branch could be easily mispredicted if we test lots of boxes. Probably better to
+    // split AABBs and OBBs into separate functions. 
+    //
+    b32 is_aabb = equal(ABS(box.rotation.w), 1.0f);
     if (is_aabb) {
         // Box is an AABB.
         o = o - box.center;
@@ -806,7 +814,7 @@ FUNCTION f32 closest_point_box_point(V3 const &c, Collision_Shape const &box, V3
     } else {
         // @Speed: Is there a faster way to do this transform?
         M4x4 to_orig_matrix = m4x4_from_translation_rotation_scale(box.center, box.rotation, v3(1));
-        p = transform_point (to_orig_matrix, p);
+        p = transform_point(to_orig_matrix, p);
     }
     
     if (p_out) *p_out = p;
@@ -814,117 +822,261 @@ FUNCTION f32 closest_point_box_point(V3 const &c, Collision_Shape const &box, V3
     return result;
 }
 
-FUNCTION b32 box_box_intersect(Collision_Shape const &box1, Collision_Shape const &box2, Hit_Result *hit_out)
+FUNCTION b32 box_box_intersect(Collision_Shape const &a, Collision_Shape const &b, Hit_Result *hit_out)
 {
-    // @Note:
+    // @Note: Christer Ericson - Real Time Collision Detection - P.101;
     //
-    // Returns whether the two boxes overlap. And also fill out the Hit_Result.
+    // Returns whether the two boxes overlap. And also fills out the Hit_Result.
     //
     // We will use the Separating Axis Theorem (SAT) to determine whether boxes overlap, while also 
     // calculating the Minimum Translation Vector (MTV) for resolving the collision.
     //
     // If both boxes are aligned with world axes (AABBs), we only have 3 axes to test; the world axes.
     // If one (or both) of them is an OBB, we will have 15 axes to test in total. Namely, the 3 local
-    // axes of box1, the 3 local axes of box2, and the permutations of the previous axes (which are 9).
+    // axes of a, the 3 local axes of b, and the axes perpendicular to each previous axes (which are 9).
+    //
+    // In OBBs case, we can save a lot of operations by doing the test in the local space of one of
+    // the boxes. That way we ensure that 3 axes are just the world axes:
+    // {1, 0, 0} X
+    // {0, 1, 0} Y
+    // {0, 0, 1} Z
+    // This helps us omit some multiplies as some terms will be multiplied by zero, and others by one.
+    //
+    // @DEBUG: RESOLVING two dynamically rotated OBBs (i.e., every frame) is not working properly.
     
-    // @Cleanup:
-    // @Cleanup:
-    // @Speed:
-    // @Speed: No need to rotate world axes by identity...
-    // @Todo: Pull out get shadow interval into something better.
-    
-    ASSERT(box1.type == CollisionShapeType_BOX);
-    ASSERT(box2.type == CollisionShapeType_BOX);
+    ASSERT(a.type == CollisionShapeType_BOX);
+    ASSERT(b.type == CollisionShapeType_BOX);
     
     // Init hit result.
     *hit_out = make_hit_result();
     
-    b32 box1_is_aabb = equal(ABS(box1.rotation.w), 1.0f);
-    b32 box2_is_aabb = equal(ABS(box2.rotation.w), 1.0f);
-    
-    // These represent the Minimum Translation Vector (MTV).
-    f32 best_penetration_depth = F32_MAX;
+    // MTV in collision-space.
     V3  best_normal            = {};
-    if (box1_is_aabb && box2_is_aabb) {
+    f32 best_penetration_depth = F32_MAX;
+    
+    // @Speed: This branch could be easily mispredicted if we test lots of boxes. Probably better to
+    // split AABBs and OBBs into separate functions. 
+    //
+    b32 a_is_aabb = equal(ABS(a.rotation.w), 1.0f);
+    b32 b_is_aabb = equal(ABS(b.rotation.w), 1.0f);
+    if (a_is_aabb && b_is_aabb) {
         // We only have 3 axes to test. The world axes.
-        debug_print("AABB\n");
-        // Test world axes.
+        
+        V3 t = b.center - a.center;
+        
         for (s32 i = 0; i < 3; i++) {
-            V3 axis       = {};
-            axis.I[i]     = 1.0f;
-            Range shadow1 = sat_get_box_shadow_interval(box1, axis);
-            Range shadow2 = sat_get_box_shadow_interval(box2, axis);
-            f32 pen_depth;
-            V3 normal;
-            if (sat_interval_overlap_test(shadow1, shadow2, axis, &normal, &pen_depth) == FALSE)
-                return FALSE; // Early out.
-            if (pen_depth < best_penetration_depth) {
-                best_penetration_depth = pen_depth;
-                best_normal            = normal;
+            
+            // Project extents onto the axis.
+            f32 ra = a.half_extents.I[i];
+            f32 rb = b.half_extents.I[i];
+            
+            // Project the translation_vector onto the axis.
+            f32 tl     = t.I[i];
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            
+            f32 penetration_depth = (ra + rb) - abs_tl;
+            if (penetration_depth < best_penetration_depth) {
+                best_penetration_depth = penetration_depth;
+                V3 normal              = {};
+                if (tl > 0.0f)      normal.I[i] = -1.0f;
+                else if (tl < 0.0f) normal.I[i] =  1.0f;
+                best_normal = normal;
             }
         }
     } else {
         // We have 15 axes to test.
-        debug_print("OBB\n");
-        // Test the 3 axes of box1.
-        V3 box1_axes[3] = {box1.rotation * V3_X_AXIS, box1.rotation * V3_Y_AXIS, box1.rotation * V3_Z_AXIS};
-        for (s32 i = 0; i < 3; i++) {
-            V3 axis       = box1_axes[i];
-            Range shadow1 = sat_get_box_shadow_interval(box1, axis);
-            Range shadow2 = sat_get_box_shadow_interval(box2, axis);
-            f32 pen_depth;
-            V3 normal;
-            if (sat_interval_overlap_test(shadow1, shadow2, axis, &normal, &pen_depth) == FALSE)
-                return FALSE; // Early out.
-            if (pen_depth < best_penetration_depth) {
-                best_penetration_depth = pen_depth;
-                best_normal            = normal;
+        
+        // Local axes of a and b.
+        V3 a_axes[3] = {a.rotation*V3_X_AXIS, a.rotation*V3_Y_AXIS, a.rotation*V3_Z_AXIS};
+        V3 b_axes[3] = {b.rotation*V3_X_AXIS, b.rotation*V3_Y_AXIS, b.rotation*V3_Z_AXIS};
+        
+        f32 ra, rb;
+        M3x3 r, abs_r;
+        
+        // Construct 3x3 rotation matrix that expresses b in a's space. Transpose is a in b's space.
+        for(s32 i = 0; i < 3; i++) {
+            for(s32 j = 0; j < 3; j++) {
+                r.II[i][j] = dot(a_axes[i], b_axes[j]);
             }
         }
         
-        // Test the 3 axes of box2.
-        V3 box2_axes[3] = {box2.rotation * V3_X_AXIS, box2.rotation * V3_Y_AXIS, box2.rotation * V3_Z_AXIS};
-        for (s32 i = 0; i < 3; i++) {
-            V3 axis       = box2_axes[i];
-            Range shadow1 = sat_get_box_shadow_interval(box1, axis);
-            Range shadow2 = sat_get_box_shadow_interval(box2, axis);
-            f32 pen_depth;
-            V3 normal;
-            if (sat_interval_overlap_test(shadow1, shadow2, axis, &normal, &pen_depth) == FALSE)
-                return FALSE; // Early out.
-            if (pen_depth < best_penetration_depth) {
-                best_penetration_depth = pen_depth;
-                best_normal            = normal;
+        // Only test positive axes, and also add epsilon to account for when two edges are
+        // parallel and we get a near zero cross product.
+        for(s32 i = 0; i < 3; i++) {
+            for(s32 j = 0; j < 3; j++) {
+                abs_r.II[i][j] = ABS(r.II[i][j]) + KINDA_SMALL_NUMBER;
             }
         }
         
-        // Permutations of axes of box1 and box2.
+        // Compute translation vector from a to b (in a's space).
+        V3 t = quaternion_inverse(a.rotation) * (b.center - a.center);
+        
+        // Test the 3 axes of a.
         for (s32 i = 0; i < 3; i++) {
-            for (s32 j = 0; j < 3; j++) {
-                V3 axis       = normalize(cross(box1_axes[i], box2_axes[j]));
-                if (nearly_zero(axis))
-                    continue;
-                Range shadow1 = sat_get_box_shadow_interval(box1, axis);
-                Range shadow2 = sat_get_box_shadow_interval(box2, axis);
-                f32 pen_depth;
-                V3 normal;
-                if (sat_interval_overlap_test(shadow1, shadow2, axis, &normal, &pen_depth) == FALSE)
-                    return FALSE; // Early out.
-                if (pen_depth < best_penetration_depth) {
-                    best_penetration_depth = pen_depth;
-                    best_normal            = normal;
-                }
+            ra = a.half_extents.I[i];
+            rb = dot(b.half_extents, get_row(abs_r, i));
+            
+            f32 tl     = t.I[i];
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            
+            f32 penetration_depth = (ra + rb) - abs_tl;
+            if (penetration_depth < best_penetration_depth) {
+                best_penetration_depth = penetration_depth;
+                V3 normal              = {};
+                if (tl > 0.0f)      normal.I[i] = -1.0f;
+                else if (tl < 0.0f) normal.I[i] =  1.0f;
+                best_normal = a.rotation * normal;
             }
+        }
+        
+        // Test the 3 axes of b.
+        for (s32 i = 0; i < 3; i++) {
+            ra = dot(a.half_extents, get_column(abs_r, i));
+            rb = b.half_extents.I[i];
+            
+            f32 tl     = dot(t, get_column(r, i));
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            
+            f32 penetration_depth = (ra + rb) - abs_tl;
+            if (penetration_depth < best_penetration_depth) {
+                best_penetration_depth = penetration_depth;
+                V3 normal              = {};
+                if (tl > 0.0f)      normal.I[i] = -1.0f;
+                else if (tl < 0.0f) normal.I[i] =  1.0f;
+                best_normal = a.rotation * normal;
+            }
+        }
+        
+        // Test the 9 axes.
+        
+        // @Note: If cross product is near zero, it means we already tested that axis before.
+        //
+#define UPDATE_MTV(a_axis_in_a, b_axis_in_a)                \
+f32 penetration_depth = (ra + rb) - abs_tl;             \
+if (penetration_depth < best_penetration_depth) {       \
+V3 normal_in_a = cross(a_axis_in_a, b_axis_in_a);   \
+if (!nearly_zero(normal_in_a, KINDA_SMALL_NUMBER)) {\
+if (tl > 0.0f) normal_in_a = -normal_in_a;      \
+best_normal = a.rotation * normal_in_a;         \
+best_penetration_depth = penetration_depth;     \
+}                                                   \
+}
+        // Test axis = a.x cross b.x
+        {
+            ra = a.half_extents.y * abs_r._31 + a.half_extents.z * abs_r._21;
+            rb = b.half_extents.y * abs_r._13 + b.half_extents.z * abs_r._12;
+            f32 tl     = t.z * r._21 - t.y * r._31;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_X_AXIS, get_row(abs_r, 0))
+        }
+        
+        // Test axis = a.x cross b.y
+        {
+            ra = a.half_extents.y * abs_r._32 + a.half_extents.z * abs_r._22;
+            rb = b.half_extents.x * abs_r._13 + b.half_extents.z * abs_r._11;
+            f32 tl     = t.z * r._22 - t.y * r._32;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_X_AXIS, get_row(abs_r, 1))
+        }
+        
+        // Test axis = a.x cross b.z
+        {
+            ra = a.half_extents.y * abs_r._33 + a.half_extents.z * abs_r._23;
+            rb = b.half_extents.x * abs_r._12 + b.half_extents.y * abs_r._11;
+            f32 tl     = t.z * r._23 - t.y * r._33;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_X_AXIS, get_row(abs_r, 2))
+        }
+        
+        // Test axis = a.y cross b.x
+        {
+            ra = a.half_extents.x * abs_r._31 + a.half_extents.z * abs_r._11;
+            rb = b.half_extents.y * abs_r._23 + b.half_extents.z * abs_r._22;
+            f32 tl     = t.x * r._31 - t.z * r._11;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_Y_AXIS, get_row(abs_r, 0))
+        }
+        
+        // Test axis = a.y cross b.y
+        {
+            ra = a.half_extents.x * abs_r._32 + a.half_extents.z * abs_r._12;
+            rb = b.half_extents.x * abs_r._23 + b.half_extents.z * abs_r._21;
+            f32 tl     = t.x * r._32 - t.z * r._12;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_Y_AXIS, get_row(abs_r, 1))
+        }
+        
+        // Test axis = a.y cross b.z
+        {
+            ra = a.half_extents.x * abs_r._33 + a.half_extents.z * abs_r._13;
+            rb = b.half_extents.x * abs_r._22 + b.half_extents.y * abs_r._21;
+            f32 tl     = t.x * r._33 - t.z * r._13;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_Y_AXIS, get_row(abs_r, 2))
+        }
+        
+        // Test axis = a.z cross b.x
+        {
+            ra = a.half_extents.x * abs_r._21 + a.half_extents.y * abs_r._11;
+            rb = b.half_extents.y * abs_r._33 + b.half_extents.z * abs_r._32;
+            f32 tl     = t.y * r._11 - t.x * r._21;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_Z_AXIS, get_row(abs_r, 0))
+        }
+        
+        // Test axis = a.z cross b.y
+        {
+            ra = a.half_extents.x * abs_r._22 + a.half_extents.y * abs_r._12;
+            rb = b.half_extents.x * abs_r._33 + b.half_extents.z * abs_r._31;
+            f32 tl     = t.y * r._12 - t.x * r._22;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_Z_AXIS, get_row(abs_r, 1))
+        }
+        
+        // Test axis = a.z cross b.z
+        {
+            ra = a.half_extents.x * abs_r._23 + a.half_extents.y * abs_r._13;
+            rb = b.half_extents.x * abs_r._32 + b.half_extents.y * abs_r._31;
+            f32 tl     = t.y * r._13 - t.x * r._23;
+            f32 abs_tl = ABS(tl);
+            if (abs_tl > (ra + rb))
+                return FALSE;
+            UPDATE_MTV(V3_Z_AXIS, get_row(abs_r, 2))
         }
     }
     
-    // This is the "resolved" center of box1.
-    V3 location = box1.center + best_normal*best_penetration_depth;
+    // @Note: I'm adding epsilon to penetration depth to ensure there's no collision after resolving.
+    //
+    best_normal = normalize_or_zero(best_normal);
+    V3 location = a.center + best_normal*(best_penetration_depth + KINDA_SMALL_NUMBER);
     V3 closest_point;
-    closest_point_box_point(location, box2, &closest_point);
+    closest_point_box_point(location, b, &closest_point);
     
     hit_out->impact_point  = closest_point;
     hit_out->impact_normal = best_normal;
+    hit_out->location      = location;
     hit_out->result        = TRUE;
     return TRUE;
 }

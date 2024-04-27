@@ -694,7 +694,7 @@ FUNCTION void game_render()
     q = quaternion_from_axis_angle(V3_Z_AXIS, 45.0f * DEGS_TO_RADS);
     //q = quaternion_from_axis_angle(normalize(v3(1, 1, 0)), 45.0f * DEGS_TO_RADS * os->frame_dt) * q;
     
-    LOCAL_PERSIST V3 center = {0,0.25f,0};
+    LOCAL_PERSIST V3 center = {0,0,1};
     if (key_held(&os->frame_input, Key_UP)) {
         center.z -= 0.005f;
     }
@@ -716,13 +716,18 @@ FUNCTION void game_render()
     
     V3 sz  = v3(0.25f);
     V3 sz2 = {0.25f, 0.5f, 0.15f};
-    Collision_Shape box1 = make_aabb({0,0,1}, sz);//v3(0.25f, 1.0f, 1.5f));
+    //Collision_Shape box1 = make_aabb({0,0,1}, sz);//v3(0.25f, 1.0f, 1.5f));
+    //Collision_Shape box1 = make_aabb(center, sz);//v3(0.25f, 1.0f, 1.5f));
     //Collision_Shape box2 = make_aabb(center, sz);//v3(0.2f, 0.3f, 0.4f));
-    //Collision_Shape box1 = make_obb({0,0,1}, sz, q);//v3(0.25f, 1.0f, 1.5f));
-    Collision_Shape box2 = make_obb(center, sz, q);
+    Collision_Shape box1 = make_obb(center, sz + V3{0.2f, 0.1f, 0.0f}, q);//v3(0.25f, 1.0f, 1.5f));
+    Collision_Shape box2 = make_obb({0,0.25f,0}, sz, q);
     
     Hit_Result hit = {};
     box_box_intersect(box1, box2, &hit);
+    if (hit.result)
+        center = hit.location;
+    
+    debug_print("Collidin: %b\n", hit.result);
     
     // Draw boxes.
     immediate_begin(TRUE);
@@ -735,8 +740,10 @@ FUNCTION void game_render()
     V4 color = hit.result? v4(0,1,0,1) : v4(1,0,0,1);
     immediate_begin();
     set_texture(0);
+    immediate_cube(box1.center, 0.01f, v4(0,0,0,1));
     immediate_cube(hit.impact_point, 0.01f, color);
-    immediate_arrow(hit.impact_point, hit.impact_normal, 1.0f, v4(0,0,1,1), 0.01f);
+    immediate_cube(hit.location, 0.01f, v4(1,0,1,1));
+    immediate_arrow(hit.impact_point, hit.impact_normal, 0.5f, v4(0,0,1,1), 0.002f);
     immediate_end();
 #endif
     

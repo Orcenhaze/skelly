@@ -9,7 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
-0.90 - added frame vs. tick dt and time. Added V3_INF. Added abs() for V2 and V3. added sign().
+0.90 - added frame vs. tick dt and time. Added V3_INF. Added abs() for V2 and V3. added sign(). added get_row() and get_column() for M3x3.
 0.89 - added str8_contains(). Fixed quaternion_from_euler(). Added equal() for nearly equal comparison. Added rotate_towards().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
 0.87 - added base_mouse_resolution to OS_State. Added euler to quaternion conversion.
@@ -800,6 +800,8 @@ FUNCDEF inline f32        angle_between(Quaternion const &a, Quaternion const &b
 FUNCDEF inline M3x3 m3x3_identity();
 FUNCDEF inline M3x3 m3x3(M4x4 const &m);
 FUNCDEF        M3x3 m3x3_from_quaternion(Quaternion q);
+FUNCDEF inline V3   get_column(M3x3 const &m, u32 c);
+FUNCDEF inline V3   get_row(M3x3 const &m, u32 r);
 
 FUNCDEF inline M3x3 get_rotation(M3x3 const &m);
 FUNCDEF inline V3   get_scale(M3x3 const &m);
@@ -3247,6 +3249,16 @@ M3x3 m3x3_from_quaternion(Quaternion q)
     result._32 =        2.0f * (qyz + qxw);
     result._33 = 1.0f - 2.0f * (qxx + qyy);
     
+    return result;
+}
+FUNCDEF inline V3 get_column(M3x3 const &m, u32 c)
+{
+    V3 result = {m.II[0][c], m.II[1][c], m.II[2][c]};
+    return result;
+}
+FUNCDEF inline V3 get_row(M3x3 const &m, u32 r)
+{
+    V3 result = {m.II[r][0], m.II[r][1], m.II[r][2]};
     return result;
 }
 
