@@ -37,28 +37,31 @@ TODO:
 [] Traces for lines, boxes, spheres, and capsules. Note that for traces, there's this concept of being
  _already_ in collision before trace starts where you can return early.
 [] Make Hit_Result ALWAYS return things in world-space (kinda tricky atm).
+[] 2D collision stuff.
 
 */
 
 #include "orh.h"
 
-union Ray
-{
-    struct { V3  origin; V3 direction; f32 t; };
-    struct { V3  o;      V3 d;         f32 t; };
-    
-};
-
-
 ////////////////////////////////
 //~ 3D
 
+FUNCTION b32 aabb_overlap(V3 const &a_min, V3 const &a_max, V3 const &b_min, V3 const &b_max)
+{
+    // @Note: Returns whether a and b overlap.
+    b32 result = ((a_max.x > b_min.x) &&
+                  (a_min.x < b_max.x) && 
+                  (a_max.y > b_min.y) &&
+                  (a_min.y < b_max.y) &&
+                  (a_max.z > b_min.z) &&
+                  (a_min.z < b_max.z));
+    
+    return result;
+}
+
 FUNCTION b32 point_inside_aabb(V3 const &p, V3 const &min, V3 const &max)
 {
-    // @Note:
-    //
-    // Returns whether point p is inside aabb defined by min and max.
-    //
+    // @Note: Returns whether point p is inside aabb defined by min and max.
     // It's for AABBs, so pass stuff in world-space, I guess.
     b32 result = FALSE;
     if((p.x >= min.x) && (p.x <= max.x) &&
@@ -226,6 +229,7 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
     // @Note: Christer Ericson - Real Time Collision Detection - P.148;
     //
     // Returns _squared_ closest distance between the two line segments.
+    // Also fills t values as percents in range [0, 1] and fills closest points.
     //
     // L1 is line of ab1 --- S1 is segment of ab1.
     //
@@ -324,13 +328,20 @@ FUNCTION f32 closest_point_segment_segment(V3 const &a1, V3 const &b1, V3 const 
 struct Hit_Result
 {
     // @Note: Currently, all the values here are in collision-space, which is NOT world-space necessarily.
-    // Be AWARE when moving the shapes from world-space to collision-space using any type of scaling 
+    //
+    // Be AWARE when moving the shapes from world-space to collision-space using any type of scaling, 
     // uniform or non-uniform. If you did, then certain values like penetration_depth won't be correct
     // in world space as it needs to be scaled accordingly.
+    //
+    // The result of length(impact_point - start) will be different in collision-space compared to
+    // the space you care about (like world) because scaling was applied. It is @important to note
+    // however, that because we are using a "percent" instead of a "distance from start along start-end"
+    // then that value doesn't change, because the relationship doesn't change even after scaling.
+    // You can use transform_hit_result() to transform the important values using some affine matrix.
     
-    // @Todo: Traces:
-    //V3 trace_start;
-    //V3 trace_end;
+    // For traces and line segment functions only. Zero vectors otherwise.
+    V3 start;
+    V3 end;
     
     // The point on the surface of the second shape (the one we are testing against) on which the collision occured.
     // If no collision occured, this will be a zero vector.
@@ -350,7 +361,7 @@ struct Hit_Result
     // location = shape1.center + normal * penetration_depth;
     // This is the "resolved" center of the "first" collision shape.
     // When using tracing, it's the center of the traced shape when collision occured.
-    // Equivalent to impact_point when using line traces tests.
+    // Equivalent to impact_point when using line traces and segments tests.
     V3 location;
     
     // This is a percent value in range [0, 1].
@@ -367,11 +378,31 @@ struct Hit_Result
     u8 result;
 };
 
-FUNCTION inline Hit_Result make_hit_result()
+FUNCTION inline Hit_Result make_hit_result(V3 const &start, V3 const &end)
 {
     Hit_Result result = {};
+    result.start   = start;
+    result.end     = end;
     result.percent = 1.0f; // Assume there was no collision.
     return result;
+}
+
+FUNCTION inline Hit_Result transform_hit_result(M4x4 const &affine, Hit_Result const &hit)
+{
+    Hit_Result result    = make_hit_result (hit.start, hit.end);
+    result.start         = transform_point (affine, hit.start);
+    result.end           = transform_point (affine, hit.end);
+    result.impact_point  = transform_point (affine, hit.impact_point);
+    result.impact_normal = transform_vector(affine, hit.impact_normal);
+    result.normal        = transform_vector(affine, hit.normal);
+    result.location      = transform_point (affine, hit.location);
+    result.percent       = hit.percent;
+    result.result        = hit.result;
+    return result;
+    
+    // @Note: These will be different if matrix contains scaling.
+    //f32 len1 = length(hit.impact_point - hit.start);
+    //f32 len2 = length(result.impact_point - result.start);
 }
 
 FUNCTION b32 segment_triangle_intersect(V3 const &a, V3 const &b, 
@@ -384,7 +415,7 @@ FUNCTION b32 segment_triangle_intersect(V3 const &a, V3 const &b,
     // Returns whether segment pierces the triangle. Also fills Hit_Result and barycentric coords.
     
     // Init hit result.
-    *hit_out = make_hit_result();
+    *hit_out = make_hit_result(a, b);
     
     V3 e1 = p2-p1, e2 = p3-p1, to_a = a-p1;
     V3 ab = b-a;
@@ -406,7 +437,7 @@ FUNCTION b32 segment_triangle_intersect(V3 const &a, V3 const &b,
         if (barycentric_out) *barycentric_out = {-1.0f, -1.0f, -1.0f};
         return FALSE;
     } else {
-        hit_out->impact_point  = lerp(a, percent, b);
+        hit_out->impact_point  = a + t*ab; //lerp(a, percent, b);
         hit_out->impact_normal = n;
         hit_out->normal        = n;
         hit_out->location      = hit_out->impact_point;
@@ -417,6 +448,60 @@ FUNCTION b32 segment_triangle_intersect(V3 const &a, V3 const &b,
     }
 }
 
+FUNCTION b32 segment_mesh_intersect(V3 const &a, V3 const &b,
+                                    V3 const *vertices, s64 num_vertices,
+                                    u32 const *indices, s64 num_indices,
+                                    Hit_Result *hit_out)
+{
+    ASSERT((num_indices % 3) == 0);
+    
+    Hit_Result best_hit = make_hit_result(a, b);
+    f32 best_percent    =  F32_MAX;
+    for (s64 i = 0; i < num_indices; i += 3) {
+        V3 p1 = vertices[indices[i + 0]];
+        V3 p2 = vertices[indices[i + 1]];
+        V3 p3 = vertices[indices[i + 2]];
+        
+        Hit_Result hit;
+        segment_triangle_intersect(a, b, p1, p2, p3, &hit);
+        if (hit.result && (hit.percent < best_percent)) {
+            best_percent = hit.percent;
+            best_hit     = hit;
+        }
+    }
+    
+    *hit_out = best_hit;
+    return best_hit.result;
+}
+
+FUNCTION b32 segment_plane_intersect(V3 const &a, V3 const &b,
+                                     V3 const &p, V3 const &n,
+                                     Hit_Result *hit_out)
+{
+    // @Note: Returns whether segment defined by a and b pierces the plane defined by
+    // normal n and point on the plane p. Also fills Hit_Result
+    //
+    // Assumes n is normalized.
+    
+    // Init hit result.
+    *hit_out = make_hit_result(a, b);
+    
+    V3 ab     = normalize_or_zero(b-a);
+    f32 denom = dot(n, ab);
+    if (nearly_zero(denom, KINDA_SMALL_NUMBER))
+        return FALSE;
+    V3 ap = p-a;
+    f32 t = dot(ap, n) / denom;
+    
+    f32 percent = t / length(b-a);
+    hit_out->impact_point  = a + t*ab; //lerp(a, percent, b);
+    hit_out->impact_normal = n;
+    hit_out->normal        = n;
+    hit_out->location      = hit_out->impact_point;
+    hit_out->percent       = percent;
+    hit_out->result        = TRUE;
+    return TRUE;
+}
 
 enum Collision_Shape_Type
 {
@@ -536,7 +621,7 @@ FUNCTION b32 segment_box_intersect(V3 const &a, V3 const &b,
     ASSERT(nearly_zero(dot(d, d)) == FALSE);
     
     // Init hit result.
-    *hit_out = make_hit_result();
+    *hit_out = make_hit_result(a, b);
     
     // Transform segment to local space of box.
     //
@@ -635,7 +720,7 @@ FUNCTION b32 segment_sphere_intersect(V3 const &a, V3 const &b,
     ASSERT(nearly_zero(dot(d, d)) == FALSE);
     
     // Init hit result.
-    *hit_out = make_hit_result();
+    *hit_out = make_hit_result(a, b);
     
     V3 oc  = sphere.center - o;
     f32 tc = dot(oc, d);
@@ -694,7 +779,7 @@ FUNCTION b32 segment_capsule_intersect(V3 const &a, V3 const &b,
     ASSERT(nearly_zero(dot(d, d)) == FALSE);
     
     // Init hit result.
-    *hit_out = make_hit_result();
+    *hit_out = make_hit_result(a, b);
     
     // Calculate the capsule axis points, i.e., the center of the upper and lower spheres/caps in capsule's local space, and transform them to collision-space.
     f32 ra   = capsule.radius;
@@ -845,7 +930,7 @@ FUNCTION b32 box_box_intersect(Collision_Shape const &a, Collision_Shape const &
     ASSERT(b.type == CollisionShapeType_BOX);
     
     // Init hit result.
-    *hit_out = make_hit_result();
+    *hit_out = make_hit_result({}, {});
     
     // MTV in collision-space.
     V3  best_normal            = {};
@@ -1095,7 +1180,7 @@ FUNCTION b32 sphere_box_intersect(Collision_Shape const &sphere, Collision_Shape
     ASSERT(box.type == CollisionShapeType_BOX);
     
     // Init hit result.
-    *hit_out = make_hit_result();
+    *hit_out = make_hit_result({}, {});
     
     V3 on_box, box_normal;
     f32 dist2 = closest_point_box_point(sphere.center, box, &on_box, &box_normal);
@@ -1133,7 +1218,7 @@ FUNCTION b32 capsule_box_intersect(Collision_Shape const &capsule, Collision_Sha
     ASSERT(box.type == CollisionShapeType_BOX);
     
     // Init hit result.
-    *hit_out = make_hit_result();
+    *hit_out = make_hit_result({}, {});
     
     V3 start, end;
     get_capsule_axis(capsule, &start, &end);
@@ -1175,7 +1260,7 @@ FUNCTION b32 sphere_sphere_intersect(Collision_Shape const &a, Collision_Shape c
     ASSERT(b.type == CollisionShapeType_SPHERE);
     
     // Init hit result.
-    *hit_out = make_hit_result();
+    *hit_out = make_hit_result({}, {});
     
     f32 d_len             = length(a.center - b.center);
     f32 penetration_depth = (a.radius + b.radius) - d_len;
@@ -1226,7 +1311,6 @@ FUNCTION b32 capsule_capsule_intersect(Collision_Shape const &a, Collision_Shape
     get_capsule_axis(a, &a_start, &a_end);
     get_capsule_axis(b, &b_start, &b_end);
     
-    
     V3 on_a_axis, on_b_axis;
     f32 dist2 = closest_point_segment_segment(a_start, a_end, b_start, b_end, NULL, &on_a_axis, NULL, &on_b_axis);
     
@@ -1243,177 +1327,4 @@ FUNCTION b32 capsule_capsule_intersect(Collision_Shape const &a, Collision_Shape
     hit_out->location      = a.center + normal*penetration_depth;
     hit_out->result        = TRUE;
     return TRUE;
-}
-
-struct Plane
-{
-    V3 center;
-    V3 normal;
-};
-
-struct Circle
-{
-    V3  center;
-    V3  normal;
-    f32 radius;
-};
-
-FUNCTION b32 point_inside_box_test(V3 p, Rect3 box)
-{
-    b32 result = false;
-    
-    if((p.x >= box.min.x) && (p.x <= box.max.x) &&
-       (p.y >= box.min.y) && (p.y <= box.max.y) &&
-       (p.z >= box.min.z) && (p.z <= box.max.z))
-        result = true;
-    
-    return result;
-}
-
-FUNCTION b32 box_overlap_test(Rect3 A, Rect3 B)
-{
-    b32 result = ((A.max.x > B.min.x) &&
-                  (A.min.x < B.max.x) && 
-                  (A.max.y > B.min.y) &&
-                  (A.min.y < B.max.y) &&
-                  (A.max.z > B.min.z) &&
-                  (A.min.z < B.max.z));
-    
-    return result;
-}
-
-FUNCTION b32 ray_box_intersect(Ray *ray, Rect3 box)
-{
-    V3 t_bmin = hadamard_div((box.min - ray->o), ray->d);
-    V3 t_bmax = hadamard_div((box.max - ray->o), ray->d);
-    
-    V3 t_min3 = { MIN(t_bmin.x, t_bmax.x), MIN(t_bmin.y, t_bmax.y), MIN(t_bmin.z, t_bmax.z) };
-    V3 t_max3 = { MAX(t_bmin.x, t_bmax.x), MAX(t_bmin.y, t_bmax.y), MAX(t_bmin.z, t_bmax.z) };
-    
-    f32 t_min = MAX3(t_min3.x, t_min3.y, t_min3.z);
-    f32 t_max = MIN3(t_max3.x, t_max3.y, t_max3.z);
-    
-    // @Note: Ignore collisions that are behind us, i.e. (t_min < 0.0f).
-    b32 result = ((t_min > 0.0f) && (t_min < t_max));
-    
-    if (result)
-        ray->t = t_min;
-    else
-        ray->t = F32_MAX;
-    
-    return result;
-}
-
-FUNCTION b32 ray_plane_intersect(Ray *ray, Plane plane)
-{
-    f32 d      = dot(plane.normal, plane.center);
-    f32 t      = (d - dot(plane.normal, ray->o)) / dot(plane.normal, ray->d);
-    b32 result = (t > 0.0f) && (t < F32_MAX);
-    
-    if (result)
-        ray->t = t;
-    else
-        ray->t = F32_MAX;
-    
-    return result;
-}
-
-FUNCTION b32 ray_triangle_intersect(Ray *ray, V3 p0, V3 p1, V3 p2)
-{
-    ray->t = F32_MAX;
-    
-    V3 e1 = p1 - p0, e2 = p2 - p0, h = cross(ray->direction, e2);
-    f32 a = dot(e1, h);
-    if (ABS(a) == 0) return FALSE;
-    
-    f32 f = 1 / a;
-    V3  s = ray->origin - p0;
-    f32 u = f * dot(s, h);
-    if (u < 0 || u > 1) return FALSE;
-    
-    V3  q = cross(s, e1);
-    f32 v = f * dot(ray->direction, q);
-    if (v < 0 || u + v > 1) return FALSE;
-    
-    f32 t = f * dot(e2, q);
-    if (t < 0) return FALSE;
-    
-    ray->t = t;
-    return TRUE;
-}
-
-FUNCTION b32 ray_mesh_intersect(Ray *ray, s64 num_vertices, V3 *vertices, s64 num_indices, u32 *indices)
-{
-    ASSERT((num_indices % 3) == 0);
-    
-    f32 best_t = F32_MAX;
-    Ray temp_r = *ray;
-    
-    for (s32 i = 0; i < num_indices; i += 3) {
-        V3 p0 = vertices[indices[i + 0]];
-        V3 p1 = vertices[indices[i + 1]];
-        V3 p2 = vertices[indices[i + 2]];
-        
-        b32 is_hit = ray_triangle_intersect(&temp_r, p0, p1, p2);
-        if (is_hit && (temp_r.t < best_t)) {
-            best_t = temp_r.t;
-        }
-    }
-    
-    ray->t = best_t;
-    return (best_t != F32_MAX);
-}
-
-FUNCTION f32 closest_distance_ray_ray(Ray *r0, Ray *r1)
-{
-    // @Note: Ray directions must be normalized!
-    
-    // @Note: Originally looked at code from https://nelari.us/post/gizmos/,
-    // but it seemingly had a mistake when returning a result, so I corrected the math using
-    // Christer_Ericson_Real-Time_Collision_Detection Ch.5.1.8 Page.185.
-    //
-    // Basically, if the rays are parallel, then the distance between them is constant.
-    // We compute it by getting the length of the vector v going from some point p0 on r0 to 
-    // a point facing it p1 on r1. 
-    // A faster way is to use the parallelogram which is formed by the vector v from r0's and
-    // r1's origin and r0's  direction vector. But since the ray direction is normalized,
-    // we can simplify further.
-    // Check method #3 from: https://www.youtube.com/watch?v=9wznbg_aKOo
-    //
-    // If they are not parallel, we need to find 2 points (on r0 and r1), such that v is
-    // perpendicular to both rays.
-    
-    f32 result  = F32_MAX;
-    
-    //r0->d = normalize(r0->d);
-    //r1->d = normalize(r1->d);
-    
-    V3 vec_o  = r0->o - r1->o;
-    f32 dot_d = dot(r0->d, r1->d);
-    f32 det   = 1.0f - SQUARE(dot_d);
-    
-    if (ABS(det) > F32_MIN) {
-        //
-        // Rays are non-parallel.
-        //
-        f32 inv_det = 1.0f / det;
-        
-        f32 c = dot(vec_o, r0->d);
-        f32 f = dot(vec_o, r1->d);
-        
-        r0->t = (dot_d*f - c)       * inv_det;
-        r1->t = (f       - c*dot_d) * inv_det;
-        
-        V3 p0 = r0->o + r0->d*r0->t;
-        V3 p1 = r1->o + r1->d*r1->t;
-        
-        result = length(p0 - p1);
-    } else {
-        //
-        // Rays are parallel.
-        //
-        result = length(cross(vec_o, r0->d));
-    }
-    
-    return result;
 }

@@ -1,4 +1,5 @@
-[] orh_collision.h.
+
+[] Organizing shaders: Skybox, instancing, PBR, animated, shaders folder, /Ishaders\ compiler flag.
 
 [] Figure out a neat way to serialize stuff.
 [] Modify mesh exporter: 
@@ -8,9 +9,10 @@
 	Make the exporters as blender addons for convenience.
 [] Modify mesh.h/cpp to average TBNs based on exported flags.
 
-[] Organizing shaders: Skybox, instancing, PBR, animated, shaders folder, /Ishaders\ compiler flag.
 [] Add support for heightmaps/bumpmaps.
 [] Forward+ shading.
+
+[] orh_collision.h: GJK.
 
 [] Fix visual bug: For some reason, when using when using 4x MSAA, rasterizer is causing seams when triangles meet.
 

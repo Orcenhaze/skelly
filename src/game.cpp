@@ -285,7 +285,8 @@ FUNCTION void game_tick_update()
     
 #if DEVELOPER
     if (game->mode == GameMode_DEBUG) {
-        Ray camera_ray = {game->camera.position, normalize_or_zero(game->mouse_world - game->camera.position)};
+        V3 camera_position = game->camera.position;
+        V3 camera_end      = camera_position + 300*normalize(game->mouse_world - camera_position);
         
         // @Note: We have to check if we are interacting with gizmo before doing mouse picking because 
         // we don't want mouse clicks to overlap. Maybe there's a better way to get around this.
@@ -300,7 +301,7 @@ FUNCTION void game_tick_update()
             V3 delta_pos;
             Quaternion delta_rot;
             V3 delta_scale;
-            gizmo_execute(camera_ray, manager->selected_entity->position, &delta_pos, &delta_rot, &delta_scale);
+            gizmo_execute(camera_position, manager->selected_entity->position, &delta_pos, &delta_rot, &delta_scale);
             
             // Transform all selected entities.
             for (s32 i = 0; i < manager->selected_entities.count; i++) {
@@ -350,14 +351,11 @@ FUNCTION void game_tick_update()
                  
         */
                 
-                V3 o = transform_point(e->object_to_world.inverse, camera_ray.origin);
-                V3 d = transform_vector(e->object_to_world.inverse, camera_ray.direction);
-                
-                // camera ray in object space of entity mesh.
-                Ray ray_object = {o, normalize(d)};
+                V3 a = transform_point(e->object_to_world.inverse, camera_position);
+                V3 b = transform_point(e->object_to_world.inverse, camera_end);
                 
                 // Early out.
-                if (ray_box_intersect(&ray_object, mesh->bounding_box) == FALSE)
+                if (segment_aabb_intersect(a, b, mesh->bounding_box.min, mesh->bounding_box.max) == FALSE)
                     continue;
                 
                 V3 *vertices = mesh->vertices.data;
@@ -366,9 +364,10 @@ FUNCTION void game_tick_update()
                     vertices = mesh->skinned_vertices.data;
                 }
                 
-                b32 is_hit = ray_mesh_intersect(&ray_object, mesh->vertices.count, vertices, mesh->indices.count, mesh->indices.data);
-                if (is_hit && (ray_object.t < sort_index)) {
-                    sort_index  = ray_object.t;
+                Hit_Result hit;
+                segment_mesh_intersect(a, b, vertices, mesh->vertices.count, mesh->indices.data, mesh->indices.count, &hit);
+                if (hit.result && (hit.percent < sort_index)) {
+                    sort_index     = hit.percent;
                     best_entity_id = manager->all_entities[i];
                 }
             }
@@ -408,8 +407,6 @@ FUNCTION void game_render()
     immediate_line_2point5d(-V3R*hw, V3R*hw, V3U, v4(1,0,0,0.5f), 0.01f);
     immediate_end();
     
-    
-    
     //
     // @Temporary:
     // @Temporary: Testing collision!
@@ -438,7 +435,7 @@ FUNCTION void game_render()
     immediate_line(a2 - 50.0f*(b2-a2), b2 + 50.0f*(b2-a2), v4(0.4,0.4,0.4,1.0), 0.01f);
     immediate_end();
 #endif
-#if 1
+#if 0
     //~ line segments
     if (key_pressed(&os->frame_input, Key_1)) {
         a1 = game->camera.position;
@@ -588,7 +585,7 @@ FUNCTION void game_render()
         immediate_end();
     }
 #endif
-#if 1
+#if 0
     //~ segment - sphere
     Collision_Shape sphere = make_sphere({-3.0f, 2.0f, -2.0f}, 0.5f);
     
@@ -1038,11 +1035,11 @@ FUNCTION void game_render()
     // Render all entities.
     for (s32 i = 0; i < manager->all_entities.count; i++) {
         Entity *e = find_entity(manager, manager->all_entities[i]);
-        //draw_entity(e);
+        draw_entity(e);
     }
     
 #if DEVELOPER
-    //draw_editor_ui();
+    draw_editor_ui();
     
     // Draw visual debugging stuff for selected entities.
     if (manager->selected_entity) {
