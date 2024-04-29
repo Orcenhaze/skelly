@@ -1,6 +1,4 @@
 
-[] Organizing shaders: Skybox, instancing, PBR, animated, shaders folder, /Ishaders\ compiler flag.
-
 [] Figure out a neat way to serialize stuff.
 [] Modify mesh exporter: 
 	Always export face info. Averaging takes place in mesh load time.

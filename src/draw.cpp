@@ -8,16 +8,11 @@ FUNCTION void draw_entity(Entity *e)
         return;
     }
     
-    // Bind Input Assembler.
-    device_context->IASetInputLayout(pbr_input_layout);
-    device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    UINT stride = sizeof(Vertex_XTBNUCJW);
-    UINT offset = 0;
-    device_context->IASetVertexBuffers(0, 1, &mesh->vbo, &stride, &offset);
-    device_context->IASetIndexBuffer(mesh->ibo, DXGI_FORMAT_R32_UINT, 0);
+    bind_shader_skeletal_mesh_pbr();
+    bind_buffers_skeletal_mesh_pbr(mesh->vbo, mesh->ibo);
+    device_context->RSSetState(rasterizer_state_solid);
     
-    // Vertex Shader.
-    // Upload vs constants.
+    // Upload vertex constant data.
     PBR_VS_Constants vs_constants = {};
     vs_constants.object_to_proj_matrix  = view_to_proj_matrix.forward * world_to_view_matrix.forward * e->object_to_world.forward;
     vs_constants.object_to_world_matrix = e->object_to_world.forward;
@@ -29,42 +24,17 @@ FUNCTION void draw_entity(Entity *e)
         
         MEMORY_COPY(vs_constants.skinning_matrices, e->animation_player->skinning_matrices.data, matrix_count * sizeof(M4x4));
     }
+    upload_vertex_constants_skeletal_mesh_pbr(vs_constants);
     
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    device_context->Map(pbr_vs_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    *(PBR_VS_Constants*)mapped.pData = vs_constants;
-    device_context->Unmap(pbr_vs_cbuffer, 0);
-    
-    device_context->VSSetConstantBuffers(0, 1, &pbr_vs_cbuffer);
-    device_context->VSSetShader(pbr_vs, 0, 0);
-    
-    // Rasterizer Stage.
-    device_context->RSSetViewports(1, &viewport);
-    device_context->RSSetState(rasterizer_state_solid);
-    
-    // Pixel Shader.
-    device_context->PSSetSamplers(0, 1, &sampler_linear);
-    device_context->PSSetShader(pbr_ps, 0, 0);
-    
-    // Output Merger.
-    device_context->OMSetBlendState(default_blend_state, 0, 0XFFFFFFFFU);
-    device_context->OMSetDepthStencilState(default_depth_state, 0);
-    device_context->OMSetRenderTargets(1, &render_target_view, depth_stencil_view);
-    
-    // Upload ps constants.
+    // Upload pixel constant data.
     PBR_PS_Constants ps_constants = {};
-    
-    // Set point lights from scene.
     ps_constants.num_point_lights = game->num_point_lights;
-    for (s32 i = 0; i < game->num_point_lights; i++) {
+    for (s32 i = 0; i < game->num_point_lights; i++)
         ps_constants.point_lights[i] = game->point_lights[i];
-    }
     
-    // Set directional lights from scene.
     ps_constants.num_dir_lights = game->num_dir_lights;
-    for (s32 i = 0; i < game->num_dir_lights; i++) {
+    for (s32 i = 0; i < game->num_dir_lights; i++)
         ps_constants.dir_lights[i] = game->dir_lights[i];
-    }
     
     ps_constants.camera_position = game->camera.position;
     
@@ -93,16 +63,11 @@ FUNCTION void draw_entity(Entity *e)
         ps_constants.roughness         = roughness;
         ps_constants.ambient_occlusion = ao;
         
-        D3D11_MAPPED_SUBRESOURCE mapped;
-        device_context->Map(pbr_ps_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-        *(PBR_PS_Constants*)mapped.pData = ps_constants;
-        device_context->Unmap(pbr_ps_cbuffer, 0);
-        
-        device_context->PSSetConstantBuffers(1, 1, &pbr_ps_cbuffer);
-        
         // Upload textures.
         for (s32 map_index = 0; map_index < MaterialTextureMapType_COUNT; map_index++)
-            device_context->PSSetShaderResources(map_index, 1, &list->texture_maps[map_index]->view);
+            set_texture_skeletal_mesh_pbr(map_index, &list->texture_maps[map_index]->view);
+        
+        upload_pixel_constants_skeletal_mesh_pbr(ps_constants);
         
         // Draw.
         device_context->DrawIndexed(list->num_indices, list->first_index, 0);
@@ -119,16 +84,11 @@ FUNCTION void draw_entity_wireframe(Entity *e)
         return;
     }
     
-    // Bind Input Assembler.
-    device_context->IASetInputLayout(pbr_input_layout);
-    device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    UINT stride = sizeof(Vertex_XTBNUCJW);
-    UINT offset = 0;
-    device_context->IASetVertexBuffers(0, 1, &mesh->vbo, &stride, &offset);
-    device_context->IASetIndexBuffer(mesh->ibo, DXGI_FORMAT_R32_UINT, 0);
+    bind_shader_skeletal_mesh_pbr();
+    bind_buffers_skeletal_mesh_pbr(mesh->vbo, mesh->ibo);
+    device_context->RSSetState(rasterizer_state_wireframe);
     
-    // Vertex Shader.
-    // Upload vs constants.
+    // Upload vertex constant data.
     PBR_VS_Constants vs_constants = {};
     vs_constants.object_to_proj_matrix  = view_to_proj_matrix.forward * world_to_view_matrix.forward * e->object_to_world.forward;
     vs_constants.object_to_world_matrix = e->object_to_world.forward;
@@ -140,46 +100,20 @@ FUNCTION void draw_entity_wireframe(Entity *e)
         
         MEMORY_COPY(vs_constants.skinning_matrices, e->animation_player->skinning_matrices.data, matrix_count * sizeof(M4x4));
     }
-    
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    device_context->Map(pbr_vs_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    *(PBR_VS_Constants*)mapped.pData = vs_constants;
-    device_context->Unmap(pbr_vs_cbuffer, 0);
-    
-    device_context->VSSetConstantBuffers(0, 1, &pbr_vs_cbuffer);
-    device_context->VSSetShader(pbr_vs, 0, 0);
-    
-    // Rasterizer Stage.
-    device_context->RSSetViewports(1, &viewport);
-    device_context->RSSetState(rasterizer_state_wireframe);
-    
-    // Pixel Shader.
-    device_context->PSSetSamplers(0, 1, &sampler_linear);
-    device_context->PSSetShader(pbr_ps, 0, 0);
-    
-    // Output Merger.
-    device_context->OMSetBlendState(default_blend_state, 0, 0XFFFFFFFFU);
-    device_context->OMSetDepthStencilState(default_depth_state, 0);
-    device_context->OMSetRenderTargets(1, &render_target_view, depth_stencil_view);
+    upload_vertex_constants_skeletal_mesh_pbr(vs_constants);
     
     // Upload ps constants, default params except for base_color.
     V3  c0            = { 0.89,  0.71, 0.882};
     V3  c1            = {0.929, 0.047, 0.898};
     f32 ct            = ping_pong((f32)os->frame_time, 1.0f);
     V3  outline_color = lerp(c0, ct, c1);
-    
-    PBR_PS_Constants ps_constants = {};
+    PBR_PS_Constants ps_constants  = {};
     ps_constants.use_normal_map    = FALSE;
     ps_constants.base_color        = outline_color;
     ps_constants.metallic          = 0.0f;
     ps_constants.roughness         = 0.5f;
     ps_constants.ambient_occlusion = 1.0f;
-    
-    device_context->Map(pbr_ps_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    *(PBR_PS_Constants*)mapped.pData = ps_constants;
-    device_context->Unmap(pbr_ps_cbuffer, 0);
-    
-    device_context->PSSetConstantBuffers(1, 1, &pbr_ps_cbuffer);
+    upload_pixel_constants_skeletal_mesh_pbr(ps_constants);
     
     // Draw triangle lists.
     for (s32 list_index = 0; list_index < mesh->triangle_list_info.count; list_index++) {

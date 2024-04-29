@@ -1,6 +1,7 @@
-/* orh_d3d11.cpp - v0.12 - C++ D3D11 immediate mode renderer.
+/* orh_d3d11.cpp - v0.13 - C++ D3D11 immediate mode renderer.
 
 REVISION HISTORY:
+0.13 - added shader_factory. removed normal from immediate-mode render.
 0.12 - can now pass rotation to some immediate-mode drawing functions. Added immediate_box().
 0.11 - added more geometry we can draw in immediate mode. Added 2.5D stuff to draw 2D geometry in 3D world.
 0.10 - loaded textures now use mip-mapping.
@@ -21,8 +22,11 @@ CONVENTIONS:
 * UV-coords origin is at top-left corner (DOESN'T match with vertex coordinates).
 * When storing paths, if string name has "folder" in it, then it ends with '/' or '\\'.
 
+NOTE:
+* This file defines and creates an immediate-mode shader that can be used immediately, but we also have
+the shader factory that includes and creates other shaders in general.
+
 TODO:
-[] Pull FOV out into a variable?
 
 MISC:
 About sRGB:
@@ -61,7 +65,7 @@ GLOBAL DWORD current_window_width;
 GLOBAL DWORD current_window_height;
 
 // Projection matrices:
-// This is an affine transform. Some call it the "model matrix".
+// This is an affine transform. Some call it the "model matrix". Used by the immediate-mode renderer.
 GLOBAL M4x4         object_to_world_matrix = m4x4_identity();
 // This is the "view matrix"; it is the inverse of the camera's "model matrix". look_at() also makes one.
 GLOBAL M4x4_Inverse world_to_view_matrix   = {m4x4_identity(), m4x4_identity()};
@@ -90,7 +94,7 @@ GLOBAL ID3D11DepthStencilState  *depth_state_off;
 GLOBAL ID3D11DepthStencilState  *depth_state_reverseZ;
 GLOBAL ID3D11SamplerState       *default_sampler;
 GLOBAL ID3D11SamplerState       *sampler_linear;
-GLOBAL ID3D11ShaderResourceView *texture0;
+GLOBAL ID3D11ShaderResourceView *texture0; // Mainly used by the immediate-mode renderer.
 
 //
 // Textures.
@@ -129,9 +133,6 @@ struct Font
 Font dfont;
 
 ////////////////////////////////
-//~ Renderers info
-
-//
 //~ Default immediate mode renderer info.
 //
 struct Immediate_VS_Constants
@@ -143,84 +144,18 @@ GLOBAL ID3D11Buffer          *immediate_vbo;
 GLOBAL ID3D11Buffer          *immediate_vs_cbuffer;
 GLOBAL ID3D11VertexShader    *immediate_vs;
 GLOBAL ID3D11PixelShader     *immediate_ps;
-struct Vertex_XCNU
+struct Vertex_XCU
 {
     V3 position;
     V4 color;
-    V3 normal;
     V2 uv;
 };
 GLOBAL s32           num_immediate_vertices;
 GLOBAL const s32     MAX_IMMEDIATE_VERTICES = 2400;
-GLOBAL Vertex_XCNU   immediate_vertices[MAX_IMMEDIATE_VERTICES];
+GLOBAL Vertex_XCU   immediate_vertices[MAX_IMMEDIATE_VERTICES];
 
 // @Note: If true: vertices we push to buffer are pixel positions relative to drawing rect and Y grows down.
 GLOBAL b32 is_using_pixel_coords;
-
-//
-//~ PBR renderer info
-//
-struct Vertex_XTBNUCJW
-{
-    V3 position;
-    V3 tangent;
-    V3 bitangent;
-    V3 normal;
-    V2 uv;
-    V4 color;
-    
-    // V4 because MAX_JOINTS_PER_VERTEX is 4.
-    V4s joint_ids;
-    V4  weights;
-};
-
-#define MAX_JOINTS 65
-#define VSConstantsFlags_SHOULD_SKIN 0x1
-struct PBR_VS_Constants
-{
-    M4x4 skinning_matrices[MAX_JOINTS];
-    M4x4 object_to_proj_matrix;
-    M4x4 object_to_world_matrix;
-    u32  flags;
-};
-#define MAX_POINT_LIGHTS 5
-#define MAX_DIR_LIGHTS   2
-struct Point_Light
-{
-    V3  position;  // In world space
-    f32 intensity; // Unitless
-    V3  color;
-    f32 range;	 // In world space units
-};
-struct Directional_Light
-{
-    V3  direction; // In world space
-    f32 intensity; // Unitless
-    V3  color;
-    f32 indirect_lighting_intensity; // Unitless @Incomplete: Is this used? 
-};
-struct PBR_PS_Constants
-{
-    // @Note: HLSL cbuffers pack everything in 16 bytes (Vector4), so we order stuff this way... yikes.
-    Point_Light       point_lights[MAX_POINT_LIGHTS];
-	Directional_Light dir_lights[MAX_DIR_LIGHTS];
-    
-    V3  camera_position; // In world space
-    b32 use_normal_map;
-    
-	V3  base_color;
-    f32 metallic;
-	f32 roughness;
-    f32 ambient_occlusion;
-    
-    s32 num_point_lights;
-    s32 num_dir_lights;
-};
-GLOBAL ID3D11InputLayout  *pbr_input_layout;
-GLOBAL ID3D11Buffer       *pbr_vs_cbuffer;
-GLOBAL ID3D11Buffer       *pbr_ps_cbuffer;
-GLOBAL ID3D11VertexShader *pbr_vs;
-GLOBAL ID3D11PixelShader  *pbr_ps;
 
 ////////////////////////////////
 //~ Textures
@@ -473,9 +408,13 @@ FUNCTION f32 get_text_height(Font *font, s32 vh, char *format, ...)
 
 ////////////////////////////////
 //~ Shaders
-FUNCTION void d3d11_compile_shader(String8 hlsl, D3D11_INPUT_ELEMENT_DESC element_desc[], UINT element_count, ID3D11InputLayout **input_layout_out, ID3D11VertexShader **vs_out, ID3D11PixelShader **ps_out)
+FUNCTION void d3d11_compile_shader(char const *hlsl_data, u64 hlsl_size,
+                                   D3D11_INPUT_ELEMENT_DESC element_desc[], UINT element_count,
+                                   ID3D11InputLayout  **input_layout_out, 
+                                   ID3D11VertexShader **vs_out,
+                                   ID3D11PixelShader  **ps_out)
 {
-    //String8 file = os->read_entire_file(hlsl_path);
+    
     
     UINT flags = D3DCOMPILE_PACK_MATRIX_ROW_MAJOR | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS;
 #if DEVELOPER
@@ -485,14 +424,14 @@ FUNCTION void d3d11_compile_shader(String8 hlsl, D3D11_INPUT_ELEMENT_DESC elemen
 #endif
     
     ID3DBlob *vs_blob = 0, *ps_blob = 0, *error_blob = 0;
-    HRESULT hr = D3DCompile(hlsl.data, hlsl.count, 0, 0, 0, "vs", "vs_5_0", flags, 0, &vs_blob, &error_blob);
+    HRESULT hr = D3DCompile(hlsl_data, hlsl_size, 0, 0, 0, "vs", "vs_5_0", flags, 0, &vs_blob, &error_blob);
     if (FAILED(hr))  {
         const char *message = (const char *) error_blob->GetBufferPointer();
         OutputDebugStringA(message);
         ASSERT(!"Failed to compile vertex shader!");
     }
     
-    hr = D3DCompile(hlsl.data, hlsl.count, 0, 0, 0, "ps", "ps_5_0", flags, 0, &ps_blob, &error_blob);
+    hr = D3DCompile(hlsl_data, hlsl_size, 0, 0, 0, "ps", "ps_5_0", flags, 0, &ps_blob, &error_blob);
     if (FAILED(hr))  {
         const char *message = (const char *) error_blob->GetBufferPointer();
         OutputDebugStringA(message);
@@ -504,7 +443,6 @@ FUNCTION void d3d11_compile_shader(String8 hlsl, D3D11_INPUT_ELEMENT_DESC elemen
     device->CreateInputLayout(element_desc, element_count, vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), input_layout_out);
     
     vs_blob->Release(); ps_blob->Release();
-    //os->free_file_memory(file.data);
 }
 
 FUNCTION void create_immediate_shader()
@@ -512,10 +450,9 @@ FUNCTION void create_immediate_shader()
     // Immediate shader input layout.
     D3D11_INPUT_ELEMENT_DESC layout_desc[] = 
     {
-        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XCNU, position), D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(Vertex_XCNU, color),    D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XCNU, normal),   D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(Vertex_XCNU, uv),       D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XCU, position), D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(Vertex_XCU, color),    D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(Vertex_XCU, uv),       D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
     
     //
@@ -542,12 +479,11 @@ FUNCTION void create_immediate_shader()
         device->CreateBuffer(&desc, 0, &immediate_vs_cbuffer);
     }
     
-    char *source = R"XX(
+    char const *hlsl_data = R"XX(
 struct VS_Input
 {
     float3 pos    : POSITION;
     float4 color  : COLOR;
-    float3 normal : NORMAL;
     float2 uv     : TEXCOORD;
 };
 
@@ -555,7 +491,6 @@ struct PS_Input
 {
     float4 pos    : SV_POSITION;
     float4 color  : COLOR;
-    float3 normal : NORMAL;
     float2 uv     : TEXCOORD;
 };
 
@@ -573,7 +508,6 @@ PS_Input vs(VS_Input input)
     PS_Input output;
     output.pos    = mul(object_to_proj_matrix, float4(input.pos, 1.0f));
     output.color  = input.color;
-    output.normal = input.normal;
     output.uv     = input.uv;
     return output;
 }
@@ -584,51 +518,12 @@ float4 ps(PS_Input input) : SV_TARGET
     return input.color * tex_color;
 }
 )XX";
-    String8 hlsl = str8_cstring(source);
-    d3d11_compile_shader(hlsl, layout_desc, ARRAYSIZE(layout_desc), &immediate_input_layout, &immediate_vs, &immediate_ps);
+    d3d11_compile_shader(hlsl_data, str8_length(hlsl_data), layout_desc, ARRAYSIZE(layout_desc), &immediate_input_layout, &immediate_vs, &immediate_ps);
 }
 
-FUNCTION void create_pbr_shader()
-{
-    // Input layout.
-    D3D11_INPUT_ELEMENT_DESC layout_desc[] = 
-    {
-        {"POSITION",  0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUCJW, position),  D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"TANGENT",   0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUCJW, tangent),   D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"BITANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUCJW, bitangent), D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"NORMAL",    0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(Vertex_XTBNUCJW, normal),    D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"TEXCOORD",  0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(Vertex_XTBNUCJW, uv),        D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"COLOR",     0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(Vertex_XTBNUCJW, color),     D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"JOINT_IDS", 0, DXGI_FORMAT_R32G32B32A32_SINT,  0, offsetof(Vertex_XTBNUCJW, joint_ids),     D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"WEIGHTS",   0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(Vertex_XTBNUCJW, weights),     D3D11_INPUT_PER_VERTEX_DATA, 0},
-    };
-    
-    //
-    // Constant buffers.
-    {
-        D3D11_BUFFER_DESC desc = {};
-        desc.ByteWidth      = ALIGN_UP(sizeof(PBR_VS_Constants), 16);
-        desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
-        desc.Usage          = D3D11_USAGE_DYNAMIC;
-        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-        ASSERT(desc.ByteWidth <= 16*D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT);
-        
-        device->CreateBuffer(&desc, 0, &pbr_vs_cbuffer);
-        
-        D3D11_BUFFER_DESC desc2 = desc;
-        desc2.ByteWidth = ALIGN_UP(sizeof(PBR_PS_Constants), 16);
-        ASSERT(desc2.ByteWidth <= 16*D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT);
-        
-        device->CreateBuffer(&desc2, 0, &pbr_ps_cbuffer);
-    }
-    
-    char *pbr_source = 
-#include "pbr.hlsl"
-    ;
-    
-    String8 hlsl = str8_cstring(pbr_source);
-    d3d11_compile_shader(hlsl, layout_desc, ARRAY_COUNT(layout_desc), &pbr_input_layout, &pbr_vs, &pbr_ps);
-}
+// @Note: This here is the shader factory... use it to include shaders you want to use.
+// It is placed here so shaders we include can call d3d11_compile_shader().
+#include "shaders/shader_factory.cpp"
 
 ////////////////////////////////
 //~ D3D11 functions
@@ -823,10 +718,10 @@ FUNCTION void d3d11_init(HWND window)
     }
     
     //
-    // Default shader.
+    // Create the immediate shader and all shaders in the factory.
     {    
         create_immediate_shader();
-        create_pbr_shader();
+        shader_factory_create_shaders();
     }
 }
 
@@ -964,58 +859,23 @@ FUNCTION DWORD d3d11_wait_for_swapchain()
 }
 
 ////////////////////////////////
-//~ Default immediate mode renderer functions.
-FUNCTION void set_texture(Texture *texture)
+//~ Utility functions.
+
+FUNCTION void set_projection(f32 fov_degrees)
 {
-    if (texture)
-        texture0 = texture->view;
-    else   
-        texture0 = white_texture.view;
+    f32 ar = (f32)os->render_size.w / (f32)os->render_size.h;
+    view_to_proj_matrix = perspective(fov_degrees * DEGS_TO_RADS, ar, 0.1f, 1000.0f);
 }
 
-FUNCTION void set_view_to_proj()
-{
-    f32 ar  = (f32)os->render_size.w / (f32)os->render_size.h;
-    f32 fov = 90.0f;
-    view_to_proj_matrix = perspective(fov * DEGS_TO_RADS, ar, 0.1f, 1000.0f);
-}
-
-FUNCTION void set_world_to_view(M4x4_Inverse matrix)
+FUNCTION void set_view(M4x4_Inverse matrix)
 {
     world_to_view_matrix = matrix;
 }
 
-FUNCTION void set_world_to_view_from_camera(M4x4 camera_object_to_word)
+FUNCTION void set_view_from_camera(M4x4 camera_object_to_world)
 {
-    invert(camera_object_to_word, &world_to_view_matrix.forward);
-    world_to_view_matrix.inverse = camera_object_to_word;
-}
-
-FUNCTION void set_object_to_world(V3 translation, Quaternion rotation, V3 scale)
-{
-    // @Note: Use this function to transform the geometry you want to draw by passed components. 
-    // This transform will be used in the vertex shader.
-    // Make sure you pass "object-space" positions to immediate_XXX() family functions.
-    //
-    // Example:
-    //
-    // USUALLY:
-    // V3 center = v3(5, 7, 0);  // POINT IN WORLD SPACE
-    // immediate_begin();
-    // immediate_quad(center, v3(1, 1, 0), v4(1));
-    // immediate_end();
-    //
-    // WHEN USING set_object_to_world():
-    // immediate_begin();
-    // set_object_to_world(center, quaternion_identity(), v3(1));
-    // immediate_quad(v3(0), v3(1, 1, 0), v4(1));
-    // immediate_end();
-    //
-    // Notice that we passed v3(0) to immediate_quad() after using set_object_to_world(), which means
-    // that the quad object is in it's own local space and it will be transformed to the world in the
-    // vertex shader.
-    
-    object_to_world_matrix = m4x4_from_translation_rotation_scale(translation, rotation, scale);
+    world_to_view_matrix.inverse = camera_object_to_world;
+    invert(camera_object_to_world, &world_to_view_matrix.forward);
 }
 
 FUNCTION V2 pixel_to_ndc(V2 pixel)
@@ -1069,6 +929,41 @@ FUNCTION V3 world_to_ndc(V3 point)
     return result;
 }
 
+FUNCTION void set_texture(Texture *texture)
+{
+    if (texture)
+        texture0 = texture->view;
+    else   
+        texture0 = white_texture.view;
+}
+
+FUNCTION void set_object_to_world(V3 translation, Quaternion rotation, V3 scale)
+{
+    // @Note: Use this function to transform the geometry you want to draw by passed components. 
+    // This transform will be used in the vertex shader.
+    // Make sure you pass "object-space" positions to immediate_XXX() family functions.
+    //
+    // Example:
+    //
+    // USUALLY:
+    // V3 center = v3(5, 7, 0);  // POINT IN WORLD SPACE
+    // immediate_begin();
+    // immediate_quad(center, v3(1, 1, 0), v4(1));
+    // immediate_end();
+    //
+    // WHEN USING set_object_to_world():
+    // immediate_begin();
+    // set_object_to_world(center, quaternion_identity(), v3(1));
+    // immediate_quad(v3(0), v3(1, 1, 0), v4(1));
+    // immediate_end();
+    //
+    // Notice that we passed v3(0) to immediate_quad() after using set_object_to_world(), which means
+    // that the quad object is in it's own local space and it will be transformed to the world in the
+    // vertex shader.
+    
+    object_to_world_matrix = m4x4_from_translation_rotation_scale(translation, rotation, scale);
+}
+
 FUNCTION void update_render_transform()
 {
     if (is_using_pixel_coords)
@@ -1086,6 +981,8 @@ FUNCTION void update_render_transform()
     device_context->Unmap(immediate_vs_cbuffer, 0);
 }
 
+////////////////////////////////
+//~ Immediate-mode renderer functions.
 FUNCTION void immediate_end(b32 reset_state = TRUE)
 {
     if (!num_immediate_vertices) 
@@ -1094,7 +991,7 @@ FUNCTION void immediate_end(b32 reset_state = TRUE)
     // Bind Input Assembler.
     device_context->IASetInputLayout(immediate_input_layout);
     device_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    UINT stride = sizeof(Vertex_XCNU);
+    UINT stride = sizeof(Vertex_XCU);
     UINT offset = 0;
     D3D11_MAPPED_SUBRESOURCE mapped;
     device_context->Map(immediate_vbo, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
@@ -1141,11 +1038,11 @@ FUNCTION void immediate_begin(b32 wireframe = FALSE)
     immediate_end(TRUE);
 }
 
-FUNCTION Vertex_XCNU* immediate_vertex_ptr(s32 index)
+FUNCTION Vertex_XCU* immediate_vertex_ptr(s32 index)
 {
     if (index == MAX_IMMEDIATE_VERTICES) ASSERT(!"Maximum allowed vertices reached.\n");
     
-    Vertex_XCNU *result = immediate_vertices + index;
+    Vertex_XCU *result = immediate_vertices + index;
     return result;
 }
 
@@ -1159,10 +1056,9 @@ FUNCTION void immediate_vertex(V3 const &position, V4 const &color)
     // Go linear; using SRGB framebuffer.
     V4 c = v4(pow(color.rgb, 2.2f), color.a);
     
-    Vertex_XCNU *v = immediate_vertex_ptr(num_immediate_vertices);
+    Vertex_XCU *v = immediate_vertex_ptr(num_immediate_vertices);
     v->position    = position;
     v->color       = c;
-    v->normal      = v3(0, 0, 1);
     v->uv          = v2(0, 0);
     
     num_immediate_vertices += 1;
@@ -1175,10 +1071,9 @@ FUNCTION void immediate_vertex(V3 const &position, V2 uv, V4 const &color)
     // @Note: Go linear; using SRGB framebuffer.
     V4 c = v4(pow(color.rgb, 2.2f), color.a);
     
-    Vertex_XCNU *v = immediate_vertex_ptr(num_immediate_vertices);
+    Vertex_XCU *v = immediate_vertex_ptr(num_immediate_vertices);
     v->position    = is_using_pixel_coords? pixel_to_ndc(position) : position;
     v->color       = c;
-    v->normal      = v3(0, 0, 1);
     v->uv          = uv;
     
     num_immediate_vertices += 1;
@@ -1696,10 +1591,9 @@ FUNCTION void immediate_vertex(V2 const &position, V4 const &color)
     // @Note: Go linear; using SRGB framebuffer.
     V4 c = v4(pow(color.rgb, 2.2f), color.a);
     
-    Vertex_XCNU *v = immediate_vertex_ptr(num_immediate_vertices);
+    Vertex_XCU *v = immediate_vertex_ptr(num_immediate_vertices);
     v->position    = is_using_pixel_coords? v3(pixel_to_ndc(position), 0) : v3(position, 0);
     v->color       = c;
-    v->normal      = v3(0, 0, 1);
     v->uv          = v2(0, 0);
     
     num_immediate_vertices += 1;
@@ -1712,10 +1606,9 @@ FUNCTION void immediate_vertex(V2 const &position, V2 const &uv, V4 const &color
     // @Note: Go linear; using SRGB framebuffer.
     V4 c = v4(pow(color.rgb, 2.2f), color.a);
     
-    Vertex_XCNU *v = immediate_vertex_ptr(num_immediate_vertices);
+    Vertex_XCU *v = immediate_vertex_ptr(num_immediate_vertices);
     v->position    = is_using_pixel_coords? v3(pixel_to_ndc(position), 0) : v3(position, 0);
     v->color       = c;
-    v->normal      = v3(0, 0, 1);
     v->uv          = uv;
     
     num_immediate_vertices += 1;

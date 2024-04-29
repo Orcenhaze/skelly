@@ -145,7 +145,7 @@ FUNCTION void control_camera(Camera *cam)
     }
 #endif
     
-    set_world_to_view_from_camera(game->camera.object_to_world);
+    set_view_from_camera(game->camera.object_to_world);
 }
 
 FUNCTION void set_game_mode(Game_Mode mode)
@@ -243,7 +243,7 @@ FUNCTION void game_init()
     game->camera.start_offset = {0.0f, 1.0f, 3.0f};
     control_camera(&game->camera);
     
-    set_view_to_proj();
+    set_projection(90.0f);
     
 #if DEVELOPER
     set_game_mode(GameMode_DEBUG);
