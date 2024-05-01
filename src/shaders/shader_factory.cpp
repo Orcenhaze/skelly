@@ -9,11 +9,11 @@ Use like this:
 #include "shaders/sprite_instanced.cpp"
 
 Then in shader_factory_create_shaders(), you do:
-create_shader_mesh_phong();
-create_shader_skeletal_mesh_pbr();
+mesh_phong_create_shader();
+skeletal_mesh_pbr_create_shader();
 ...
 ...
-create_shader_sprite_instanced();
+sprite_instanced_create_shader();
 
 
 NOTE:
@@ -30,5 +30,5 @@ NOTE:
 FUNCTION void shader_factory_create_shaders()
 {
     // Call the "create function" for the shaders here.
-    create_shader_skeletal_mesh_pbr();
+    skeletal_mesh_pbr_create_shader();
 }

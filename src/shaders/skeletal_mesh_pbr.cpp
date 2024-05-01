@@ -64,7 +64,7 @@ GLOBAL ID3D11Buffer       *pbr_ps_cbuffer;
 GLOBAL ID3D11VertexShader *pbr_vs;
 GLOBAL ID3D11PixelShader  *pbr_ps;
 
-FUNCTION void create_shader_skeletal_mesh_pbr()
+FUNCTION void skeletal_mesh_pbr_create_shader()
 {
     // Input layout.
     D3D11_INPUT_ELEMENT_DESC layout_desc[] = 
@@ -104,7 +104,7 @@ FUNCTION void create_shader_skeletal_mesh_pbr()
     d3d11_compile_shader(hlsl_data, str8_length(hlsl_data), layout_desc, ARRAY_COUNT(layout_desc), &pbr_input_layout, &pbr_vs, &pbr_ps);
 }
 
-FUNCTION void bind_shader_skeletal_mesh_pbr()
+FUNCTION void skeletal_mesh_pbr_bind_shader()
 {
     // @Note: Just assuming this is the stuff we will need for this shader, you can leave certain states
     // for the user to set from outside.
@@ -125,7 +125,7 @@ FUNCTION void bind_shader_skeletal_mesh_pbr()
     device_context->OMSetRenderTargets(1, &render_target_view, depth_stencil_view);
 }
 
-FUNCTION void bind_buffers_skeletal_mesh_pbr(ID3D11Buffer *vbo, ID3D11Buffer *ibo)
+FUNCTION void skeletal_mesh_pbr_bind_buffers(ID3D11Buffer *vbo, ID3D11Buffer *ibo)
 {
     // Bind Input Assembler.
     device_context->IASetInputLayout(pbr_input_layout);
@@ -136,7 +136,7 @@ FUNCTION void bind_buffers_skeletal_mesh_pbr(ID3D11Buffer *vbo, ID3D11Buffer *ib
     device_context->IASetIndexBuffer(ibo, DXGI_FORMAT_R32_UINT, 0);
 }
 
-FUNCTION void upload_vertex_constants_skeletal_mesh_pbr(PBR_VS_Constants const &vs_constants)
+FUNCTION void skeletal_mesh_pbr_upload_vertex_constants(PBR_VS_Constants const &vs_constants)
 {
     
     D3D11_MAPPED_SUBRESOURCE mapped;
@@ -146,7 +146,7 @@ FUNCTION void upload_vertex_constants_skeletal_mesh_pbr(PBR_VS_Constants const &
     device_context->VSSetConstantBuffers(0, 1, &pbr_vs_cbuffer);
 }
 
-FUNCTION void upload_pixel_constants_skeletal_mesh_pbr(PBR_PS_Constants const &ps_constants)
+FUNCTION void skeletal_mesh_pbr_upload_pixel_constants(PBR_PS_Constants const &ps_constants)
 {
     D3D11_MAPPED_SUBRESOURCE mapped;
     device_context->Map(pbr_ps_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
@@ -155,7 +155,7 @@ FUNCTION void upload_pixel_constants_skeletal_mesh_pbr(PBR_PS_Constants const &p
     device_context->PSSetConstantBuffers(1, 1, &pbr_ps_cbuffer);
 }
 
-FUNCTION void set_texture_skeletal_mesh_pbr(s32 slot, ID3D11ShaderResourceView **texture_view)
+FUNCTION void skeletal_mesh_pbr_bind_texture(s32 slot, ID3D11ShaderResourceView **texture_view)
 {
     device_context->PSSetShaderResources(slot, 1, texture_view);
 }

@@ -8,8 +8,8 @@ FUNCTION void draw_entity(Entity *e)
         return;
     }
     
-    bind_shader_skeletal_mesh_pbr();
-    bind_buffers_skeletal_mesh_pbr(mesh->vbo, mesh->ibo);
+    skeletal_mesh_pbr_bind_shader();
+    skeletal_mesh_pbr_bind_buffers(mesh->vbo, mesh->ibo);
     device_context->RSSetState(rasterizer_state_solid);
     
     // Upload vertex constant data.
@@ -24,7 +24,7 @@ FUNCTION void draw_entity(Entity *e)
         
         MEMORY_COPY(vs_constants.skinning_matrices, e->animation_player->skinning_matrices.data, matrix_count * sizeof(M4x4));
     }
-    upload_vertex_constants_skeletal_mesh_pbr(vs_constants);
+    skeletal_mesh_pbr_upload_vertex_constants(vs_constants);
     
     // Upload pixel constant data.
     PBR_PS_Constants ps_constants = {};
@@ -65,9 +65,9 @@ FUNCTION void draw_entity(Entity *e)
         
         // Upload textures.
         for (s32 map_index = 0; map_index < MaterialTextureMapType_COUNT; map_index++)
-            set_texture_skeletal_mesh_pbr(map_index, &list->texture_maps[map_index]->view);
+            skeletal_mesh_pbr_bind_texture(map_index, &list->texture_maps[map_index]->view);
         
-        upload_pixel_constants_skeletal_mesh_pbr(ps_constants);
+        skeletal_mesh_pbr_upload_pixel_constants(ps_constants);
         
         // Draw.
         device_context->DrawIndexed(list->num_indices, list->first_index, 0);
@@ -84,8 +84,8 @@ FUNCTION void draw_entity_wireframe(Entity *e)
         return;
     }
     
-    bind_shader_skeletal_mesh_pbr();
-    bind_buffers_skeletal_mesh_pbr(mesh->vbo, mesh->ibo);
+    skeletal_mesh_pbr_bind_shader();
+    skeletal_mesh_pbr_bind_buffers(mesh->vbo, mesh->ibo);
     device_context->RSSetState(rasterizer_state_wireframe);
     
     // Upload vertex constant data.
@@ -100,7 +100,7 @@ FUNCTION void draw_entity_wireframe(Entity *e)
         
         MEMORY_COPY(vs_constants.skinning_matrices, e->animation_player->skinning_matrices.data, matrix_count * sizeof(M4x4));
     }
-    upload_vertex_constants_skeletal_mesh_pbr(vs_constants);
+    skeletal_mesh_pbr_upload_vertex_constants(vs_constants);
     
     // Upload ps constants, default params except for base_color.
     V3  c0            = { 0.89,  0.71, 0.882};
@@ -113,7 +113,7 @@ FUNCTION void draw_entity_wireframe(Entity *e)
     ps_constants.metallic          = 0.0f;
     ps_constants.roughness         = 0.5f;
     ps_constants.ambient_occlusion = 1.0f;
-    upload_pixel_constants_skeletal_mesh_pbr(ps_constants);
+    skeletal_mesh_pbr_upload_pixel_constants(ps_constants);
     
     // Draw triangle lists.
     for (s32 list_index = 0; list_index < mesh->triangle_list_info.count; list_index++) {
@@ -177,8 +177,7 @@ FUNCTION void draw_skeleton(Entity *e)
             invert(skeleton->joint_info[i].object_to_joint_matrix, &inv);
             V3 p = get_translation(player->skinning_matrices[i] * inv);
             
-            V3 p_ndc   = world_to_ndc(transform_point(e->object_to_world.forward, p));
-            V3 p_pixel = ndc_to_pixel(p_ndc);
+            V3 p_pixel = world_to_pixel(transform_point(e->object_to_world.forward, p));
             String8 joint_name = skeleton->joint_info[i].name;
             
             immediate_begin();

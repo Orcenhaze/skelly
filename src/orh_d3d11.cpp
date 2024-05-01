@@ -440,7 +440,11 @@ FUNCTION void d3d11_compile_shader(char const *hlsl_data, u64 hlsl_size,
     
     device->CreateVertexShader(vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), 0, vs_out);
     device->CreatePixelShader(ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(), 0, ps_out);
-    device->CreateInputLayout(element_desc, element_count, vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), input_layout_out);
+    
+    // @Note: Some shaders (like ones who use instancing) don't have input layout.
+    if (input_layout_out) {
+        device->CreateInputLayout(element_desc, element_count, vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), input_layout_out);
+    }
     
     vs_blob->Release(); ps_blob->Release();
 }
@@ -878,54 +882,65 @@ FUNCTION void set_view_from_camera(M4x4 camera_object_to_world)
     invert(camera_object_to_world, &world_to_view_matrix.forward);
 }
 
-FUNCTION V2 pixel_to_ndc(V2 pixel)
+FUNCTION inline V2 pixel_to_ndc(V2 pixel)
 {
     // @Note: pixel is relative to drawing_rect, i.e. viewport.
-    V2 ndc;
-    ndc.x = (2.0f * (pixel.x - viewport.TopLeftX) / viewport.Width) - 1.0f;
-    ndc.y = 1.0f - 2.0f * (pixel.y - viewport.TopLeftY) / viewport.Height;
-    return ndc;
-}
-FUNCTION V3 pixel_to_ndc(V3 pixel)
-{
-    // @Note: pixel is relative to drawing_rect, i.e. viewport.
-    V3 ndc;
-    ndc.x = (2.0f * (pixel.x - viewport.TopLeftX) / viewport.Width) - 1.0f;
-    ndc.y = 1.0f - 2.0f * (pixel.y - viewport.TopLeftY) / viewport.Height;
-    ndc.z = (pixel.z - viewport.MinDepth) / (viewport.MaxDepth - viewport.MinDepth);
-    return ndc;
-}
-
-FUNCTION V2 ndc_to_pixel(V2 ndc)
-{
-    V2 pixel;
-    pixel.x = ((ndc.x + 1.0f)  * 0.5f * viewport.Width)  + viewport.TopLeftX;
-    pixel.y = ((1.0f  - ndc.y) * 0.5f * viewport.Height) + viewport.TopLeftY;
-    return pixel;
-}
-FUNCTION V3 ndc_to_pixel(V3 ndc)
-{
-    V3 pixel;
-    pixel.x = ((ndc.x + 1.0f)  * 0.5f * viewport.Width)  + viewport.TopLeftX;
-    pixel.y = ((1.0f  - ndc.y) * 0.5f * viewport.Height) + viewport.TopLeftY;
-    pixel.z = viewport.MinDepth + ndc.z * (viewport.MaxDepth - viewport.MinDepth);
-    return pixel;
-}
-
-FUNCTION V2 world_to_ndc(V2 point)
-{
-    // Clip space is same as proj space.
-    M4x4 world_to_proj = view_to_proj_matrix.forward * world_to_view_matrix.forward;
-    V4 point_clip      = world_to_proj * v4(point.x, point.y, 0, 1);
-    V2 result          = point_clip.xy / point_clip.w;
+    V2 result;
+    result.x = (2.0f * (pixel.x - viewport.TopLeftX) / viewport.Width) - 1.0f;
+    result.y = 1.0f - 2.0f * (pixel.y - viewport.TopLeftY) / viewport.Height;
     return result;
 }
-FUNCTION V3 world_to_ndc(V3 point)
+FUNCTION inline V3 pixel_to_ndc(V3 pixel)
+{
+    // @Note: pixel is relative to drawing_rect, i.e. viewport.
+    V3 result;
+    result.x = (2.0f * (pixel.x - viewport.TopLeftX) / viewport.Width) - 1.0f;
+    result.y = 1.0f - 2.0f * (pixel.y - viewport.TopLeftY) / viewport.Height;
+    result.z = (pixel.z - viewport.MinDepth) / (viewport.MaxDepth - viewport.MinDepth);
+    return result;
+}
+
+FUNCTION inline V2 ndc_to_pixel(V2 ndc)
+{
+    V2 result;
+    result.x = ((ndc.x + 1.0f)  * 0.5f * viewport.Width)  + viewport.TopLeftX;
+    result.y = ((1.0f  - ndc.y) * 0.5f * viewport.Height) + viewport.TopLeftY;
+    return result;
+}
+FUNCTION inline V3 ndc_to_pixel(V3 ndc)
+{
+    V3 result;
+    result.x = ((ndc.x + 1.0f)  * 0.5f * viewport.Width)  + viewport.TopLeftX;
+    result.y = ((1.0f  - ndc.y) * 0.5f * viewport.Height) + viewport.TopLeftY;
+    result.z = viewport.MinDepth + ndc.z * (viewport.MaxDepth - viewport.MinDepth);
+    return result;
+}
+
+FUNCTION inline V2 world_to_ndc(V2 pos)
 {
     // Clip space is same as proj space.
     M4x4 world_to_proj = view_to_proj_matrix.forward * world_to_view_matrix.forward;
-    V4 point_clip      = world_to_proj * v4(point.x, point.y, point.z, 1);
-    V3 result          = point_clip.xyz / point_clip.w;
+    V4 pos_clip        = world_to_proj * v4(pos.x, pos.y, 0, 1);
+    V2 result          = pos_clip.xy / pos_clip.w;
+    return result;
+}
+FUNCTION inline V3 world_to_ndc(V3 pos)
+{
+    // Clip space is same as proj space.
+    M4x4 world_to_proj = view_to_proj_matrix.forward * world_to_view_matrix.forward;
+    V4 pos_clip        = world_to_proj * v4(pos.x, pos.y, pos.z, 1);
+    V3 result          = pos_clip.xyz / pos_clip.w;
+    return result;
+}
+
+FUNCTION inline V2 world_to_pixel(V2 pos)
+{
+    V2 result = ndc_to_pixel(world_to_ndc(pos));
+    return result;
+}
+FUNCTION inline V3 world_to_pixel(V3 pos)
+{
+    V3 result = ndc_to_pixel(world_to_ndc(pos));
     return result;
 }
 
