@@ -289,7 +289,8 @@ FUNCTION void gizmo_execute(V3 const   &camera_position, V3 const &gizmo_origin,
             // The element is an axis.
             s32 index       = gizmo_element - GizmoElement_TRANSLATE_X;
             Gizmo_Axis axis = geometry.axes[index];
-            V3 plane_normal = normalize_or_zero(camera_position - click_origin);
+            V3 plane_tangent = cross(axis.direction, click_origin - camera_position );
+            V3 plane_normal  = cross(axis.direction, plane_tangent);
             Hit_Result hit;
             segment_plane_intersect(camera_position, camera_end, gizmo_origin, plane_normal, &hit);
             if (hit.result) {
