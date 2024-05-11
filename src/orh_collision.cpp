@@ -437,6 +437,7 @@ FUNCTION b32 segment_triangle_intersect(V3 const &a, V3 const &b,
         if (barycentric_out) *barycentric_out = {-1.0f, -1.0f, -1.0f};
         return FALSE;
     } else {
+        n = normalize_or_zero(n);
         hit_out->impact_point  = a + t*ab; //lerp(a, percent, b);
         hit_out->impact_normal = n;
         hit_out->normal        = n;

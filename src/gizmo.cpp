@@ -90,6 +90,7 @@ GLOBAL const f32      GIZMO_MAX_PICK_DISTANCE = 300.0f; // We don't pick things 
 GLOBAL Gizmo_Geometry         geometry;
 GLOBAL Gizmo_Rendering_Params params;
 
+// Snap increments.
 GLOBAL const f32              TRANSLATION_SNAP = 0.1f;
 GLOBAL const f32              ROTATION_SNAP    = 15.0f * DEGS_TO_RADS;
 GLOBAL const f32              SCALE_SNAP       = 0.25f;
@@ -104,6 +105,7 @@ GLOBAL V4 gizmo_active_color = {1.0f, 1.0f, 1.0f, 1.0f};
 
 FUNCTION void gizmo_clear()
 {
+    // Call this when you "un-pick" something.
     params   = {};
     geometry = {};
 }
