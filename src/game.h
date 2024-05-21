@@ -12,10 +12,6 @@ GLOBAL V3 V3R    = V3_RIGHT;
 #include "entity.h"
 #include "catalog.h"
 
-#if DEVELOPER
-#include "editor.h"
-#endif
-
 enum Game_Mode
 {
     GameMode_GAME,

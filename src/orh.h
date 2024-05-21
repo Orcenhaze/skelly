@@ -1,4 +1,4 @@
-/* orh.h - v0.90 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
+/* orh.h - v0.91 - C++ utility library. Includes types, math, string, memory arena, and other stuff.
 
 In _one_ C++ file, #define ORH_IMPLEMENTATION before including this header to create the
  implementation. 
@@ -9,6 +9,7 @@ Like this:
 #include "orh.h"
 
 REVISION HISTORY:
+0.91 - fixed array arena reserving too much virtual memory issue.
 0.90 - added frame vs. tick dt and time. Added V3_INF. Added abs() for V2 and V3. added sign(). added get_row() and get_column() for M3x3.
 0.89 - added str8_contains(). Fixed quaternion_from_euler(). Added equal() for nearly equal comparison. Added rotate_towards().
 0.88 - added clamp_angle() and fixed get_euler(). Add macros for small fractions.
@@ -110,7 +111,6 @@ CONVENTIONS:
 TODO:
 [] Per-frame and per-tick input for gamepads!
 [] Dynamically growing arenas (maybe make a list instead of asserting when we go past arena->max).
-[] Helper functions that return forward/right/up vectors from passed transform matrix.
 [] arenas never decommit memory. Find a good way to add that.
 
 MISC:
@@ -1323,8 +1323,9 @@ FUNCDEF inline V3  random_range_v3(Random_PCG *rng, V3 min, V3 max); // [min, ma
 #define MEMORY_COPY(d, s, z)           memmove((d), (s), (z))
 #define MEMORY_COPY_STRUCT(d, s)       MEMORY_COPY((d), (s), MIN(sizeof(*(d)), sizeof(*(s))))
 
-#define ARENA_MAX_DEFAULT GIGABYTES(8)
-#define ARENA_COMMIT_SIZE KILOBYTES(4)
+#define ARENA_DEFAULT_RESERVE_SIZE GIGABYTES(4)
+#define ARENA_COMMIT_SIZE          KILOBYTES(4)
+#define ARENA_INTERNAL_SIZE        ALIGN_UP(sizeof(Arena), 64)
 
 #define ARENA_SCRATCH_COUNT 2
 
@@ -1341,7 +1342,7 @@ struct Arena_Temp
     u64    used;
 };
 
-FUNCDEF        Arena*      arena_init(u64 max_size = ARENA_MAX_DEFAULT);
+FUNCDEF        Arena*      arena_init(u64 max_size = ARENA_DEFAULT_RESERVE_SIZE);
 FUNCDEF inline void        arena_free(Arena *arena);
 FUNCDEF        void*       arena_push(Arena *arena, u64 size, u64 alignment);
 FUNCDEF inline void*       arena_push_zero(Arena *arena, u64 size, u64 alignment);
@@ -1503,10 +1504,20 @@ struct Array
 template<typename T>
 void array_init(Array<T> *array)
 {
-    array->arena     = arena_init();
-    array->data      = 0;
-    array->count     = 0;
-    array->capacity  = 0;
+    array->arena    = NULL;
+    array->data     = NULL;
+    array->count    = 0;
+    array->capacity = 0;
+}
+
+template<typename T>
+void array_free(Array<T> *array)
+{
+    arena_free(array->arena);
+    array->arena    = NULL;
+    array->data     = NULL;
+    array->count    = 0;
+    array->capacity = 0;
 }
 
 template<typename T>
@@ -1524,12 +1535,6 @@ void array_init_and_resize(Array<T> *array, s64 desired_items)
 }
 
 template<typename T>
-void array_free(Array<T> *array)
-{
-    arena_free(array->arena);
-}
-
-template<typename T>
 void array_reserve(Array<T> *array, s64 desired_items)
 {
     if (desired_items <= array->capacity) 
@@ -1537,8 +1542,10 @@ void array_reserve(Array<T> *array, s64 desired_items)
     
     array->capacity = desired_items;
     
-    arena_reset(array->arena);
-    array->data = PUSH_ARRAY_ZERO(array->arena, T, desired_items);
+    if (array->arena)
+        arena_free(array->arena);
+    array->arena = arena_init(desired_items * sizeof(T));
+    array->data  = PUSH_ARRAY_ZERO(array->arena, T, desired_items);
 }
 
 template<typename T>
@@ -1675,7 +1682,7 @@ template<typename T>
 void array_add_unique(Array<T> *array, T item)
 {
     s32 find_index = array_find_index(array, item);
-    if (find_index < 0) {
+    if (find_index == -1) {
         array_add(array, item);
     }
 }
@@ -4150,21 +4157,19 @@ FUNCDEF inline V3 random_range_v3(Random_PCG *rng, V3 min, V3 max)
 //~
 // Memory Arena Implementation
 //
-FUNCDEF Arena* arena_init(u64 max_size /*= ARENA_MAX_DEFAULT*/)
+FUNCDEF Arena* arena_init(u64 max_size /*= ARENA_DEFAULT_RESERVE_SIZE*/)
 {
     Arena *result = 0;
-    if (max_size >= ARENA_COMMIT_SIZE) {
-        // Reserve additional bytes to account for Arena header since we're storing it inside.
-        //
-        u32 header_size = ALIGN_UP(sizeof(Arena), 64);
-        max_size       += header_size;
-        void *memory    = os->reserve(max_size);
-        if (os->commit(memory, ARENA_COMMIT_SIZE)) {
-            result              = (Arena *)memory;
-            result->max         = max_size;
-            result->used        = header_size;
-            result->commit_used = ARENA_COMMIT_SIZE;
-        }
+    max_size      = ALIGN_UP(max_size, 64);
+    max_size     += MEGABYTES(1);        // Reserve extra bytes for alignment when pushing. Heuristic: num_pushes_estimate * (max_alignment - 1);
+    max_size     += ARENA_INTERNAL_SIZE; // Reserve additional bytes to account for Arena header since we're storing it inside.
+    ASSERT(max_size >= ARENA_COMMIT_SIZE);
+    void *memory  = os->reserve(max_size);
+    if (os->commit(memory, ARENA_COMMIT_SIZE)) {
+        result              = (Arena *)memory;
+        result->max         = max_size;
+        result->used        = ARENA_INTERNAL_SIZE;
+        result->commit_used = ARENA_COMMIT_SIZE;
     }
     ASSERT(result != 0);
     return result;
@@ -4643,15 +4648,15 @@ FUNCDEF u64 string_format_list(char *dest_start, u64 dest_count, const char *for
                     const char *suffix = "B";
                     
                     // Round up.
-                    if (value >= KILOBYTES(1)) {
-                        suffix = "KB";
-                        value = (value + KILOBYTES(1) - 1) / KILOBYTES(1);
-                    } else if (value >= MEGABYTES(1)) {
-                        suffix = "MB";
-                        value = (value + MEGABYTES(1) - 1) / MEGABYTES(1);
-                    } else if (value >= GIGABYTES(1)) {
+                    if (value >= GIGABYTES(1)) {
                         suffix = "GB";
                         value = (value + GIGABYTES(1) - 1) / GIGABYTES(1);
+                    }  else if (value >= MEGABYTES(1)) {
+                        suffix = "MB";
+                        value = (value + MEGABYTES(1) - 1) / MEGABYTES(1);
+                    } else if (value >= KILOBYTES(1)) {
+                        suffix = "KB";
+                        value = (value + KILOBYTES(1) - 1) / KILOBYTES(1);
                     }
                     
                     u64_to_ascii(&dest_buffer, value, 10, decimal_digits);

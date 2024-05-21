@@ -9,11 +9,6 @@ FUNCTION void load_mesh_data(Arena *arena, Triangle_Mesh *mesh, String8 file)
     get(&file, &header);
     ASSERT(header.num_vertices != 0);
     
-    // @Important:
-    // @Memory @Todo: Each array will have its own arena. This will end up wasting ALOT of virtual memory.
-    // Maybe find a way to force array arena to only reserve specific amount?
-    //
-    
     // Vertex data (exported in XTBNUC form)
     array_init_and_resize(&mesh->vertices, header.num_vertices);
     array_init_and_resize(&mesh->tbns,     header.num_vertices);
